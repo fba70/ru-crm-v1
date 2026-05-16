@@ -39,7 +39,11 @@ const polarClient = new Polar({
 })
 
 export const auth = betterAuth({
-  trustedOrigins: ["https://app.truffalo.ai", "http://localhost:3000"],
+  trustedOrigins: [
+    "https://app.truffalo.ai",
+    "https://business-os-demo.vercel.app",
+    "http://localhost:3000",
+  ],
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: schema,
@@ -164,9 +168,8 @@ export const auth = betterAuth({
       create: {
         after: async (org: { id: string }) => {
           try {
-            const { bootstrapDefaultsForOrg } = await import(
-              "@/server/templates"
-            )
+            const { bootstrapDefaultsForOrg } =
+              await import("@/server/templates")
             const result = await bootstrapDefaultsForOrg(org.id)
             console.log(
               `[org-bootstrap] org=${org.id} instantiated=${result.instantiated} alreadyExisted=${result.alreadyExisted}`,
@@ -254,7 +257,7 @@ export const auth = betterAuth({
         process.env.NEXT_PUBLIC_PRODUCTION_URL ||
         process.env.NEXT_PUBLIC_BASE_URL ||
         `https://${process.env.VERCEL_URL}` ||
-        "https://app.truffalo.ai",
+        "business-os-demo.vercel.app",
       currentURL:
         process.env.NEXT_PUBLIC_BASE_URL ||
         (process.env.VERCEL_URL
