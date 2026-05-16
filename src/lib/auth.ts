@@ -255,14 +255,10 @@ export const auth = betterAuth({
     oAuthProxy({
       productionURL:
         process.env.NEXT_PUBLIC_PRODUCTION_URL ||
-        process.env.NEXT_PUBLIC_BASE_URL ||
-        `https://${process.env.VERCEL_URL}` ||
-        "business-os-demo.vercel.app",
+        process.env.NEXT_PUBLIC_APP_URL ||
+        "https://business-os-demo.vercel.app",
       currentURL:
-        process.env.NEXT_PUBLIC_BASE_URL ||
-        (process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : "http://localhost:3000"),
+        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     }),
   ],
 })
