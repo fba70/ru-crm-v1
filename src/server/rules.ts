@@ -91,9 +91,16 @@ export async function getSystemRules(search?: string): Promise<RuleRow[]> {
 export async function getCustomRules(
   search?: string,
   organizationFilter?: string,
+  activeOrgOnly?: boolean,
 ): Promise<RuleRow[]> {
   const session = await requireSession()
   const admin = isPlatformAdmin(session.user.role)
+
+  if (activeOrgOnly) {
+    const activeOrgId = session.session.activeOrganizationId
+    if (!activeOrgId) return []
+    return listRules({ type: "Custom", search, organizationId: activeOrgId })
+  }
 
   if (admin) {
     return listRules({

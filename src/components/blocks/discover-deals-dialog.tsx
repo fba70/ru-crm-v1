@@ -103,7 +103,7 @@ export function DiscoverDealsDialog({
       try {
         const [sRes, rRes] = await Promise.all([
           fetch("/api/sources/options"),
-          fetch("/api/rules?type=Custom"),
+          fetch("/api/rules?type=Custom&activeOrgOnly=1"),
         ])
         const sData = await sRes.json()
         const rData = await rRes.json()
@@ -393,8 +393,13 @@ export function DiscoverDealsDialog({
               </SelectContent>
             </Select>
             {rules.length === 0 && !loadingOptions && (
-              <p className="text-xs text-muted-foreground">
-                Create a Custom deal-extraction rule on the Rules page first.
+              <p className="text-xs rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                This organization has no Custom deal-extraction rules. Create
+                one on the{" "}
+                <a href="/rules" className="underline font-medium">
+                  Rules page
+                </a>{" "}
+                first.
               </p>
             )}
           </section>

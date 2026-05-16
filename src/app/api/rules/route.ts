@@ -21,11 +21,12 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get("type") || "Custom"
     const search = searchParams.get("search") || undefined
     const organizationId = searchParams.get("organizationId") || undefined
+    const activeOrgOnly = searchParams.get("activeOrgOnly") === "1"
 
     const rules =
       type === "System"
         ? await getSystemRules(search)
-        : await getCustomRules(search, organizationId)
+        : await getCustomRules(search, organizationId, activeOrgOnly)
 
     return NextResponse.json({ rules })
   } catch (error) {
