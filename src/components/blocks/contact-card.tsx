@@ -8,11 +8,13 @@ import type { ContactRow } from "@/app/api/contacts/route"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
 
 // `initial` is the auto-discovered state — orange accent for review
-// attention. `suspended` stays muted (soft-delete). Mirrors the same
-// palette as the client card.
+// attention. `suspended` stays muted (archived). `deleted` is the soft-
+// delete (excluded from discovery) — red accent + dimmed card. Mirrors the
+// same palette as the client card.
 const STATUS_COLOR: Record<string, string> = {
   initial: "bg-orange-500/15 text-orange-600 dark:text-orange-300",
   suspended: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+  deleted: "bg-red-500/15 text-red-600 dark:text-red-400",
 }
 
 export function ContactCard({
@@ -23,7 +25,11 @@ export function ContactCard({
   onChanged: () => void
 }) {
   return (
-    <Card className="flex flex-col dark:border-gray-600">
+    <Card
+      className={`flex flex-col dark:border-gray-600 ${
+        contact.status === "deleted" ? "opacity-60" : ""
+      }`}
+    >
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <CardTitle className="truncate">{contact.name}</CardTitle>

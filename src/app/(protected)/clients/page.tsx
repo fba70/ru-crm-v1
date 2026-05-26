@@ -44,7 +44,10 @@ const PAGE_SIZE = 6
 const CLIENT_CONTACT_PAGE_SIZE = 3
 const ALL = "__all__"
 
-const CLIENT_STATUSES = ["active", "initial", "suspended"] as const
+// `deleted` is a soft-delete (test/garbage records, excluded from discovery).
+// It's selectable here so operators can view/restore them, but hidden under
+// the default "All statuses" view (see filteredClients / filteredContacts).
+const CLIENT_STATUSES = ["active", "initial", "suspended", "deleted"] as const
 const FUNNEL_PHASES = [
   "awareness",
   "interest",
@@ -197,8 +200,10 @@ export default function ClientsPage() {
     const name = clientNameFilter.trim().toLowerCase()
     const email = clientEmailFilter.trim().toLowerCase()
     return clients.filter((c) => {
+      // "All statuses" shows active / initial / suspended but hides soft-
+      // deleted rows; pick "deleted" explicitly to view/restore them.
       if (clientStatusFilter === ALL) {
-        if (c.status === "suspended") return false
+        if (c.status === "deleted") return false
       } else if (c.status !== clientStatusFilter) {
         return false
       }
@@ -221,7 +226,10 @@ export default function ClientsPage() {
     const name = contactNameFilter.trim().toLowerCase()
     const email = contactEmailFilter.trim().toLowerCase()
     return contacts.filter((c) => {
-      if (contactStatusFilter !== ALL && c.status !== contactStatusFilter) {
+      // Same rule as clients: hide soft-deleted under "All statuses".
+      if (contactStatusFilter === ALL) {
+        if (c.status === "deleted") return false
+      } else if (c.status !== contactStatusFilter) {
         return false
       }
       // Name filter matches the technical name OR the native-language name,

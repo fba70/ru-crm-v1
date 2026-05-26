@@ -44,7 +44,10 @@ const FUNNEL_PHASES: FunnelPhase[] = [
 // scan (see /clients page). Operators flip it to `active` here once they
 // confirm the row is a real CRM client. Manual creation keeps defaulting
 // to `active`.
-const STATUSES: EntityStatus[] = ["active", "suspended", "initial"]
+// `deleted` is a soft-delete: marking a client deleted hides it from the
+// lists by default AND drops it from discovery dedup, so a re-scan can re-
+// create it. Flip back to `active` here to restore.
+const STATUSES: EntityStatus[] = ["active", "suspended", "initial", "deleted"]
 
 type ClientFormData = {
   name: string

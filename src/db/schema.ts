@@ -198,10 +198,15 @@ export type FunnelPhase = (typeof funnelPhase.enumValues)[number]
 // `initial` is reserved for clients auto-created by the company-discovery
 // scan on /clients — flags them for human review before activation. The
 // existing manual "New client" form keeps creating with `active`.
+// `deleted` is a soft-delete for test artifacts / mistakes: hidden from the
+// lists by default AND excluded from discovery dedup/matching, so a fresh
+// re-scan re-creates the entity (mirrors the deal `deleted` status). This is
+// the only status the discovery scan treats as "does not exist".
 export const entityStatus = pgEnum("entity_status", [
   "active",
   "suspended",
   "initial",
+  "deleted",
 ])
 
 export type EntityStatus = (typeof entityStatus.enumValues)[number]

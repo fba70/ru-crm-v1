@@ -2,7 +2,7 @@
 
 import { db } from "@/db/drizzle"
 import { client, contact, sourceItem, type EntityStatus } from "@/db/schema"
-import { and, eq, isNull, or, sql, inArray, gte } from "drizzle-orm"
+import { and, eq, isNull, ne, or, sql, inArray, gte } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { normaliseCompanyName } from "@/lib/normalise-company-name"
 import { isAutomatedEmail } from "@/lib/is-automated-email"
@@ -334,6 +334,10 @@ export async function previewDiscovery(opts?: {
   const existingClientByKey = new Map<string, { id: string; name: string }>()
   const exactExistingClientNames = new Set<string>()
   for (const c of existingClients) {
+    // `deleted` clients are soft-deleted: skipped here so they neither block
+    // re-discovery nor get flagged as a possible duplicate — a fresh re-scan
+    // re-creates them (the test-iterate loop).
+    if (c.status === "deleted") continue
     const key = normaliseCompanyName(c.name)
     if (key && !existingClientByKey.has(key)) {
       existingClientByKey.set(key, { id: c.id, name: c.name })
@@ -343,6 +347,9 @@ export async function previewDiscovery(opts?: {
   }
   const existingContactEmails = new Set(
     existingContacts
+      // `deleted` contacts are soft-deleted: excluded from dedup so a re-scan
+      // re-surfaces their email as a candidate.
+      .filter((c) => c.status !== "deleted")
       .map((c) => (c.email ?? "").trim().toLowerCase())
       .filter((e) => e.length > 0),
   )
@@ -516,6 +523,7 @@ export async function previewDiscovery(opts?: {
     { id: string; name: string; email: string | null; names: Set<string> }[]
   >()
   for (const c of existingContacts) {
+    if (c.status === "deleted") continue
     const email = (c.email ?? "").trim().toLowerCase()
     const domain = email ? extractEmailDomain(email) : ""
     if (!domain) continue
@@ -594,7 +602,7 @@ export async function previewDiscovery(opts?: {
   type LinkClient = { ref: ClientRef; name: string; domain: string }
   const linkClients: LinkClient[] = []
   for (const c of existingClients) {
-    if (c.status === "suspended") continue
+    if (c.status === "suspended" || c.status === "deleted") continue
     const url = (c.webUrl ?? "").trim()
     if (!url) continue
     const domain = extractWebsiteDomain(url)
@@ -616,7 +624,7 @@ export async function previewDiscovery(opts?: {
   const linkContacts: LinkContact[] = []
   for (const c of existingContacts) {
     if (c.clientId) continue
-    if (c.status === "suspended") continue
+    if (c.status === "suspended" || c.status === "deleted") continue
     const email = (c.email ?? "").trim()
     if (!email) continue
     linkContacts.push({ ref: { kind: "existing", id: c.id }, name: c.name, email })
@@ -670,11 +678,15 @@ export async function applyDiscovery(
   const { session, activeOrgId } = await requireOrgContext()
 
   // ── 1. Insert clients ───────────────────────────────────────────────
-  // Re-check existing keys first (parallel-session safety).
+  // Re-check existing keys first (parallel-session safety). `deleted` clients
+  // are excluded — same as the preview-side dedup — so a key that only
+  // collides with a soft-deleted client doesn't block the re-create.
   const existingClients = await db
     .select({ id: client.id, name: client.name })
     .from(client)
-    .where(eq(client.organizationId, activeOrgId))
+    .where(
+      and(eq(client.organizationId, activeOrgId), ne(client.status, "deleted")),
+    )
   const existingClientKeys = new Set(
     existingClients
       .map((c) => normaliseCompanyName(c.name))
@@ -721,10 +733,13 @@ export async function applyDiscovery(
   }
 
   // ── 2. Insert contacts ──────────────────────────────────────────────
+  // `deleted` contacts excluded — see the client recheck above.
   const existingContacts = await db
     .select({ email: contact.email })
     .from(contact)
-    .where(eq(contact.organizationId, activeOrgId))
+    .where(
+      and(eq(contact.organizationId, activeOrgId), ne(contact.status, "deleted")),
+    )
   const existingContactEmails = new Set(
     existingContacts
       .map((c) => (c.email ?? "").trim().toLowerCase())
@@ -815,6 +830,7 @@ export async function applyDiscovery(
         .where(
           and(
             eq(contact.organizationId, activeOrgId),
+            ne(contact.status, "deleted"),
             inArray(contact.id, contactIds),
           ),
         ),
@@ -857,6 +873,7 @@ export async function applyDiscovery(
       .where(
         and(
           eq(contact.organizationId, activeOrgId),
+          ne(contact.status, "deleted"),
           sql`lower(${contact.email}) = ${email}`,
           sql`(${contact.nameNative} IS NULL OR ${contact.nameNative} = '')`,
         ),
@@ -874,6 +891,7 @@ export async function applyDiscovery(
       .where(
         and(
           eq(contact.organizationId, activeOrgId),
+          ne(contact.status, "deleted"),
           sql`lower(${contact.email}) = ${email}`,
           sql`(${contact.phone} IS NULL OR ${contact.phone} = '')`,
         ),

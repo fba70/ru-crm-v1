@@ -10,6 +10,7 @@ import {
   gte,
   ilike,
   lte,
+  ne,
   or,
   sql,
 } from "drizzle-orm"
@@ -108,6 +109,9 @@ export async function getClientDetail(
         and(
           eq(contact.organizationId, organizationId),
           eq(contact.clientId, clientId),
+          // Soft-deleted contacts stay hidden here too — restore them from
+          // the Contacts tab's explicit "deleted" status filter.
+          ne(contact.status, "deleted"),
         ),
       )
       .orderBy(desc(contact.updatedAt)),
@@ -216,9 +220,9 @@ export async function listClientContent(
   const limit = Math.min(filters.limit ?? 5, 100)
   const offset = Math.max(filters.offset ?? 0, 0)
 
-  // Read the client + its full contact roster (active + suspended) so
-  // the term set covers everyone who ever represented the client.
-  // Same tenant-scope check as `getClientDetail`.
+  // Read the client + its contact roster (active + suspended, excluding
+  // soft-deleted) so the term set covers everyone who ever represented the
+  // client. Same tenant-scope check as `getClientDetail`.
   const clientRows = await db
     .select({
       id: client.id,
@@ -246,6 +250,7 @@ export async function listClientContent(
       and(
         eq(contact.organizationId, filters.organizationId),
         eq(contact.clientId, c.id),
+        ne(contact.status, "deleted"),
       ),
     )
 

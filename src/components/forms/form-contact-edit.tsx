@@ -36,7 +36,10 @@ import type { EntityStatus } from "@/db/schema"
 // scan on /clients (Contacts tab). Operators flip it to `active` here
 // once they confirm the row is a real CRM contact. Manual creation keeps
 // defaulting to `active`.
-const STATUSES: EntityStatus[] = ["active", "suspended", "initial"]
+// `deleted` is a soft-delete (hidden from lists by default, excluded from
+// discovery dedup so a re-scan can re-create it). Flip back to `active` to
+// restore.
+const STATUSES: EntityStatus[] = ["active", "suspended", "initial", "deleted"]
 const NO_CLIENT = "__none__"
 
 type ContactFormData = {

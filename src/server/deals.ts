@@ -213,11 +213,12 @@ export async function listDealFunnelStages(): Promise<DealFunnelStageOption[]> {
   }))
 }
 
-// Picker scope: any non-suspended client in the org. We deliberately
-// include `initial` (auto-discovered, not yet reviewed) alongside
-// `active` so operators can attach deals to freshly-discovered clients
-// without having to bounce through the Clients tab to flip the status
-// first. `suspended` is excluded — those are soft-deleted.
+// Picker scope: any non-suspended, non-deleted client in the org. We
+// deliberately include `initial` (auto-discovered, not yet reviewed)
+// alongside `active` so operators can attach deals to freshly-discovered
+// clients without having to bounce through the Clients tab to flip the
+// status first. `suspended` (archived) and `deleted` (soft-deleted) are both
+// excluded.
 export async function listDealClientOptions(): Promise<DealClientOption[]> {
   const { activeOrgId } = await requireOrgContext()
   const rows = await db
@@ -227,6 +228,7 @@ export async function listDealClientOptions(): Promise<DealClientOption[]> {
       and(
         eq(client.organizationId, activeOrgId),
         ne(client.status, "suspended"),
+        ne(client.status, "deleted"),
       ),
     )
     .orderBy(client.name)
@@ -238,10 +240,11 @@ export async function listDealContactOptions(
 ): Promise<DealContactOption[]> {
   const { activeOrgId } = await requireOrgContext()
   // Same scope rule as the client picker — `initial` contacts surface
-  // alongside `active`, `suspended` stays hidden.
+  // alongside `active`; `suspended` and `deleted` stay hidden.
   const conditions = [
     eq(contact.organizationId, activeOrgId),
     ne(contact.status, "suspended"),
+    ne(contact.status, "deleted"),
   ]
   if (clientId) {
     conditions.push(eq(contact.clientId, clientId))

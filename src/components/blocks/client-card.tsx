@@ -18,10 +18,13 @@ const PHASE_COLOR: Record<string, string> = {
 }
 
 // `initial` is the auto-discovered state — give it a distinct accent so
-// it stands out for review. `suspended` stays muted (soft-delete).
+// it stands out for review. `suspended` stays muted (archived). `deleted`
+// is the soft-delete (excluded from discovery) — red accent + the card is
+// dimmed below.
 const STATUS_COLOR: Record<string, string> = {
   initial: "bg-orange-500/15 text-orange-600 dark:text-orange-300",
   suspended: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+  deleted: "bg-red-500/15 text-red-600 dark:text-red-400",
 }
 
 export function ClientCard({
@@ -35,7 +38,11 @@ export function ClientCard({
   const moreCount = Math.max(0, client.contacts.length - preview.length)
 
   return (
-    <Card className="flex flex-col dark:border-gray-600">
+    <Card
+      className={`flex flex-col dark:border-gray-600 ${
+        client.status === "deleted" ? "opacity-60" : ""
+      }`}
+    >
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <CardTitle className="truncate">{client.name}</CardTitle>
