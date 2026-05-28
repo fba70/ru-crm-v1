@@ -258,6 +258,7 @@ export function DiscoverDialog({
             },
             nativeNames: preview.nativeNames,
             phones: preview.phones,
+            positions: preview.positions,
           }),
         })
         const data = await res.json()

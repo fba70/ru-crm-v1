@@ -36,9 +36,10 @@ export type MetadataAnalysis = {
   mentionedPeople: MentionedPerson[]
   // Details recovered for ENVELOPE participants from the body, paired to
   // their email by the parser's LLM: native-language name (signature /
-  // sign-off / letterhead) and phone number. Email-specific — only
-  // `text.ts` populates this today, so it's optional; other parsers omit
-  // the key. Discovery uses it to set `contact.name_native` + `contact.phone`.
+  // sign-off / letterhead), phone number, and job title / position.
+  // Email-specific — only `text.ts` populates this today, so it's optional;
+  // other parsers omit the key. Discovery uses it to set
+  // `contact.name_native` + `contact.phone` + `contact.position`.
   // See filterParticipantDetails.
   participantDetails?: ParticipantDetail[]
 }
@@ -141,11 +142,13 @@ export function filterMentionedPeople(
 // Details recovered for an envelope participant from the body, paired to
 // their email by the LLM. `email` MUST be one of the envelope addresses;
 // `nativeName` is written in its original script (not romanized/translated);
-// `phone` is quoted from the body (signature). Either enrichment may be empty.
+// `phone` is quoted from the body (signature); `position` is the job title /
+// role as written in the body. Any enrichment may be empty.
 export type ParticipantDetail = {
   email: string
   nativeName: string
   phone: string
+  position: string
 }
 
 export const participantDetailSchema = z.object({
@@ -164,6 +167,11 @@ export const participantDetailSchema = z.object({
     .describe(
       "The phone number quoted in the body for this address (signature / contact block), exactly as written. Empty string if no phone is present. Never fabricate.",
     ),
+  position: z
+    .string()
+    .describe(
+      "The person's job title / role / position as written in the body for this address (signature / contact block / sign-off), exactly as quoted — e.g. 'Коммерческий директор', 'Head of Sales', 'CEO', 'Geschäftsführer'. Keep the original language and casing. Empty string if no title is present. Never fabricate or guess.",
+    ),
 })
 
 // Reusable system-prompt clause for envelope-participant detail extraction.
@@ -171,43 +179,54 @@ export const participantDetailSchema = z.object({
 // the writer's real name + phone appear in the body. Appended to text.ts.
 export const PARTICIPANT_DETAILS_PROMPT = `Separately, recover extra details for the envelope participants from the body. The envelope From/To/Cc/Bcc addresses are listed above with their technical display names — those are often English or romanized and set by mail admins, while the person's REAL name (and often a phone number) appears in the body (signature, sign-off like "Mit freundlichen Grüßen, …", contact block, letterhead).
 
-For each envelope address whose details you can confidently determine from the body, emit one entry in participantDetails with {email, nativeName, phone}:
+For each envelope address whose details you can confidently determine from the body, emit one entry in participantDetails with {email, nativeName, phone, position}:
 - \`email\` MUST be one of the envelope addresses listed above (typically the From: sender, who signs the message). Never a body-only address.
 - \`nativeName\` is the name exactly as written in the body, in its ORIGINAL script (German, Chinese, …). Do NOT romanize, translate, or reorder. Empty string if none.
 - \`phone\` is a phone number quoted in the signature/contact block for that address, exactly as written. Empty string if none. Never fabricate.
-- Only emit an entry when you're confident the name and/or phone belongs to that exact address. OMIT an address entirely if neither maps to it.`
+- \`position\` is the person's job title / role as written in the body for that address (e.g. "Коммерческий директор", "Head of Sales", "CEO", "Geschäftsführer"). Keep the original language and casing. Empty string if no title is given. Never fabricate or guess.
+- Only emit an entry when you're confident at least one of nativeName / phone / position belongs to that exact address. OMIT an address entirely if none maps to it.`
 
 // v1 persist filter: keep entries whose email is an actual envelope address
-// (passed in) and that carry at least one usable detail (native name or a
-// plausible phone). Deduped by email (longest native name wins; first
-// plausible phone wins). Mirrors filterMentionedPeople's posture.
+// (passed in) and that carry at least one usable detail (native name, a
+// plausible phone, or a position). Deduped by email (longest native name
+// wins; first non-empty phone wins; longest position wins). Mirrors
+// filterMentionedPeople's posture.
 export function filterParticipantDetails(
   raw: ParticipantDetail[],
   envelopeEmails: Set<string>,
 ): ParticipantDetail[] {
-  const byEmail = new Map<string, { nativeName: string; phone: string }>()
+  const byEmail = new Map<
+    string,
+    { nativeName: string; phone: string; position: string }
+  >()
   for (const p of raw ?? []) {
     if (!p) continue
     const email = (p.email ?? "").trim().toLowerCase()
     if (!email || !envelopeEmails.has(email)) continue
     const nativeName = (p.nativeName ?? "").trim()
     const phone = cleanPhone(p.phone ?? "")
-    if (!nativeName && !phone) continue
+    const position = (p.position ?? "").trim()
+    if (!nativeName && !phone && !position) continue
     const existing = byEmail.get(email)
     if (existing === undefined) {
-      byEmail.set(email, { nativeName, phone })
+      byEmail.set(email, { nativeName, phone, position })
     } else {
-      // Longest native name wins; first non-empty phone wins.
+      // Longest native name wins; first non-empty phone wins; longest
+      // position wins.
       if (nativeName.length > existing.nativeName.length) {
         existing.nativeName = nativeName
       }
       if (!existing.phone && phone) existing.phone = phone
+      if (position.length > existing.position.length) {
+        existing.position = position
+      }
     }
   }
   return Array.from(byEmail.entries()).map(([email, d]) => ({
     email,
     nativeName: d.nativeName,
     phone: d.phone,
+    position: d.position,
   }))
 }
 

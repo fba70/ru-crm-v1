@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       candidates: body.candidates,
       nativeNames: body.nativeNames ?? [],
       phones: body.phones ?? [],
+      positions: body.positions ?? [],
     })
     return NextResponse.json(result)
   } catch (error) {

@@ -84,7 +84,7 @@ const analysisSchema = z.object({
   participantDetails: z
     .array(participantDetailSchema)
     .describe(
-      "Details (native-language name + phone) for the envelope participants (From/To/Cc/Bcc), recovered from the body (signature / contact block). See the system prompt for emission rules.",
+      "Details (native-language name + phone + position / job title) for the envelope participants (From/To/Cc/Bcc), recovered from the body (signature / contact block). See the system prompt for emission rules.",
     ),
   contentMarkdown: z
     .string()

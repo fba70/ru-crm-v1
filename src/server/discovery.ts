@@ -75,6 +75,9 @@ export type NativeNameEntry = { email: string; nativeName: string }
 /** An email→phone pairing collected across the scanned rows. */
 export type PhoneEntry = { email: string; phone: string }
 
+/** An email→position (job title) pairing collected across the scanned rows. */
+export type PositionEntry = { email: string; position: string }
+
 /** Stable reference to either an existing contact row or a new candidate. */
 export type ContactRef =
   | { kind: "existing"; id: string }
@@ -118,6 +121,10 @@ export type DiscoveryPreview = {
    *  including already-contact emails). Applied to fill blank
    *  `contact.phone` on apply — both new and existing. */
   phones: PhoneEntry[]
+  /** Every email→position (job title) pairing seen across the scanned rows
+   *  (deduped, including already-contact emails). Applied to fill blank
+   *  `contact.position` on apply — both new and existing. */
+  positions: PositionEntry[]
 }
 
 export type ApplyDiscoveryInput = {
@@ -140,6 +147,9 @@ export type ApplyDiscoveryInput = {
   /** Phone pairings from the preview — applied to fill blank
    *  `contact.phone` on both new and pre-existing contacts. */
   phones: PhoneEntry[]
+  /** Position pairings from the preview — applied to fill blank
+   *  `contact.position` on both new and pre-existing contacts. */
+  positions: PositionEntry[]
 }
 
 export type ApplyDiscoveryResult = {
@@ -151,6 +161,8 @@ export type ApplyDiscoveryResult = {
   nativeNamesEnriched: number
   /** How many contacts had a blank `phone` filled this run. */
   phonesEnriched: number
+  /** How many contacts had a blank `position` filled this run. */
+  positionsEnriched: number
   createdClients: { id: string; name: string }[]
   createdContacts: { id: string; name: string; email: string }[]
 }
@@ -392,6 +404,12 @@ export async function previewDiscovery(opts?: {
     if (!phoneByEmail.has(email)) phoneByEmail.set(email, phone)
   }
 
+  // email → position (job title), accumulated across rows (longest wins).
+  // Sourced from the email parser's participantDetails (signature / contact
+  // block). Kept for ALL emails so apply can backfill blank `contact.position`
+  // on existing contacts too.
+  const positionByEmail = new Map<string, string>()
+
   for (const row of rows) {
     const meta = (row.metadataJson as Record<string, unknown> | null) ?? {}
 
@@ -463,6 +481,15 @@ export async function previewDiscovery(opts?: {
           }
         }
         considerPhone(email, rec.phone)
+        const position = (
+          typeof rec.position === "string" ? rec.position : ""
+        ).trim()
+        if (position) {
+          const existing = positionByEmail.get(email)
+          if (existing === undefined || position.length > existing.length) {
+            positionByEmail.set(email, position)
+          }
+        }
       }
     }
 
@@ -596,6 +623,12 @@ export async function previewDiscovery(opts?: {
     ([email, phone]) => ({ email, phone }),
   )
 
+  // All email→position pairings seen this run (same posture: includes
+  // already-contact emails so apply can backfill blank positions).
+  const positions: PositionEntry[] = Array.from(positionByEmail.entries()).map(
+    ([email, position]) => ({ email, position }),
+  )
+
   // ── 5. Build link proposals ─────────────────────────────────────────
   // Link side "clients": DB clients with a webUrl + new candidates with an
   // inferred one. Link side "contacts": DB unlinked contacts + new candidates.
@@ -667,6 +700,7 @@ export async function previewDiscovery(opts?: {
     linkProposals,
     nativeNames,
     phones,
+    positions,
   }
 }
 
@@ -764,6 +798,13 @@ export async function applyDiscovery(
     const phone = (p.phone ?? "").trim()
     if (email && phone) phoneMapByEmail.set(email, phone)
   }
+  // email → position (job title) for this apply (lowercased keys).
+  const positionMapByEmail = new Map<string, string>()
+  for (const p of input.positions ?? []) {
+    const email = (p.email ?? "").trim().toLowerCase()
+    const position = (p.position ?? "").trim()
+    if (email && position) positionMapByEmail.set(email, position)
+  }
   const toCreateContacts = input.candidates.contacts.filter(
     (c) =>
       selectedContactEmails.has(c.email) && !existingContactEmails.has(c.email),
@@ -783,7 +824,7 @@ export async function applyDiscovery(
         nameNative: nativeByEmail.get(c.email) ?? null,
         email: c.email,
         phone: phoneMapByEmail.get(c.email) ?? null,
-        position: null,
+        position: positionMapByEmail.get(c.email) ?? null,
         clientId: null,
         status: "initial" as EntityStatus,
         userId: session.user.id,
@@ -900,6 +941,24 @@ export async function applyDiscovery(
     phonesEnriched += updated.length
   }
 
+  // Same fill-blanks-only pass for positions (job titles).
+  let positionsEnriched = 0
+  for (const [email, position] of positionMapByEmail) {
+    const updated = await db
+      .update(contact)
+      .set({ position })
+      .where(
+        and(
+          eq(contact.organizationId, activeOrgId),
+          ne(contact.status, "deleted"),
+          sql`lower(${contact.email}) = ${email}`,
+          sql`(${contact.position} IS NULL OR ${contact.position} = '')`,
+        ),
+      )
+      .returning({ id: contact.id })
+    positionsEnriched += updated.length
+  }
+
   // ── 5. Stamp every scanned row ──────────────────────────────────────
   let scannedRowsStamped = 0
   if (input.scannedRowIds.length > 0) {
@@ -922,6 +981,7 @@ export async function applyDiscovery(
     scannedRowsStamped,
     nativeNamesEnriched,
     phonesEnriched,
+    positionsEnriched,
     createdClients,
     createdContacts,
   }
