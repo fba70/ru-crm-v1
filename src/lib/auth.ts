@@ -208,6 +208,16 @@ export const auth = betterAuth({
       },
     }),
     organization({
+      schema: {
+        organization: {
+          additionalFields: {
+            webUrl: { type: "string", input: true, required: false },
+            address: { type: "string", input: true, required: false },
+            email: { type: "string", input: true, required: false },
+            phone: { type: "string", input: true, required: false },
+          },
+        },
+      },
       async sendInvitationEmail(data) {
         const appUrl =
           process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"

@@ -121,6 +121,7 @@ export default function ClientEditDialog({
     if (open) {
       form.reset({
         name: client?.name ?? "",
+        aliases: (client?.aliases ?? []).join(", "),
         phone: client?.phone ?? "",
         email: client?.email ?? "",
         address: client?.address ?? "",
@@ -134,7 +135,7 @@ export default function ClientEditDialog({
   const onSubmit = (data: ClientFormData) => {
     startTransition(async () => {
       try {
-        const aliases = data.aliases
+        const aliases = (data.aliases ?? "")
           .split(",")
           .map((a) => a.trim())
           .filter(Boolean)

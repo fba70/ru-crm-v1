@@ -10,6 +10,9 @@ import {
   type SourceItemKind,
 } from "@/db/schema"
 import type { MetadataAnalysis } from "@/server/parsers/_shared"
+import { loadOwnOrgIdentity, type OwnOrgIdentity } from "@/server/org-identity"
+import { companyMatchKey } from "@/lib/translit-ru"
+import { extractWebsiteDomain } from "@/lib/email-domain"
 import nylas from "@/lib/nylas"
 import { downloadChatAttachmentBytes } from "@/lib/google-chat"
 import {
@@ -159,6 +162,12 @@ type ParseContext = {
   // `getGchatCredentials` / `getGdriveCredentials`. Null for providers
   // that don't need credentials (dropoff/whatsapp/aichat).
   credentialsRef: string | null
+  // The CRM owner's own identity (domains + company keys), loaded once per
+  // parse. Used to strip the owner's own company out of the extracted
+  // `companies` / `organizations` before they're persisted, so downstream
+  // consumers (discovery, cards, deals, chat search) never see the owner's own
+  // org as if it were a client. No-op when the org profile has no website/email.
+  ownOrg: OwnOrgIdentity
 }
 
 export async function parseSourceItem(itemId: string): Promise<ParseResult> {
@@ -320,7 +329,43 @@ async function loadParseContext(itemId: string): Promise<ParseContext> {
     sourceSystemLabel,
     metadataJson: (row.metadataJson as Record<string, unknown> | null) ?? {},
     credentialsRef: row.credentialsRef,
+    ownOrg: await loadOwnOrgIdentity(row.organizationId),
   }
+}
+
+/**
+ * Strip the CRM owner's own company out of the LLM-extracted `companies` /
+ * `organizations` before persisting. Emails are usually addressed TO the
+ * owner's mailbox, so the parser often lists the owner's own org as a
+ * "company" — which then pollutes client discovery, cards, deals, and chat
+ * search. We drop own-company entries entirely, and for any organisation whose
+ * NAME is external but whose `webUrl` resolved to the owner's own domain (the
+ * parser sometimes attributes the recipient domain to the company the email is
+ * about) we blank just the URL and keep the company. No-op when the org has no
+ * configured identity. Mirrors the discovery-side own-org guard.
+ */
+function filterAnalysisOwnOrg(
+  analysis: MetadataAnalysis,
+  ownOrg: OwnOrgIdentity,
+): MetadataAnalysis {
+  if (!ownOrg.hasIdentity) return analysis
+
+  const companies = (analysis.companies ?? []).filter(
+    (c) => !ownOrg.isOwnCompanyKey(companyMatchKey(c)),
+  )
+
+  const next: MetadataAnalysis = { ...analysis, companies }
+
+  if (Array.isArray(analysis.organizations)) {
+    next.organizations = analysis.organizations
+      .filter((o) => !ownOrg.isOwnCompanyKey(companyMatchKey(o.name ?? "")))
+      .map((o) => {
+        const d = o.webUrl ? extractWebsiteDomain(o.webUrl) : ""
+        return d && ownOrg.isOwnDomain(d) ? { ...o, webUrl: "" } : o
+      })
+  }
+
+  return next
 }
 
 // ── Nylas (email) ─────────────────────────────────────────────────────
@@ -330,7 +375,7 @@ async function parseNylasItem(ctx: ParseContext): Promise<ParseResult> {
   const parsed = await parseEmailMessage(ctx.externalId, creds)
 
   // Parent row → complete with markdown.
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis)
+  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
 
   let inserted = 0
   let skipped = 0
@@ -478,7 +523,7 @@ async function parseGoogleChatItem(ctx: ParseContext): Promise<ParseResult> {
   // sync stores the same in externalId.
   const parsed = await parseChatMessage(ctx.externalId, creds)
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis)
+  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
 
   let inserted = 0
   let skipped = 0
@@ -592,7 +637,7 @@ async function parseWhatsAppItem(ctx: ParseContext): Promise<ParseResult> {
     endTimestamp,
   })
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis)
+  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
 
   return {
     parentStatus: "complete",
@@ -615,7 +660,7 @@ async function parseGoogleDriveItem(ctx: ParseContext): Promise<ParseResult> {
   }
 
   const bodyBlock = parsed.blocks[0]
-  await markParsed(ctx.itemId, bodyBlock.markdown, bodyBlock.analysis)
+  await markParsed(ctx.itemId, bodyBlock.markdown, bodyBlock.analysis, ctx.ownOrg)
 
   let inserted = 0
   for (let i = 1; i < parsed.blocks.length; i++) {
@@ -854,7 +899,9 @@ async function markParsed(
   itemId: string,
   markdown: string,
   analysis: MetadataAnalysis,
+  ownOrg: OwnOrgIdentity,
 ): Promise<void> {
+  const cleaned = filterAnalysisOwnOrg(analysis, ownOrg)
   // Merge the LLM analysis into the existing metadata_json (which holds
   // provider-shape sync fields like subject/snippet/from/to). jsonb `||`
   // is right-biased so analysis keys overwrite any colliding sync keys
@@ -867,7 +914,7 @@ async function markParsed(
       parserModel: PARSER_MODEL,
       parsedMarkdown: markdown,
       parseError: null,
-      metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(analysis)}::jsonb`,
+      metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(cleaned)}::jsonb`,
     })
     .where(eq(sourceItem.id, itemId))
 }
@@ -883,6 +930,7 @@ async function insertParsedChild(args: {
 }): Promise<string> {
   const id = randomUUID()
   const now = new Date()
+  const cleaned = filterAnalysisOwnOrg(args.analysis, args.ctx.ownOrg)
   // Children are synthesized rows — they have no provider sync metadata to
   // preserve, so we write the analysis as the entire metadata_json.
   await db
@@ -904,7 +952,7 @@ async function insertParsedChild(args: {
       parsedAt: now,
       parserModel: PARSER_MODEL,
       parsedMarkdown: args.markdown,
-      metadataJson: args.analysis,
+      metadataJson: cleaned,
     })
     .onConflictDoUpdate({
       target: [sourceItem.sourceId, sourceItem.externalId],
@@ -917,7 +965,7 @@ async function insertParsedChild(args: {
         filename: args.meta.fileName,
         mimeType: args.meta.contentType,
         sizeBytes: args.meta.byteSize || null,
-        metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(args.analysis)}::jsonb`,
+        metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(cleaned)}::jsonb`,
       },
     })
   return id

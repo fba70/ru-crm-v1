@@ -33,6 +33,10 @@ type UpdateOrganizationFormData = {
   name: string
   slug: string
   taxId: string
+  webUrl: string
+  address: string
+  email: string
+  phone: string
   logo: string
 }
 
@@ -65,6 +69,10 @@ export default function UpdateOrganizationDialog({
           return ""
         }
       })(),
+      webUrl: organization.webUrl || "",
+      address: organization.address || "",
+      email: organization.email || "",
+      phone: organization.phone || "",
       logo: organization.logo || "",
     },
   })
@@ -101,6 +109,10 @@ export default function UpdateOrganizationDialog({
           name: data.name,
           slug: data.slug,
           metadata: { taxId: data.taxId },
+          webUrl: data.webUrl,
+          address: data.address,
+          email: data.email,
+          phone: data.phone,
           logo: data.logo,
         },
         organizationId: organization.id,
@@ -186,6 +198,80 @@ export default function UpdateOrganizationDialog({
                   <FormLabel className="text-gray-400">Tax ID</FormLabel>
                   <FormControl>
                     <Input id="taxId" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="webUrl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">Website</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="webUrl"
+                      placeholder="https://example.com"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">Address</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="address"
+                      placeholder="Street, city, country"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">
+                    Contact email
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="hello@example.com"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">
+                    Contact phone
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="+1 555 000 0000"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

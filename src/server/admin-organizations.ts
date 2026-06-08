@@ -10,6 +10,10 @@ export type AdminOrg = {
   name: string
   slug: string
   logo: string | null
+  webUrl: string | null
+  address: string | null
+  email: string | null
+  phone: string | null
   metadata: string | null
   createdAt: string
   memberCount: number
@@ -85,6 +89,10 @@ export async function getAdminOrganizations(
         name: org.name,
         slug: org.slug,
         logo: org.logo,
+        webUrl: org.webUrl,
+        address: org.address,
+        email: org.email,
+        phone: org.phone,
         metadata: org.metadata,
         createdAt: org.createdAt.toISOString(),
         memberCount: memberCount[0]?.count ?? 0,
@@ -99,7 +107,16 @@ export async function getAdminOrganizations(
 
 export async function updateAdminOrganization(
   organizationId: string,
-  data: { name?: string; slug?: string; logo?: string; taxId?: string },
+  data: {
+    name?: string
+    slug?: string
+    logo?: string
+    taxId?: string
+    webUrl?: string
+    address?: string
+    email?: string
+    phone?: string
+  },
 ) {
   await requireAdmin()
 
@@ -107,7 +124,16 @@ export async function updateAdminOrganization(
 
   await db
     .update(organization)
-    .set({ name: data.name, slug: data.slug, logo: data.logo, metadata })
+    .set({
+      name: data.name,
+      slug: data.slug,
+      logo: data.logo,
+      metadata,
+      webUrl: data.webUrl?.trim() || null,
+      address: data.address?.trim() || null,
+      email: data.email?.trim() || null,
+      phone: data.phone?.trim() || null,
+    })
     .where(eq(organization.id, organizationId))
 }
 

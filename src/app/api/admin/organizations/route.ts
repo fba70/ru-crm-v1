@@ -30,7 +30,17 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organizationId, name, slug, logo, taxId } = body
+    const {
+      organizationId,
+      name,
+      slug,
+      logo,
+      taxId,
+      webUrl,
+      address,
+      email,
+      phone,
+    } = body
 
     if (!organizationId) {
       return NextResponse.json(
@@ -39,7 +49,16 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    await updateAdminOrganization(organizationId, { name, slug, logo, taxId })
+    await updateAdminOrganization(organizationId, {
+      name,
+      slug,
+      logo,
+      taxId,
+      webUrl,
+      address,
+      email,
+      phone,
+    })
     return NextResponse.json({ success: true })
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {

@@ -12,6 +12,7 @@ import {
   extractWebsiteDomain,
   isFreemailDomain,
 } from "@/lib/email-domain"
+import { loadOwnOrgIdentity } from "@/server/org-identity"
 import { cleanPhone } from "@/server/parsers/_shared"
 import { randomUUID } from "crypto"
 
@@ -341,6 +342,7 @@ export async function previewDiscovery(opts?: {
   const { activeOrgId } = await requireOrgContext()
   const period = opts?.period ?? "all"
   const cutoff = periodCutoff(period)
+  const ownOrg = await loadOwnOrgIdentity(activeOrgId)
 
   // ── 1. Eligible rows. Any provider — the per-provider gate is gone now
   //       that gchat/gdrive emit canonical participants. ───────────────
@@ -406,11 +408,21 @@ export async function previewDiscovery(opts?: {
     { id: string; name: string; webUrl: string | null }
   >()
   const exactExistingClientNames = new Set<string>()
+  // `deleted` clients are tombstones: discovery must NOT re-create them. Their
+  // match-keys (name + aliases) are collected separately and the matching
+  // company signals are skipped wholesale below (like the owner's own company),
+  // so a deleted client never re-surfaces as a candidate AND never anchors a
+  // contact link. Active / initial / suspended clients feed the normal
+  // dedup-and-possible-duplicate maps.
+  const tombstonedClientKeys = new Set<string>()
   for (const c of existingClients) {
-    // `deleted` clients are soft-deleted: skipped here so they neither block
-    // re-discovery nor get flagged as a possible duplicate — a fresh re-scan
-    // re-creates them (the test-iterate loop).
-    if (c.status === "deleted") continue
+    if (c.status === "deleted") {
+      for (const s of [c.name, ...(c.aliases ?? [])]) {
+        const key = companyMatchKey(s)
+        if (key) tombstonedClientKeys.add(key)
+      }
+      continue
+    }
     const spellings = [c.name, ...(c.aliases ?? [])]
     for (const s of spellings) {
       const key = companyMatchKey(s)
@@ -421,11 +433,16 @@ export async function previewDiscovery(opts?: {
       if (lower) exactExistingClientNames.add(lower)
     }
   }
+  // A key shared by BOTH a deleted and a live client is NOT a tombstone — the
+  // live client still owns it (normal attribution / linking applies). Only keys
+  // whose EVERY client is deleted suppress re-creation.
+  for (const k of existingClientByKey.keys()) tombstonedClientKeys.delete(k)
   const existingContactEmails = new Set(
     existingContacts
-      // `deleted` contacts are soft-deleted: excluded from dedup so a re-scan
-      // re-surfaces their email as a candidate.
-      .filter((c) => c.status !== "deleted")
+      // `deleted` contacts are tombstones too: INCLUDED here so their email is
+      // treated as known and never re-surfaces as a contact candidate (they're
+      // already excluded from link targets below). A deleted contact stays
+      // deleted until the operator restores it — discovery won't bring it back.
       .map((c) => (c.email ?? "").trim().toLowerCase())
       .filter((e) => e.length > 0),
   )
@@ -527,13 +544,19 @@ export async function previewDiscovery(opts?: {
     for (const sig of companySignals) {
       const key = companyMatchKey(sig.spelling)
       if (!key) continue
+      // Skip the CRM owner's OWN company (it's the email recipient, not a
+      // client) AND any soft-`deleted` client (a tombstone the operator removed
+      // on purpose). Excluding them here keeps them out of client candidates,
+      // out of webUrl enrichment, AND out of `rowKeys` so contacts in the thread
+      // are never attributed to the owner's own org or a deleted client.
+      if (ownOrg.isOwnCompanyKey(key) || tombstonedClientKeys.has(key)) continue
       rowKeys.add(key)
       if (!companyKeyToName.has(key)) companyKeyToName.set(key, sig.spelling)
       // Record the row company-key for every alias too (so an alias-only
       // mention in another row still attributes to the same client).
       for (const a of sig.aliases) {
         const ak = companyMatchKey(a)
-        if (ak) {
+        if (ak && !ownOrg.isOwnCompanyKey(ak) && !tombstonedClientKeys.has(ak)) {
           rowKeys.add(ak)
           if (!companyKeyToName.has(ak)) companyKeyToName.set(ak, a)
         }
@@ -578,8 +601,14 @@ export async function previewDiscovery(opts?: {
       // company can attribute contacts to the existing client via linking.
     }
 
-    // Participants
-    const participants = extractParticipants(meta)
+    // Participants. Drop any address on the CRM owner's OWN domain (e.g. the
+    // mailbox the thread is addressed TO) so the owner never becomes a contact,
+    // the owner's domain never feeds webUrl inference (it would otherwise be
+    // the "sole business domain" and get stamped onto the external company),
+    // and the owner's address never anchors a link.
+    const participants = extractParticipants(meta).filter(
+      (p) => !ownOrg.isOwnDomain(extractEmailDomain(p.email)),
+    )
     participantsByRow.set(row.id, participants)
     for (const p of participants) {
       if (existingContactEmails.has(p.email)) continue
@@ -672,9 +701,12 @@ export async function previewDiscovery(opts?: {
 
     let inferredWebUrl: string | null = null
     let webUrlLevel: DiscoveryConfidence | null = null
-    // 1. Parser-attributed website.
+    // 1. Parser-attributed website. Ignore one that resolves to the owner's
+    // own domain (the parser sometimes attributes the recipient domain to the
+    // company the email is about).
     for (const u of b.parserWebUrls) {
-      if (extractWebsiteDomain(u)) {
+      const d = extractWebsiteDomain(u)
+      if (d && !ownOrg.isOwnDomain(d)) {
         inferredWebUrl = u
         webUrlLevel = "high"
         break
@@ -869,7 +901,10 @@ export async function previewDiscovery(opts?: {
     const lc: LinkClient = { ref: { kind: "existing", id: c.id }, name: c.name }
     const url = (c.webUrl ?? "").trim()
     const domain = url ? extractWebsiteDomain(url) : ""
-    if (domain) clientByDomain.push({ client: lc, domain })
+    // Skip a client whose stored website is actually the owner's own domain
+    // (legacy bad data from before this guard) — it must not claim the owner's
+    // domain for contact linking.
+    if (domain && !ownOrg.isOwnDomain(domain)) clientByDomain.push({ client: lc, domain })
     for (const s of [c.name, ...(c.aliases ?? [])]) addClientKey(lc, companyMatchKey(s))
   }
   for (const cand of clientCandidates) {
@@ -946,20 +981,37 @@ export async function previewDiscovery(opts?: {
       }
     }
 
-    // B. Company attribution — only for business-email contacts whose rows
-    // consistently attribute them to exactly one matchable company.
-    if (isFreemail || lc.rows.size === 0) continue
+    // B. Company attribution — the contact's rows consistently attribute them
+    // to exactly one matchable company. `rowCompanyKeys` already excludes the
+    // owner's own company (step C), so the owner's domain/name can't be the
+    // attributed company. Freemail contacts ARE allowed here (just at lower
+    // confidence): a gmail address can't identify a company by its domain, but
+    // if every company-bearing email they appear in points to one client, that
+    // is a real signal the operator can confirm. This is what links an external
+    // gmail sender (writing to the owner's mailbox about one company) to that
+    // company even though both rule A and the old business-only B missed it.
+    if (lc.rows.size === 0) continue
     const keyCounts = new Map<string, number>()
+    // Denominator = rows that actually attribute a matchable company. A thread
+    // row that mentions no (non-own) client company shouldn't count against
+    // consistency — otherwise a single own-org-only email in the thread would
+    // veto an otherwise-clear attribution.
+    let attributingRowCount = 0
     for (const rowId of lc.rows) {
-      for (const k of rowCompanyKeys.get(rowId) ?? []) {
+      const matchableKeys = Array.from(rowCompanyKeys.get(rowId) ?? []).filter(
+        (k) => clientByCompanyKey.has(k),
+      )
+      if (matchableKeys.length === 0) continue
+      attributingRowCount++
+      for (const k of matchableKeys) {
         keyCounts.set(k, (keyCounts.get(k) ?? 0) + 1)
       }
     }
-    // Keys attributed in ALL of the contact's rows (consistent attribution).
+    if (attributingRowCount === 0) continue
+    // Keys attributed in ALL of the contact's attributing rows.
     const consistentKeys = Array.from(keyCounts.entries())
-      .filter(([, n]) => n === lc.rows.size)
+      .filter(([, n]) => n === attributingRowCount)
       .map(([k]) => k)
-      .filter((k) => clientByCompanyKey.has(k))
     if (consistentKeys.length === 0) continue
     // Gather distinct matched clients across the consistent keys.
     const matchedClients = new Map<string, LinkClient>()
@@ -974,6 +1026,10 @@ export async function previewDiscovery(opts?: {
     const picked = arr[0]
     const companyName =
       companyKeyToName.get(consistentKeys[0]) ?? picked.name
+    // Ambiguous (>1 candidate client) or a freemail anchor → low (pre-unchecked,
+    // operator opts in). A single match from a business email → medium.
+    const confidence: DiscoveryConfidence =
+      arr.length > 1 || isFreemail ? "low" : "medium"
     linkProposals.push({
       contact: lc.ref,
       client: picked.ref,
@@ -982,7 +1038,7 @@ export async function previewDiscovery(opts?: {
       clientName: picked.name,
       matchedVia: "company",
       matchedLabel: `company «${companyName}»`,
-      confidence: arr.length > 1 ? "low" : "medium",
+      confidence,
       ambiguous: arr.length > 1,
     })
   }
@@ -1007,29 +1063,38 @@ export async function applyDiscovery(
   input: ApplyDiscoveryInput,
 ): Promise<ApplyDiscoveryResult> {
   const { session, activeOrgId } = await requireOrgContext()
+  const ownOrg = await loadOwnOrgIdentity(activeOrgId)
 
   // ── 1. Insert clients ───────────────────────────────────────────────
   // Re-check existing keys first (parallel-session safety). `deleted` clients
-  // are excluded — same as the preview-side dedup — so a key that only
-  // collides with a soft-deleted client doesn't block the re-create.
+  // are tombstones — their keys block re-creation (mirrors the preview-side
+  // tombstone) but stay OUT of the enrich map (we never write to a deleted row).
   const existingClients = await db
     .select({
       id: client.id,
       name: client.name,
       aliases: client.aliases,
       webUrl: client.webUrl,
+      status: client.status,
     })
     .from(client)
-    .where(
-      and(eq(client.organizationId, activeOrgId), ne(client.status, "deleted")),
-    )
+    .where(eq(client.organizationId, activeOrgId))
   // key → existing client (cross-script, alias-aware). Used both to block
   // accidental dup creation and to backfill aliases / webUrl onto the match.
+  // Active/initial/suspended only — deleted clients feed `tombstonedClientKeys`.
   const existingClientByKey = new Map<
     string,
     { id: string; webUrl: string | null; aliases: string[] }
   >()
+  const tombstonedClientKeys = new Set<string>()
   for (const c of existingClients) {
+    if (c.status === "deleted") {
+      for (const s of [c.name, ...(c.aliases ?? [])]) {
+        const key = companyMatchKey(s)
+        if (key) tombstonedClientKeys.add(key)
+      }
+      continue
+    }
     for (const s of [c.name, ...(c.aliases ?? [])]) {
       const key = companyMatchKey(s)
       if (key && !existingClientByKey.has(key)) {
@@ -1041,11 +1106,22 @@ export async function applyDiscovery(
       }
     }
   }
+  // A key shared by a deleted AND a live client is owned by the live one — not a
+  // tombstone. Only keys whose every client is deleted block re-creation.
+  for (const k of existingClientByKey.keys()) tombstonedClientKeys.delete(k)
   const existingClientKeys = new Set(existingClientByKey.keys())
 
   const selectedClientKeys = new Set(input.selectedClientKeys)
   const toCreateClients = input.candidates.clients.filter((c) => {
     if (!selectedClientKeys.has(c.normalisedKey)) return false
+    // Never create the owner's own company, nor re-create a soft-`deleted`
+    // client (defence in depth — the preview already excludes both, but a
+    // stale / forged payload must not slip them past the tombstone).
+    if (
+      ownOrg.isOwnCompanyKey(c.normalisedKey) ||
+      tombstonedClientKeys.has(c.normalisedKey)
+    )
+      return false
     // Operator-confirmed branch: the candidate was flagged as a possible
     // duplicate of an existing client but explicitly selected → create a
     // separate client even though the normalised key collides (e.g. a
@@ -1143,13 +1219,13 @@ export async function applyDiscovery(
   }
 
   // ── 2. Insert contacts ──────────────────────────────────────────────
-  // `deleted` contacts excluded — see the client recheck above.
+  // ALL statuses incl. `deleted` — a deleted contact is a tombstone, so its
+  // email blocks re-creation (discovery won't bring back a contact the operator
+  // removed). Mirrors the preview-side `existingContactEmails`.
   const existingContacts = await db
     .select({ email: contact.email })
     .from(contact)
-    .where(
-      and(eq(contact.organizationId, activeOrgId), ne(contact.status, "deleted")),
-    )
+    .where(eq(contact.organizationId, activeOrgId))
   const existingContactEmails = new Set(
     existingContacts
       .map((c) => (c.email ?? "").trim().toLowerCase())
