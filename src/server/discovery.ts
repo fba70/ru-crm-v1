@@ -201,10 +201,17 @@ export type ApplyDiscoveryInput = {
 
 export type ApplyDiscoveryResult = {
   clientsCreated: number
+  /** Soft-`deleted` clients that a selected candidate matched and were
+   *  re-activated in place (status → initial, blanks filled) rather than
+   *  inserted as a duplicate. Drives the test-cycle workflow. */
+  clientsRevived: number
   /** Existing clients that gained aliases / a webUrl from a same-company
    *  candidate that wasn't created as a separate client. */
   clientsEnriched: number
   contactsCreated: number
+  /** Soft-`deleted` contacts that a selected candidate matched and were
+   *  re-activated in place rather than inserted as a duplicate. */
+  contactsRevived: number
   linksApplied: number
   scannedRowsStamped: number
   /** How many contacts had a blank `name_native` filled this run. */
@@ -408,21 +415,16 @@ export async function previewDiscovery(opts?: {
     { id: string; name: string; webUrl: string | null }
   >()
   const exactExistingClientNames = new Set<string>()
-  // `deleted` clients are tombstones: discovery must NOT re-create them. Their
-  // match-keys (name + aliases) are collected separately and the matching
-  // company signals are skipped wholesale below (like the owner's own company),
-  // so a deleted client never re-surfaces as a candidate AND never anchors a
-  // contact link. Active / initial / suspended clients feed the normal
-  // dedup-and-possible-duplicate maps.
-  const tombstonedClientKeys = new Set<string>()
+  // `deleted` clients are NOT tombstones: a soft-deleted client is treated as
+  // ABSENT here, so the company resurfaces as a candidate and `applyDiscovery`
+  // REVIVES the soft-deleted row (reusing its id) instead of inserting a
+  // duplicate. This is what makes the rules/parsing/attribution test cycle
+  // work — delete an entity, re-scan, and it comes back through the new logic.
+  // Steady-state production is unaffected: `discovery_scanned_at` already stops
+  // scanned rows from re-surfacing unless they're re-parsed. Only active /
+  // initial / suspended clients feed the dedup-and-possible-duplicate maps.
   for (const c of existingClients) {
-    if (c.status === "deleted") {
-      for (const s of [c.name, ...(c.aliases ?? [])]) {
-        const key = companyMatchKey(s)
-        if (key) tombstonedClientKeys.add(key)
-      }
-      continue
-    }
+    if (c.status === "deleted") continue
     const spellings = [c.name, ...(c.aliases ?? [])]
     for (const s of spellings) {
       const key = companyMatchKey(s)
@@ -433,16 +435,12 @@ export async function previewDiscovery(opts?: {
       if (lower) exactExistingClientNames.add(lower)
     }
   }
-  // A key shared by BOTH a deleted and a live client is NOT a tombstone — the
-  // live client still owns it (normal attribution / linking applies). Only keys
-  // whose EVERY client is deleted suppress re-creation.
-  for (const k of existingClientByKey.keys()) tombstonedClientKeys.delete(k)
   const existingContactEmails = new Set(
     existingContacts
-      // `deleted` contacts are tombstones too: INCLUDED here so their email is
-      // treated as known and never re-surfaces as a contact candidate (they're
-      // already excluded from link targets below). A deleted contact stays
-      // deleted until the operator restores it — discovery won't bring it back.
+      // Live contacts only. `deleted` contacts are NOT tombstones — their email
+      // is treated as absent so the person resurfaces as a candidate and apply
+      // REVIVES the soft-deleted row (mirrors the client side above).
+      .filter((c) => c.status !== "deleted")
       .map((c) => (c.email ?? "").trim().toLowerCase())
       .filter((e) => e.length > 0),
   )
@@ -545,18 +543,18 @@ export async function previewDiscovery(opts?: {
       const key = companyMatchKey(sig.spelling)
       if (!key) continue
       // Skip the CRM owner's OWN company (it's the email recipient, not a
-      // client) AND any soft-`deleted` client (a tombstone the operator removed
-      // on purpose). Excluding them here keeps them out of client candidates,
-      // out of webUrl enrichment, AND out of `rowKeys` so contacts in the thread
-      // are never attributed to the owner's own org or a deleted client.
-      if (ownOrg.isOwnCompanyKey(key) || tombstonedClientKeys.has(key)) continue
+      // client). Excluding it here keeps it out of client candidates, out of
+      // webUrl enrichment, AND out of `rowKeys` so contacts in the thread are
+      // never attributed to the owner's own org. Soft-`deleted` clients are NOT
+      // skipped — they resurface as candidates and are revived on apply.
+      if (ownOrg.isOwnCompanyKey(key)) continue
       rowKeys.add(key)
       if (!companyKeyToName.has(key)) companyKeyToName.set(key, sig.spelling)
       // Record the row company-key for every alias too (so an alias-only
       // mention in another row still attributes to the same client).
       for (const a of sig.aliases) {
         const ak = companyMatchKey(a)
-        if (ak && !ownOrg.isOwnCompanyKey(ak) && !tombstonedClientKeys.has(ak)) {
+        if (ak && !ownOrg.isOwnCompanyKey(ak)) {
           rowKeys.add(ak)
           if (!companyKeyToName.has(ak)) companyKeyToName.set(ak, a)
         }
@@ -1067,8 +1065,10 @@ export async function applyDiscovery(
 
   // ── 1. Insert clients ───────────────────────────────────────────────
   // Re-check existing keys first (parallel-session safety). `deleted` clients
-  // are tombstones — their keys block re-creation (mirrors the preview-side
-  // tombstone) but stay OUT of the enrich map (we never write to a deleted row).
+  // are NOT tombstones — a soft-deleted client whose key matches a selected
+  // candidate is REVIVED (status flipped back, blanks filled) instead of
+  // inserted as a duplicate, reusing its id so deals / cards / contact links
+  // that referenced it stay intact.
   const existingClients = await db
     .select({
       id: client.id,
@@ -1079,64 +1079,91 @@ export async function applyDiscovery(
     })
     .from(client)
     .where(eq(client.organizationId, activeOrgId))
-  // key → existing client (cross-script, alias-aware). Used both to block
+  // key → existing LIVE client (cross-script, alias-aware). Used both to block
   // accidental dup creation and to backfill aliases / webUrl onto the match.
-  // Active/initial/suspended only — deleted clients feed `tombstonedClientKeys`.
   const existingClientByKey = new Map<
     string,
     { id: string; webUrl: string | null; aliases: string[] }
   >()
-  const tombstonedClientKeys = new Set<string>()
+  // key → a soft-deleted client to REVIVE if a selected candidate matches it.
+  const deletedClientByKey = new Map<
+    string,
+    { id: string; webUrl: string | null; aliases: string[] }
+  >()
   for (const c of existingClients) {
-    if (c.status === "deleted") {
-      for (const s of [c.name, ...(c.aliases ?? [])]) {
-        const key = companyMatchKey(s)
-        if (key) tombstonedClientKeys.add(key)
-      }
-      continue
-    }
+    const target = c.status === "deleted" ? deletedClientByKey : existingClientByKey
     for (const s of [c.name, ...(c.aliases ?? [])]) {
       const key = companyMatchKey(s)
-      if (key && !existingClientByKey.has(key)) {
-        existingClientByKey.set(key, {
-          id: c.id,
-          webUrl: c.webUrl,
-          aliases: c.aliases ?? [],
-        })
+      if (key && !target.has(key)) {
+        target.set(key, { id: c.id, webUrl: c.webUrl, aliases: c.aliases ?? [] })
       }
     }
   }
-  // A key shared by a deleted AND a live client is owned by the live one — not a
-  // tombstone. Only keys whose every client is deleted block re-creation.
-  for (const k of existingClientByKey.keys()) tombstonedClientKeys.delete(k)
+  // A key owned by a LIVE client is never a revive target — the live client
+  // wins (normal dedup / enrich applies).
+  for (const k of existingClientByKey.keys()) deletedClientByKey.delete(k)
   const existingClientKeys = new Set(existingClientByKey.keys())
 
   const selectedClientKeys = new Set(input.selectedClientKeys)
   const toCreateClients = input.candidates.clients.filter((c) => {
     if (!selectedClientKeys.has(c.normalisedKey)) return false
-    // Never create the owner's own company, nor re-create a soft-`deleted`
-    // client (defence in depth — the preview already excludes both, but a
-    // stale / forged payload must not slip them past the tombstone).
-    if (
-      ownOrg.isOwnCompanyKey(c.normalisedKey) ||
-      tombstonedClientKeys.has(c.normalisedKey)
-    )
-      return false
+    // Never create the owner's own company (defence in depth — the preview
+    // already excludes it, but a stale / forged payload must not slip it past).
+    if (ownOrg.isOwnCompanyKey(c.normalisedKey)) return false
     // Operator-confirmed branch: the candidate was flagged as a possible
     // duplicate of an existing client but explicitly selected → create a
     // separate client even though the normalised key collides (e.g. a
     // different country branch). Otherwise block on key collision to avoid
-    // accidental dups / parallel-session races.
+    // accidental dups / parallel-session races. Keys matching a soft-deleted
+    // client fall through here and are REVIVED (not inserted) in the split below.
     if (c.possibleDuplicate) return true
     return !existingClientKeys.has(c.normalisedKey)
   })
 
   const createdClients: { id: string; name: string }[] = []
-  // normalisedKey → new client id (for same-run link resolution).
+  const revivedClients: { id: string; name: string }[] = []
+  // normalisedKey → client id (new OR revived) for same-run link resolution.
   const newClientKeyToId = new Map<string, string>()
-  if (toCreateClients.length > 0) {
+
+  // Split selected candidates: those whose key matches a soft-deleted client
+  // are REVIVED (reuse the row); the rest are inserted fresh. A `possibleDuplicate`
+  // candidate matched a LIVE client and was explicitly branched → always insert.
+  const reviveClientCands = toCreateClients.filter(
+    (c) => !c.possibleDuplicate && deletedClientByKey.has(c.normalisedKey),
+  )
+  const insertClientCands = toCreateClients.filter(
+    (c) => c.possibleDuplicate || !deletedClientByKey.has(c.normalisedKey),
+  )
+
+  // Revive soft-deleted clients — one UPDATE each: restore status, refresh the
+  // name, fill a blank webUrl, union aliases. Keeps the original id.
+  for (const c of reviveClientCands) {
+    const target = deletedClientByKey.get(c.normalisedKey)!
+    const mergedAliases = Array.from(
+      new Set(
+        [...(target.aliases ?? []), ...c.aliases]
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    )
+    await db
+      .update(client)
+      .set({
+        name: c.displayName,
+        status: "initial",
+        // Fill-blanks: keep the row's existing website if it had one.
+        webUrl: target.webUrl || c.inferredWebUrl || null,
+        aliases: mergedAliases.length > 0 ? mergedAliases : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(client.id, target.id))
+    revivedClients.push({ id: target.id, name: c.displayName })
+    newClientKeyToId.set(c.normalisedKey, target.id)
+  }
+
+  if (insertClientCands.length > 0) {
     const now = new Date()
-    const rows = toCreateClients.map((c) => ({
+    const rows = insertClientCands.map((c) => ({
       id: randomUUID(),
       name: c.displayName,
       phone: null,
@@ -1156,7 +1183,7 @@ export async function applyDiscovery(
     await db.insert(client).values(rows)
     for (const r of rows) {
       createdClients.push({ id: r.id, name: r.name })
-      const cand = toCreateClients.find((c) => c.displayName === r.name)
+      const cand = insertClientCands.find((c) => c.displayName === r.name)
       if (cand) newClientKeyToId.set(cand.normalisedKey, r.id)
     }
   }
@@ -1219,18 +1246,28 @@ export async function applyDiscovery(
   }
 
   // ── 2. Insert contacts ──────────────────────────────────────────────
-  // ALL statuses incl. `deleted` — a deleted contact is a tombstone, so its
-  // email blocks re-creation (discovery won't bring back a contact the operator
-  // removed). Mirrors the preview-side `existingContactEmails`.
+  // Live-contact emails block creation. `deleted` contacts are NOT tombstones —
+  // a soft-deleted contact whose email matches a selected candidate is REVIVED
+  // (status flipped back, blanks filled, stale clientId cleared) instead of
+  // inserted as a duplicate. Mirrors the preview-side `existingContactEmails`.
   const existingContacts = await db
-    .select({ email: contact.email })
+    .select({ id: contact.id, email: contact.email, status: contact.status })
     .from(contact)
     .where(eq(contact.organizationId, activeOrgId))
-  const existingContactEmails = new Set(
-    existingContacts
-      .map((c) => (c.email ?? "").trim().toLowerCase())
-      .filter((e) => e.length > 0),
-  )
+  const existingContactEmails = new Set<string>()
+  // email → a soft-deleted contact id to REVIVE if a candidate matches it.
+  const deletedContactByEmail = new Map<string, string>()
+  for (const c of existingContacts) {
+    const email = (c.email ?? "").trim().toLowerCase()
+    if (!email) continue
+    if (c.status === "deleted") {
+      if (!deletedContactByEmail.has(email)) deletedContactByEmail.set(email, c.id)
+    } else {
+      existingContactEmails.add(email)
+    }
+  }
+  // An email owned by a LIVE contact is never a revive target.
+  for (const e of existingContactEmails) deletedContactByEmail.delete(e)
 
   const selectedContactEmails = new Set(
     input.selectedContactEmails.map((e) => e.trim().toLowerCase()).filter(Boolean),
@@ -1261,13 +1298,47 @@ export async function applyDiscovery(
     (c) =>
       selectedContactEmails.has(c.email) && !existingContactEmails.has(c.email),
   )
+  // Split: candidates whose email matches a soft-deleted contact are REVIVED
+  // (reuse the row); the rest are inserted fresh.
+  const reviveContactCands = toCreateContacts.filter((c) =>
+    deletedContactByEmail.has(c.email),
+  )
+  const insertContactCands = toCreateContacts.filter(
+    (c) => !deletedContactByEmail.has(c.email),
+  )
 
   const createdContacts: { id: string; name: string; email: string }[] = []
-  // email → new contact id (for same-run link resolution).
+  const revivedContacts: { id: string; name: string; email: string }[] = []
+  // email → contact id (new OR revived) for same-run link resolution.
   const newContactEmailToId = new Map<string, string>()
-  if (toCreateContacts.length > 0) {
+
+  // Revive soft-deleted contacts — restore status, refresh the name, and clear
+  // the stale clientId so the link step re-establishes attribution. Native
+  // name / phone / position are left to the fill-blanks backfill passes below
+  // (which now match the revived `initial` row), so any operator-entered values
+  // on the old row are preserved. Keeps the original id.
+  for (const c of reviveContactCands) {
+    const id = deletedContactByEmail.get(c.email)!
+    const overridden = (overrides[c.email] ?? "").trim()
+    const newName = overridden || c.displayName.trim()
+    await db
+      .update(contact)
+      .set({
+        // Only overwrite the name when we have a usable one — otherwise keep
+        // whatever the soft-deleted row carried (name is NOT NULL).
+        ...(newName ? { name: newName } : {}),
+        clientId: null,
+        status: "initial",
+        updatedAt: new Date(),
+      })
+      .where(eq(contact.id, id))
+    revivedContacts.push({ id, name: newName || c.email, email: c.email })
+    newContactEmailToId.set(c.email, id)
+  }
+
+  if (insertContactCands.length > 0) {
     const now = new Date()
-    const rows = toCreateContacts.map((c) => {
+    const rows = insertContactCands.map((c) => {
       const overridden = (overrides[c.email] ?? "").trim()
       const fallback = c.displayName.trim() || "(unknown)"
       return {
@@ -1428,8 +1499,10 @@ export async function applyDiscovery(
 
   return {
     clientsCreated: createdClients.length,
+    clientsRevived: revivedClients.length,
     clientsEnriched,
     contactsCreated: createdContacts.length,
+    contactsRevived: revivedContacts.length,
     linksApplied,
     scannedRowsStamped,
     nativeNamesEnriched,

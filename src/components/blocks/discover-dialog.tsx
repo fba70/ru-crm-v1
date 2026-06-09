@@ -266,10 +266,12 @@ export function DiscoverDialog({
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || "Failed to apply")
         const result = data as ApplyDiscoveryResult
+        const revived = result.clientsRevived + result.contactsRevived
         toast.success(
           `${result.clientsCreated} client${result.clientsCreated === 1 ? "" : "s"} · ` +
             `${result.contactsCreated} contact${result.contactsCreated === 1 ? "" : "s"} · ` +
             `${result.linksApplied} link${result.linksApplied === 1 ? "" : "s"}` +
+            (revived ? ` · ${revived} revived` : "") +
             (result.clientsEnriched ? ` · ${result.clientsEnriched} enriched` : "") +
             ` · ${result.scannedRowsStamped} reviewed`,
         )
