@@ -32,7 +32,6 @@ function metadataEntries(
     .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
     .map(([k, v]) => ({ label: humanizeKey(k), value: String(v) }))
 }
-
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-3 py-1.5 border-b border-muted/60 last:border-0">
@@ -61,7 +60,11 @@ function Group({
 
 function formatPrice(price: number | null): string {
   if (price === null) return "—"
+  // RUB currency; drop the fractional part for whole-ruble prices, keep
+  // up to 2 digits when the price actually has kopecks (e.g. 9,99 ₽).
   return price.toLocaleString("ru-RU", {
+    style: "currency",
+    currency: "RUB",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })
@@ -145,23 +148,26 @@ export function ProductDetailDialog({
           </div>
         ) : product ? (
           <div className="space-y-5">
-            {/* Image + main attributes (spreadsheet cols C-H) */}
-            <div className="flex gap-4">
-              <div className="shrink-0">
+            {/* Image + main attributes (spreadsheet cols C-H). The flex row
+                stretches both columns to equal height; products are bottles
+                (portrait), so the image box is a tall, narrow column that
+                matches the Main box height with the image contained inside. */}
+            <div className="flex gap-4 items-stretch">
+              <div className="shrink-0 w-36 relative">
                 {product.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={product.imageUrl}
                     alt={product.name}
-                    className="h-32 w-32 rounded object-contain bg-muted"
+                    className="absolute inset-0 h-full w-full object-contain bg-muted"
                   />
                 ) : (
-                  <div className="h-32 w-32 rounded bg-muted flex items-center justify-center">
+                  <div className="absolute inset-0 h-full w-full bg-muted flex items-center justify-center">
                     <ImageOff className="h-6 w-6 text-muted-foreground" />
                   </div>
                 )}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 space-y-5">
                 <Group title="Main">
                   <Field
                     label="Category"
@@ -194,17 +200,17 @@ export function ProductDetailDialog({
                     value={<Badge variant="secondary">{product.status}</Badge>}
                   />
                 </Group>
+
+                {/* Accounting IDs (cols A-B) */}
+                {accounting.length > 0 && (
+                  <Group title="Accounting">
+                    {accounting.map((e) => (
+                      <Field key={e.label} label={e.label} value={e.value} />
+                    ))}
+                  </Group>
+                )}
               </div>
             </div>
-
-            {/* Accounting IDs (cols A-B) */}
-            {accounting.length > 0 && (
-              <Group title="Accounting">
-                {accounting.map((e) => (
-                  <Field key={e.label} label={e.label} value={e.value} />
-                ))}
-              </Group>
-            )}
 
             {/* Additional attributes (cols I-Z + price_range) */}
             {additional.length > 0 && (
@@ -229,7 +235,7 @@ export function ProductDetailDialog({
                         {loc.label}
                       </span>
                       <span className="text-sm tabular-nums shrink-0">
-                        {loc.count ?? "—"}
+                        {loc.count ?? 0}
                       </span>
                     </div>
                   ))}

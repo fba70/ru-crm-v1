@@ -41,11 +41,14 @@ const DEFAULT_PAGE_SIZE = 10
 // can't take an empty-string value).
 const ALL_CATEGORIES = "__all__"
 
-// Format a numeric price with thin-space grouping (matches the catalog's
-// RU locale). Null prices render as a dash.
+// Format a price as RUB currency in the RU locale (thin-space grouping +
+// ₽ symbol). Whole-ruble prices drop the fractional part; prices with
+// kopecks keep up to 2 digits. Null prices render as a dash.
 function formatPrice(price: number | null): string {
   if (price === null) return "—"
   return price.toLocaleString("ru-RU", {
+    style: "currency",
+    currency: "RUB",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })
