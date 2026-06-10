@@ -9,6 +9,7 @@ import {
   Database,
   Users,
   ListChecks,
+  Package,
 } from "lucide-react"
 import {
   Sidebar,
@@ -47,6 +48,11 @@ export const items = [
     title: "Clients",
     url: "/clients",
     icon: Users,
+  },
+  {
+    title: "Products",
+    url: "/products",
+    icon: Package,
   },
   {
     title: "Tasks",

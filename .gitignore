@@ -65,6 +65,7 @@ stale-ui-updates.md
 
 # scripts
 /scripts
+/data_migration
 
 # data imports
 /WhatsAppChatHistory

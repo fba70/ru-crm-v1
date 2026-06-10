@@ -596,6 +596,64 @@ export const cardUser = pgTable(
   ],
 )
 
+// ── Product catalog ──────────────────────────────────────────────────
+//
+// Org-scoped catalog of sellable items (wine/spirits catalog for the
+// first tenant). The source-of-truth spreadsheet has 42 columns; we map
+// them into three buckets:
+//   • Main attributes (spreadsheet cols C-H, minus price_range) → real
+//     columns here, since the table UI + future filters key on them.
+//   • Accounting IDs (cols A-B: code / EAN13 barcode) → `accountingMetadata`
+//     JSON, kept opaque so the accounting-system field set can evolve
+//     without a migration.
+//   • Everything else (cols I-Z: description, color, country, region,
+//     taste, … + the dropped `price_range`) → `additionalMetadata` JSON.
+//   • Stock counts (cols AA-AP): the org-wide total lands on `totalStock`
+//     (a real int so the table can sort/show it cheaply); the per-location
+//     breakdown (one column per warehouse/store) lands in `stockMetadata`.
+export const product = pgTable(
+  "product",
+  {
+    id: text("id").primaryKey(),
+    // Main attributes (spreadsheet cols C, D, E, F, H).
+    name: text("name").notNull(),
+    category: text("category"),
+    webPageUrl: text("web_page_url"),
+    // Numeric price kept as numeric(14,2) — drizzle returns it as a
+    // string; the API/UI parse to number for display + sorting.
+    price: numeric("price", { precision: 14, scale: 2 }),
+    imageUrl: text("image_url"),
+    // Org-wide stock total (spreadsheet col AA). Denormalised from
+    // `stockMetadata` so the table can sort/filter on it without
+    // unpacking the JSON.
+    totalStock: integer("total_stock"),
+    // Accounting-system identifiers (cols A-B): { code, barCode }.
+    accountingMetadata: jsonb("accounting_metadata").notNull().default({}),
+    // Catalog attributes beyond the main columns (cols I-Z + price_range).
+    additionalMetadata: jsonb("additional_metadata").notNull().default({}),
+    // Per-location stock breakdown (cols AB-AP): array of
+    // { key, label, count } so each warehouse/store keeps its display name.
+    stockMetadata: jsonb("stock_metadata").notNull().default({}),
+    status: entityStatus("status").notNull().default("active"),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("product_organizationId_idx").on(table.organizationId),
+    index("product_status_idx").on(table.status),
+    index("product_name_idx").on(table.name),
+    index("product_category_idx").on(table.category),
+  ],
+)
+
+export type Product = typeof product.$inferSelect
+
 export const sourceType = pgEnum("source_type", ["external", "internal"])
 
 export type SourceType = (typeof sourceType.enumValues)[number]
@@ -1032,6 +1090,13 @@ export const memberRelations = relations(member, ({ one }) => ({
   user: one(user, {
     fields: [member.userId],
     references: [user.id],
+  }),
+}))
+
+export const productRelations = relations(product, ({ one }) => ({
+  organization: one(organization, {
+    fields: [product.organizationId],
+    references: [organization.id],
   }),
 }))
 
