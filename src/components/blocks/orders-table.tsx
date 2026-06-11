@@ -26,55 +26,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader, X } from "lucide-react"
+import { Loader, Pencil, X } from "lucide-react"
 import type { OrderRow, ListOrdersResult } from "@/app/api/orders/route"
-import type { OrderStatus } from "@/db/schema"
+import {
+  ORDER_STATUS_LABEL,
+  ORDER_STATUS_COLOR,
+  ORDER_STATUSES,
+  formatOrderAmount,
+  formatOrderDate,
+} from "@/lib/orders-format"
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 const DEFAULT_PAGE_SIZE = 10
 
-// Human labels + badge colors for each order status.
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  draft: "Draft",
-  awaiting_client: "Awaiting client",
-  confirmed: "Confirmed",
-  finalized: "Finalized",
-  cancelled: "Cancelled",
-}
-
-const STATUS_COLOR: Record<OrderStatus, string> = {
-  draft: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  awaiting_client: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-  confirmed: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
-  finalized: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  cancelled: "bg-red-500/15 text-red-600 dark:text-red-400",
-}
-
-const ORDER_STATUSES = Object.keys(STATUS_LABEL) as OrderStatus[]
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("ru-RU", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
-
-function formatAmount(amount: number, currency: string): string {
-  try {
-    return amount.toLocaleString("ru-RU", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    })
-  } catch {
-    // Fall back gracefully if the stored currency isn't a valid ISO code.
-    return `${amount.toLocaleString("ru-RU")} ${currency}`
-  }
-}
-
-export function OrdersTable() {
+export function OrdersTable({
+  // Opens the order builder for an existing order (preview / edit).
+  onEditOrder,
+  // Bumped by the parent after a save so the list re-fetches.
+  refreshKey = 0,
+}: {
+  onEditOrder?: (orderId: string) => void
+  refreshKey?: number
+}) {
   const [rows, setRows] = useState<OrderRow[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -128,8 +101,10 @@ export function OrdersTable() {
   }, [page, pageSize, q, status])
 
   useEffect(() => {
+    // `load` already depends on the filters/page; `refreshKey` is the
+    // parent-driven re-fetch trigger (bumped after a save).
     load()
-  }, [load])
+  }, [load, refreshKey])
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
@@ -159,7 +134,7 @@ export function OrdersTable() {
             <SelectItem value="__all__">All statuses</SelectItem>
             {ORDER_STATUSES.map((s) => (
               <SelectItem key={s} value={s}>
-                {STATUS_LABEL[s]}
+                {ORDER_STATUS_LABEL[s]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -189,19 +164,20 @@ export function OrdersTable() {
               <TableHead>Client</TableHead>
               <TableHead className="text-right w-36">Total</TableHead>
               <TableHead className="w-40">Status</TableHead>
+              <TableHead className="w-20 text-center">Open</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-40 text-center">
+                <TableCell colSpan={5} className="h-40 text-center">
                   <Loader className="animate-spin h-6 w-6 mx-auto" />
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="h-40 text-center text-muted-foreground"
                 >
                   {filtersActive
@@ -211,23 +187,43 @@ export function OrdersTable() {
               </TableRow>
             ) : (
               rows.map((o) => (
-                <TableRow key={o.id}>
+                <TableRow
+                  key={o.id}
+                  className={onEditOrder ? "cursor-pointer" : undefined}
+                  onClick={
+                    onEditOrder ? () => onEditOrder(o.id) : undefined
+                  }
+                >
                   <TableCell className="tabular-nums">
-                    {formatDate(o.orderDate)}
+                    {formatOrderDate(o.orderDate)}
                   </TableCell>
                   <TableCell className="font-medium">
                     {o.clientName ?? "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatAmount(o.totalAmount, o.currency)}
+                    {formatOrderAmount(o.totalAmount, o.currency)}
                   </TableCell>
                   <TableCell>
                     <Badge
                       variant="secondary"
-                      className={STATUS_COLOR[o.status] ?? ""}
+                      className={ORDER_STATUS_COLOR[o.status] ?? ""}
                     >
-                      {STATUS_LABEL[o.status] ?? o.status}
+                      {ORDER_STATUS_LABEL[o.status] ?? o.status}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Open order"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEditOrder?.(o.id)
+                      }}
+                      disabled={!onEditOrder}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))

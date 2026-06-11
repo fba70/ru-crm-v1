@@ -34,7 +34,12 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ProductDetailDialog } from "@/components/blocks/product-detail-dialog"
 import { OrdersTable } from "@/components/blocks/orders-table"
-import { ExternalLink, Eye, ImageOff, Loader, X } from "lucide-react"
+import {
+  useOrderBuilder,
+  OrderBuilderPanel,
+  AddToOrderButton,
+} from "@/components/blocks/order-builder"
+import { ExternalLink, Eye, ImageOff, Loader, Plus, X } from "lucide-react"
 import type {
   ProductRow,
   ListProductsResult,
@@ -243,6 +248,31 @@ export default function ProductsPage() {
     filters.rating !== ALL ||
     filters.inStock !== ALL
 
+  // Controlled tab + order-builder session. The builder lives at the page
+  // level so it survives tab switches and the catalog table can feed
+  // products into it. Saving bumps the orders list + jumps to the Orders tab.
+  const [tab, setTab] = useState("catalog")
+  const [ordersRefresh, setOrdersRefresh] = useState(0)
+  const builder = useOrderBuilder({
+    onSaved: () => {
+      setOrdersRefresh((k) => k + 1)
+      setTab("orders")
+    },
+  })
+  // The catalog's "Add to order" column only appears while building an
+  // editable order.
+  const showAddCol = builder.isActive && !builder.readOnly
+  const catalogColSpan = showAddCol ? 8 : 7
+
+  const startNewOrder = () => {
+    builder.openNew()
+    setTab("catalog")
+  }
+  const editOrder = (id: string) => {
+    builder.openEdit(id)
+    setTab("catalog")
+  }
+
   // Guards against an out-of-order response overwriting a newer one.
   const reqIdRef = useRef(0)
 
@@ -295,13 +325,22 @@ export default function ProductsPage() {
       <h1 className="text-2xl font-medium mt-2">PRODUCTS</h1>
 
       <div className="w-full max-w-7xl px-4">
-        <Tabs defaultValue="catalog" className="w-full">
-          <TabsList>
-            <TabsTrigger value="catalog">Product Catalog</TabsTrigger>
-            <TabsTrigger value="orders">Orders</TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={setTab} className="w-full">
+          {/* New order is available from both tabs; it opens the builder and
+              switches to the Catalog tab (where the product picker lives). */}
+          <div className="flex items-center justify-between gap-2">
+            <TabsList>
+              <TabsTrigger value="catalog">Product Catalog</TabsTrigger>
+              <TabsTrigger value="orders">Orders</TabsTrigger>
+            </TabsList>
+            <Button size="sm" onClick={startNewOrder} disabled={builder.isActive}>
+              <Plus className="h-4 w-4 mr-1" />
+              New order
+            </Button>
+          </div>
 
-          <TabsContent value="catalog" className="mt-4">
+          <TabsContent value="catalog" className="mt-4 space-y-4">
+            <OrderBuilderPanel builder={builder} />
             <Card>
               <CardHeader>
                 <CardTitle>Product Catalog</CardTitle>
@@ -462,19 +501,27 @@ export default function ProductsPage() {
                         <TableHead className="text-right w-24">Stock</TableHead>
                         <TableHead className="w-20 text-center">Page</TableHead>
                         <TableHead className="w-20 text-center">Info</TableHead>
+                        {showAddCol && (
+                          <TableHead className="w-24 text-center">
+                            Order
+                          </TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {loading ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="h-40 text-center">
+                          <TableCell
+                            colSpan={catalogColSpan}
+                            className="h-40 text-center"
+                          >
                             <Loader className="animate-spin h-6 w-6 mx-auto" />
                           </TableCell>
                         </TableRow>
                       ) : rows.length === 0 ? (
                         <TableRow>
                           <TableCell
-                            colSpan={7}
+                            colSpan={catalogColSpan}
                             className="h-40 text-center text-muted-foreground"
                           >
                             {filtersActive
@@ -560,6 +607,18 @@ export default function ProductsPage() {
                                 }
                               />
                             </TableCell>
+                            {showAddCol && (
+                              <TableCell className="text-center">
+                                <AddToOrderButton
+                                  onAdd={(qty) =>
+                                    builder.addProduct(
+                                      { id: p.id, name: p.name, price: p.price },
+                                      qty,
+                                    )
+                                  }
+                                />
+                              </TableCell>
+                            )}
                           </TableRow>
                         ))
                       )}
@@ -642,7 +701,10 @@ export default function ProductsPage() {
                 <CardTitle>Orders</CardTitle>
               </CardHeader>
               <CardContent>
-                <OrdersTable />
+                <OrdersTable
+                  onEditOrder={editOrder}
+                  refreshKey={ordersRefresh}
+                />
               </CardContent>
             </Card>
           </TabsContent>
