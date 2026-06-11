@@ -14,6 +14,7 @@ import {
   primaryKey,
   AnyPgColumn,
 } from "drizzle-orm/pg-core"
+import type { ClientCustomFields } from "@/lib/client-custom-fields"
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -215,6 +216,21 @@ export const entityStatus = pgEnum("entity_status", [
 
 export type EntityStatus = (typeof entityStatus.enumValues)[number]
 
+// Order lifecycle. `draft` (internal) → `awaiting_client` (handed to the
+// client for review/confirm via a guest link) → `confirmed` (back to
+// internal) → `finalized` (pushed to accounting). `cancelled` is terminal.
+// See `refs/spec-guest-order-link.md` for the ownership model these statuses
+// drive (the guest-link layer itself is a later step).
+export const orderStatus = pgEnum("order_status", [
+  "draft",
+  "awaiting_client",
+  "confirmed",
+  "finalized",
+  "cancelled",
+])
+
+export type OrderStatus = (typeof orderStatus.enumValues)[number]
+
 // Deal lifecycle axis — orthogonal to the funnel stage (which is a sales
 // outcome). `active` is the default. `cancelled` is a real lost/withdrawn
 // deal kept for win-loss analytics (surfaced via "Include cancelled").
@@ -235,10 +251,22 @@ export const client = pgTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    // Name of the physical person behind the client when it isn't an
+    // organisation (optional — orgs leave it null).
+    namePhys: text("name_phys"),
+    // Free-form note for the sales person to recognise this client.
+    comment: text("comment"),
     phone: text("phone"),
     email: text("email"),
     address: text("address"),
     webUrl: text("web_url"),
+    // Extensible per-tenant custom fields (jsonb). Today only `type` is used,
+    // and only for one org; every other org keeps an empty object. See
+    // `src/lib/client-custom-fields.ts`.
+    customFields: jsonb("custom_fields")
+      .$type<ClientCustomFields>()
+      .notNull()
+      .default({}),
     // Alternate spellings / synonyms for this company seen across sources
     // (cross-script + with/without legal form, e.g. ["AST", "АСТ", "AST
     // INTER"]). Used by discovery to dedup a known client against new
@@ -653,6 +681,93 @@ export const product = pgTable(
 )
 
 export type Product = typeof product.$inferSelect
+
+// ── Orders ───────────────────────────────────────────────────────────
+//
+// Org-scoped sales order. Created by an org user, assigned to one client.
+// Line items live in `order_item` (one row per product line). `totalAmount`
+// is denormalised from the sum of line `positionPrice`s at write time so the
+// orders table can sort/show it without joining + aggregating the items.
+export const order = pgTable(
+  "order",
+  {
+    id: text("id").primaryKey(),
+    // Business date of the order (distinct from `createdAt`). Defaults to now
+    // on create; editable later.
+    orderDate: timestamp("order_date").defaultNow().notNull(),
+    description: text("description"),
+    status: orderStatus("status").notNull().default("draft"),
+    // Order total = Σ line positionPrice. Kept as numeric(14,2) (drizzle
+    // returns it as a string; the API/UI parse to number). Recomputed from
+    // the line items whenever they change.
+    totalAmount: numeric("total_amount", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    currency: text("currency").notNull().default("RUB"),
+    // `restrict` (not cascade / set null): clients are never hard-deleted in
+    // this app (soft-delete via status), so an accidental hard-delete should
+    // fail loudly rather than orphan / wipe orders.
+    clientId: text("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "restrict" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("order_organizationId_idx").on(table.organizationId),
+    index("order_userId_idx").on(table.userId),
+    index("order_clientId_idx").on(table.clientId),
+    index("order_status_idx").on(table.status),
+    index("order_orderDate_idx").on(table.orderDate),
+  ],
+)
+
+export type Order = typeof order.$inferSelect
+
+// One product line on an order. `unitPrice` is snapshotted at add-time (the
+// catalog price can drift); `positionPrice = unitPrice × quantity` is stored
+// so reads never have to recompute. `product` is `restrict` (catalog rows are
+// soft-deleted, never hard-deleted); `order` cascades so deleting an order
+// clears its lines.
+export const orderItem = pgTable(
+  "order_item",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => order.id, { onDelete: "cascade" }),
+    productId: text("product_id")
+      .notNull()
+      .references(() => product.id, { onDelete: "restrict" }),
+    quantity: integer("quantity").notNull().default(1),
+    unitPrice: numeric("unit_price", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    positionPrice: numeric("position_price", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("order_item_orderId_idx").on(table.orderId),
+    index("order_item_productId_idx").on(table.productId),
+  ],
+)
+
+export type OrderItem = typeof orderItem.$inferSelect
 
 export const sourceType = pgEnum("source_type", ["external", "internal"])
 
@@ -1097,6 +1212,33 @@ export const productRelations = relations(product, ({ one }) => ({
   organization: one(organization, {
     fields: [product.organizationId],
     references: [organization.id],
+  }),
+}))
+
+export const orderRelations = relations(order, ({ one, many }) => ({
+  client: one(client, {
+    fields: [order.clientId],
+    references: [client.id],
+  }),
+  user: one(user, {
+    fields: [order.userId],
+    references: [user.id],
+  }),
+  organization: one(organization, {
+    fields: [order.organizationId],
+    references: [organization.id],
+  }),
+  items: many(orderItem),
+}))
+
+export const orderItemRelations = relations(orderItem, ({ one }) => ({
+  order: one(order, {
+    fields: [orderItem.orderId],
+    references: [order.id],
+  }),
+  product: one(product, {
+    fields: [orderItem.productId],
+    references: [product.id],
   }),
 }))
 

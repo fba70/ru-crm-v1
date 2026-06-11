@@ -4,7 +4,15 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Mail, Phone, MapPin, Globe, Pencil } from "lucide-react"
+import {
+  ArrowRight,
+  Mail,
+  Phone,
+  MapPin,
+  Globe,
+  Pencil,
+  MessageSquare,
+} from "lucide-react"
 import type { ClientRow } from "@/app/api/clients/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
@@ -38,6 +46,11 @@ export function ClientCard({
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <CardTitle className="truncate">{client.name}</CardTitle>
+          {client.namePhys && (
+            <div className="text-sm text-muted-foreground truncate">
+              {client.namePhys}
+            </div>
+          )}
           {/* Funnel-phase badge intentionally hidden for now — only the
               non-active status badge is shown. */}
           {client.status !== "active" && (
@@ -109,6 +122,12 @@ export function ClientCard({
               >
                 {client.webUrl}
               </a>
+            </div>
+          )}
+          {client.comment && (
+            <div className="flex items-start gap-2">
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span className="line-clamp-2">{client.comment}</span>
             </div>
           )}
         </div>

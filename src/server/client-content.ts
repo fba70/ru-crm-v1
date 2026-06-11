@@ -32,6 +32,7 @@ import {
   type StoredContentMimeBucket,
 } from "@/server/source-items"
 import type { ContactRow } from "@/server/contacts"
+import type { ClientCustomFields } from "@/lib/client-custom-fields"
 
 export class ClientContentScopeError extends Error {
   constructor(
@@ -48,11 +49,14 @@ export class ClientContentScopeError extends Error {
 export type ClientDetail = {
   id: string
   name: string
+  namePhys: string | null
+  comment: string | null
   aliases: string[] | null
   phone: string | null
   email: string | null
   address: string | null
   webUrl: string | null
+  customFields: ClientCustomFields
   funnelPhase: FunnelPhase
   status: EntityStatus
   userId: string
@@ -76,11 +80,14 @@ export async function getClientDetail(
     .select({
       id: client.id,
       name: client.name,
+      namePhys: client.namePhys,
+      comment: client.comment,
       aliases: client.aliases,
       phone: client.phone,
       email: client.email,
       address: client.address,
       webUrl: client.webUrl,
+      customFields: client.customFields,
       funnelPhase: client.funnelPhase,
       status: client.status,
       userId: client.userId,
@@ -131,11 +138,14 @@ export async function getClientDetail(
   return {
     id: row.id,
     name: row.name,
+    namePhys: row.namePhys,
+    comment: row.comment,
     aliases: row.aliases,
     phone: row.phone,
     email: row.email,
     address: row.address,
     webUrl: row.webUrl,
+    customFields: row.customFields ?? {},
     funnelPhase: row.funnelPhase,
     status: row.status,
     userId: row.userId,

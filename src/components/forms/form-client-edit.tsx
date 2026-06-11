@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { LoadingButton } from "@/components/blocks/loading-button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -29,8 +30,19 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { toast } from "sonner"
+import { authClient } from "@/lib/auth-client"
 import type { ClientRow, ClientContactPreview } from "@/app/api/clients/route"
 import type { FunnelPhase, EntityStatus } from "@/db/schema"
+import {
+  CLIENT_TYPE_LABELS,
+  CLIENT_TYPE_VALUES,
+  orgHasStructuredClientType,
+  type ClientType,
+} from "@/lib/client-custom-fields"
+
+// Sentinel for the "no type selected" option — shadcn SelectItem can't carry
+// an empty-string value.
+const TYPE_NONE = "__none__"
 
 const FUNNEL_PHASES: FunnelPhase[] = [
   "awareness",
@@ -51,12 +63,16 @@ const STATUSES: EntityStatus[] = ["active", "suspended", "initial", "deleted"]
 
 type ClientFormData = {
   name: string
+  namePhys: string
+  comment: string
   /** Comma-separated in the form; split to string[] on submit. */
   aliases: string
   phone: string
   email: string
   address: string
   webUrl: string
+  /** Stored under `customFields.type`; `TYPE_NONE` means unset. */
+  type: ClientType | typeof TYPE_NONE
   funnelPhase: FunnelPhase
   status: EntityStatus
 }
@@ -103,15 +119,24 @@ export default function ClientEditDialog({
 }: Props) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const { data: session } = authClient.useSession()
+
+  // Active org: the client's own org in edit mode, otherwise the session's
+  // active org for create mode. Drives whether the `type` field is shown.
+  const orgId = client?.organizationId ?? session?.session.activeOrganizationId
+  const showTypeField = orgHasStructuredClientType(orgId)
 
   const form = useForm<ClientFormData>({
     defaultValues: {
       name: client?.name ?? "",
+      namePhys: client?.namePhys ?? "",
+      comment: client?.comment ?? "",
       aliases: (client?.aliases ?? []).join(", "),
       phone: client?.phone ?? "",
       email: client?.email ?? "",
       address: client?.address ?? "",
       webUrl: client?.webUrl ?? "",
+      type: client?.customFields?.type ?? TYPE_NONE,
       funnelPhase: client?.funnelPhase ?? "awareness",
       status: client?.status ?? "active",
     },
@@ -121,11 +146,14 @@ export default function ClientEditDialog({
     if (open) {
       form.reset({
         name: client?.name ?? "",
+        namePhys: client?.namePhys ?? "",
+        comment: client?.comment ?? "",
         aliases: (client?.aliases ?? []).join(", "),
         phone: client?.phone ?? "",
         email: client?.email ?? "",
         address: client?.address ?? "",
         webUrl: client?.webUrl ?? "",
+        type: client?.customFields?.type ?? TYPE_NONE,
         funnelPhase: client?.funnelPhase ?? "awareness",
         status: client?.status ?? "active",
       })
@@ -139,10 +167,18 @@ export default function ClientEditDialog({
           .split(",")
           .map((a) => a.trim())
           .filter(Boolean)
+        // Fold the flat `type` select back into the extensible custom-fields
+        // bag, preserving any other keys already on the client. The server
+        // re-validates + forces `{}` for orgs without the structured type.
+        const { type, ...rest } = data
+        const customFields = {
+          ...(client?.customFields ?? {}),
+          type: type === TYPE_NONE ? undefined : type,
+        }
         const payload =
           mode === "create"
-            ? { ...data, aliases }
-            : { id: client!.id, ...data, aliases }
+            ? { ...rest, aliases, customFields }
+            : { id: client!.id, ...rest, aliases, customFields }
         const res = await fetch("/api/clients", {
           method: mode === "create" ? "POST" : "PUT",
           headers: { "Content-Type": "application/json" },
@@ -183,6 +219,25 @@ export default function ClientEditDialog({
                   <FormLabel className="text-gray-400">Name *</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="Client name" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="namePhys"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">
+                    Physical person name
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder="Name of the individual (if not an organization)"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -244,6 +299,55 @@ export default function ClientEditDialog({
                   <FormLabel className="text-gray-400">Website</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="https://example.com" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {showTypeField && (
+              <FormField
+                control={form.control}
+                name="type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-gray-400">Type</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={TYPE_NONE}>—</SelectItem>
+                        {CLIENT_TYPE_VALUES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {CLIENT_TYPE_LABELS[t]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            <FormField
+              control={form.control}
+              name="comment"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">Comment</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      rows={3}
+                      placeholder="Notes to help identify this client"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

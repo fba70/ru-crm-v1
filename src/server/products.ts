@@ -49,12 +49,66 @@ export type ProductDetail = {
   updatedAt: string
 }
 
+export type ProductInStock = "in" | "out"
+
 export type ListProductsParams = {
   q?: string
   category?: string
+  // Exact-match filters over enumerable additional_metadata attributes.
+  type?: string
+  color?: string
+  sugar?: string
+  year?: string
+  aging?: string
+  bottleVolume?: string
+  countryName?: string
+  appelacion?: string
+  rating?: string
+  // Free-text "contains" filter over the long, composite awards string.
+  awards?: string
+  // Price range over the numeric price column.
+  priceMin?: number
+  priceMax?: number
+  // Stock presence derived from total_stock (in = >0, out = null/≤0).
+  inStock?: ProductInStock
   limit?: number
   offset?: number
 }
+
+// The enumerable attributes exposed as filter dropdowns, mapped to their
+// additional_metadata JSON key. Order drives nothing here — it's the UI's
+// concern — but keeping the map in the server module keeps the JSON-key
+// spelling in one place for both the WHERE builder and the options query.
+const ATTR_FILTER_KEYS = {
+  type: "type",
+  color: "color",
+  sugar: "sugar",
+  year: "year",
+  aging: "aging",
+  bottleVolume: "bottle_volume",
+  countryName: "country_name",
+  appelacion: "appelacion",
+  rating: "rating",
+} as const
+
+// Free-text search probes the `name` column plus these `additional_metadata`
+// keys by VALUE (`->> 'key' ILIKE …`). Probing named values — rather than
+// casting the whole JSON blob to text — keeps a query like "description" or
+// "color" from matching every row just because those strings appear as JSON
+// *keys*. Add a key here to make its text searchable. Order is irrelevant.
+const SEARCH_TEXT_KEYS = [
+  "taste",
+  "flavour",
+  "gastronomy",
+  "color_details",
+  "description",
+  "color",
+  "country_name",
+  "region",
+  "appelacion",
+  "type",
+  "vendor",
+] as const
 
 export type ListProductsResult = {
   rows: ProductRow[]
@@ -87,6 +141,15 @@ export async function listProducts(
   const q = params.q?.trim()
   const category = params.category?.trim()
 
+  // Exact-match on an additional_metadata attribute (e.g. type = "ВИНО").
+  const attrEq = (jsonKey: string, val?: string) => {
+    const v = val?.trim()
+    return v && v.length > 0
+      ? sql`${product.additionalMetadata} ->> ${jsonKey} = ${v}`
+      : undefined
+  }
+  const awards = params.awards?.trim()
+
   const where = and(
     eq(product.organizationId, activeOrgId),
     eq(product.status, "active"),
@@ -97,10 +160,39 @@ export async function listProducts(
       ? or(
           ilike(product.name, `%${q}%`),
           ilike(product.category, `%${q}%`),
+          // Accounting ids (code / barCode) — keep the blob match so a
+          // barcode/code lookup still works.
           sql`${product.accountingMetadata}::text ILIKE ${`%${q}%`}`,
-          sql`${product.additionalMetadata}::text ILIKE ${`%${q}%`}`,
+          // Named text fields, matched by VALUE (not the JSON key names).
+          ...SEARCH_TEXT_KEYS.map(
+            (k) =>
+              sql`${product.additionalMetadata} ->> ${k} ILIKE ${`%${q}%`}`,
+          ),
         )
       : undefined,
+    attrEq(ATTR_FILTER_KEYS.type, params.type),
+    attrEq(ATTR_FILTER_KEYS.color, params.color),
+    attrEq(ATTR_FILTER_KEYS.sugar, params.sugar),
+    attrEq(ATTR_FILTER_KEYS.year, params.year),
+    attrEq(ATTR_FILTER_KEYS.aging, params.aging),
+    attrEq(ATTR_FILTER_KEYS.bottleVolume, params.bottleVolume),
+    attrEq(ATTR_FILTER_KEYS.countryName, params.countryName),
+    attrEq(ATTR_FILTER_KEYS.appelacion, params.appelacion),
+    attrEq(ATTR_FILTER_KEYS.rating, params.rating),
+    awards && awards.length > 0
+      ? sql`${product.additionalMetadata} ->> 'awards' ILIKE ${`%${awards}%`}`
+      : undefined,
+    params.priceMin != null && Number.isFinite(params.priceMin)
+      ? sql`${product.price} >= ${params.priceMin}`
+      : undefined,
+    params.priceMax != null && Number.isFinite(params.priceMax)
+      ? sql`${product.price} <= ${params.priceMax}`
+      : undefined,
+    params.inStock === "in"
+      ? sql`${product.totalStock} > 0`
+      : params.inStock === "out"
+        ? sql`(${product.totalStock} IS NULL OR ${product.totalStock} <= 0)`
+        : undefined,
   )
 
   const [rows, totalRows] = await Promise.all([
@@ -195,4 +287,81 @@ export async function listProductCategories(): Promise<string[]> {
   return rows
     .map((r) => r.category)
     .filter((c): c is string => c !== null && c.trim().length > 0)
+}
+
+// Distinct dropdown options for each enumerable additional_metadata
+// attribute, scoped to the org's active products. Numeric-valued keys sort
+// numerically (year/rating high→low, aging/volume low→high); the rest sort
+// alphabetically (RU locale). `awards` is intentionally NOT here — its
+// values are long composite strings, so the UI exposes it as a free-text
+// "contains" input rather than a dropdown. Fetched once on mount; a handful
+// of distinct scans over an indexed org/status slice is cheap.
+export type ProductFilterOptions = {
+  type: string[]
+  color: string[]
+  sugar: string[]
+  year: string[]
+  aging: string[]
+  bottleVolume: string[]
+  countryName: string[]
+  appelacion: string[]
+  rating: string[]
+}
+
+export async function listProductFilterOptions(): Promise<ProductFilterOptions> {
+  const { activeOrgId } = await requireOrgContext()
+
+  const distinct = async (jsonKey: string): Promise<string[]> => {
+    const rows = await db
+      .selectDistinct({
+        v: sql<string>`${product.additionalMetadata} ->> ${jsonKey}`,
+      })
+      .from(product)
+      .where(
+        and(
+          eq(product.organizationId, activeOrgId),
+          eq(product.status, "active"),
+          sql`COALESCE(TRIM(${product.additionalMetadata} ->> ${jsonKey}), '') <> ''`,
+        ),
+      )
+    return rows.map((r) => r.v)
+  }
+
+  const numAsc = (a: string, b: string) => Number(a) - Number(b)
+  const numDesc = (a: string, b: string) => Number(b) - Number(a)
+  const alpha = (a: string, b: string) => a.localeCompare(b, "ru")
+
+  const [
+    type,
+    color,
+    sugar,
+    year,
+    aging,
+    bottleVolume,
+    countryName,
+    appelacion,
+    rating,
+  ] = await Promise.all([
+    distinct(ATTR_FILTER_KEYS.type),
+    distinct(ATTR_FILTER_KEYS.color),
+    distinct(ATTR_FILTER_KEYS.sugar),
+    distinct(ATTR_FILTER_KEYS.year),
+    distinct(ATTR_FILTER_KEYS.aging),
+    distinct(ATTR_FILTER_KEYS.bottleVolume),
+    distinct(ATTR_FILTER_KEYS.countryName),
+    distinct(ATTR_FILTER_KEYS.appelacion),
+    distinct(ATTR_FILTER_KEYS.rating),
+  ])
+
+  return {
+    type: type.sort(alpha),
+    color: color.sort(alpha),
+    sugar: sugar.sort(alpha),
+    year: year.sort(numDesc),
+    aging: aging.sort(numAsc),
+    bottleVolume: bottleVolume.sort(numAsc),
+    countryName: countryName.sort(alpha),
+    appelacion: appelacion.sort(alpha),
+    rating: rating.sort(numDesc),
+  }
 }

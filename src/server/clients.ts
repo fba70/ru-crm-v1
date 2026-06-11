@@ -14,6 +14,11 @@ import { google } from "@ai-sdk/google"
 import { z } from "zod"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
+import {
+  isClientType,
+  orgHasStructuredClientType,
+  type ClientCustomFields,
+} from "@/lib/client-custom-fields"
 
 export type ClientContactPreview = {
   id: string
@@ -28,11 +33,14 @@ export type ClientContactPreview = {
 export type ClientRow = {
   id: string
   name: string
+  namePhys: string | null
+  comment: string | null
   aliases: string[] | null
   phone: string | null
   email: string | null
   address: string | null
   webUrl: string | null
+  customFields: ClientCustomFields
   funnelPhase: FunnelPhase
   status: EntityStatus
   userId: string
@@ -110,11 +118,14 @@ export async function listClients(): Promise<ClientRow[]> {
   return rows.map((r) => ({
     id: r.client.id,
     name: r.client.name,
+    namePhys: r.client.namePhys,
+    comment: r.client.comment,
     aliases: r.client.aliases,
     phone: r.client.phone,
     email: r.client.email,
     address: r.client.address,
     webUrl: r.client.webUrl,
+    customFields: r.client.customFields ?? {},
     funnelPhase: r.client.funnelPhase,
     status: r.client.status,
     userId: r.client.userId,
@@ -142,13 +153,32 @@ function cleanAliases(raw: string[] | null | undefined): string[] | null {
   return out.length > 0 ? out : null
 }
 
+/**
+ * Normalise the custom-fields bag for the given org. Only the designated org
+ * keeps a structured `type` (validated against `CLIENT_TYPE_VALUES`); every
+ * other org stores an empty `{}`. Unknown keys are dropped — the bag is
+ * extensible by design but the server controls what actually lands.
+ */
+function normalizeClientCustomFields(
+  organizationId: string,
+  raw: ClientCustomFields | null | undefined,
+): ClientCustomFields {
+  if (!orgHasStructuredClientType(organizationId)) return {}
+  const out: ClientCustomFields = {}
+  if (isClientType(raw?.type)) out.type = raw.type
+  return out
+}
+
 export async function createClient(data: {
   name: string
+  namePhys?: string | null
+  comment?: string | null
   aliases?: string[] | null
   phone?: string | null
   email?: string | null
   address?: string | null
   webUrl?: string | null
+  customFields?: ClientCustomFields | null
   funnelPhase?: FunnelPhase
   status?: EntityStatus
 }) {
@@ -160,11 +190,14 @@ export async function createClient(data: {
   await db.insert(client).values({
     id,
     name: data.name.trim(),
+    namePhys: data.namePhys?.trim() || null,
+    comment: data.comment?.trim() || null,
     aliases: cleanAliases(data.aliases),
     phone: data.phone?.trim() || null,
     email: data.email?.trim() || null,
     address: data.address?.trim() || null,
     webUrl: data.webUrl?.trim() || null,
+    customFields: normalizeClientCustomFields(activeOrgId, data.customFields),
     funnelPhase: data.funnelPhase ?? "awareness",
     status: data.status ?? "active",
     userId: session.user.id,
@@ -179,11 +212,14 @@ export async function updateClient(
   clientId: string,
   data: {
     name?: string
+    namePhys?: string | null
+    comment?: string | null
     aliases?: string[] | null
     phone?: string | null
     email?: string | null
     address?: string | null
     webUrl?: string | null
+    customFields?: ClientCustomFields | null
     funnelPhase?: FunnelPhase
     status?: EntityStatus
   },
@@ -199,6 +235,12 @@ export async function updateClient(
     .update(client)
     .set({
       ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+      ...(data.namePhys !== undefined
+        ? { namePhys: data.namePhys?.trim() || null }
+        : {}),
+      ...(data.comment !== undefined
+        ? { comment: data.comment?.trim() || null }
+        : {}),
       ...(data.aliases !== undefined
         ? { aliases: cleanAliases(data.aliases) }
         : {}),
@@ -213,6 +255,14 @@ export async function updateClient(
         : {}),
       ...(data.webUrl !== undefined
         ? { webUrl: data.webUrl?.trim() || null }
+        : {}),
+      ...(data.customFields !== undefined
+        ? {
+            customFields: normalizeClientCustomFields(
+              activeOrgId,
+              data.customFields,
+            ),
+          }
         : {}),
       ...(data.funnelPhase !== undefined
         ? { funnelPhase: data.funnelPhase }

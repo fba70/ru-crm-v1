@@ -24,18 +24,32 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, aliases, phone, email, address, webUrl, funnelPhase, status } =
-      body
-    if (!name) {
-      return NextResponse.json({ error: "name is required" }, { status: 400 })
-    }
-    const result = await createClient({
+    const {
       name,
+      namePhys,
+      comment,
       aliases,
       phone,
       email,
       address,
       webUrl,
+      customFields,
+      funnelPhase,
+      status,
+    } = body
+    if (!name) {
+      return NextResponse.json({ error: "name is required" }, { status: 400 })
+    }
+    const result = await createClient({
+      name,
+      namePhys,
+      comment,
+      aliases,
+      phone,
+      email,
+      address,
+      webUrl,
+      customFields,
       funnelPhase,
       status,
     })
@@ -51,11 +65,14 @@ export async function PUT(request: NextRequest) {
     const {
       id,
       name,
+      namePhys,
+      comment,
       aliases,
       phone,
       email,
       address,
       webUrl,
+      customFields,
       funnelPhase,
       status,
     } = body
@@ -64,11 +81,14 @@ export async function PUT(request: NextRequest) {
     }
     await updateClient(id, {
       name,
+      namePhys,
+      comment,
       aliases,
       phone,
       email,
       address,
       webUrl,
+      customFields,
       funnelPhase,
       status,
     })
