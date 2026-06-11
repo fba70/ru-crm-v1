@@ -20,6 +20,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
   Table,
   TableBody,
   TableCell,
@@ -29,6 +36,8 @@ import {
 } from "@/components/ui/table"
 import {
   Ban,
+  Copy,
+  Link2,
   Loader,
   Plus,
   RotateCcw,
@@ -39,14 +48,15 @@ import {
 } from "lucide-react"
 import type { OrderStatus } from "@/db/schema"
 import type { OrderClientOption, OrderDetail } from "@/app/api/orders/route"
+import type { OrderLinkMeta } from "@/server/order-links"
 import {
   ORDER_STATUS_COLOR,
   ORDER_STATUS_LABEL,
   formatOrderAmount,
+  formatOrderDate,
   isOrderEditable,
+  isValidEmail,
 } from "@/lib/orders-format"
-
-const DEFAULT_CURRENCY = "RUB"
 
 // One product line being built client-side. `unitPrice` + `quantity` are
 // editable; position price (unit × qty) + the order total are derived.
@@ -57,7 +67,6 @@ export type DraftLine = {
   quantity: number
 }
 
-// Minimal product shape the catalog hands to the builder when adding a line.
 export type AddableProduct = {
   id: string
   name: string
@@ -66,19 +75,23 @@ export type AddableProduct = {
 
 export type OrderBuilder = ReturnType<typeof useOrderBuilder>
 
-// Owns the whole order-building session: the open/edit state, the draft line
-// items, and the persistence calls. Lives in the page so it survives tab
-// switches and the catalog table can feed products into it.
+type SendMode = "send" | "resend" | "reopen"
+
+// Owns the order-building session: open/edit state, the draft line items, and
+// the persistence calls. Lives in the page so it survives tab switches and the
+// catalog table can feed products into it.
 export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   const [isActive, setIsActive] = useState(false)
   const [mode, setMode] = useState<"create" | "edit">("create")
   const [orderId, setOrderId] = useState<string | null>(null)
   const [status, setStatus] = useState<OrderStatus>("draft")
-  const [clientId, setClientId] = useState<string | null>(null)
+  const [clientId, setClientIdState] = useState<string | null>(null)
+  const [clientEmail, setClientEmail] = useState<string | null>(null)
   const [description, setDescription] = useState("")
-  const [currency, setCurrency] = useState(DEFAULT_CURRENCY)
+  const [currency, setCurrency] = useState("RUB")
   const [lines, setLines] = useState<DraftLine[]>([])
-  const [loading, setLoading] = useState(false) // hydrating an edit
+  const [link, setLink] = useState<OrderLinkMeta | null>(null)
+  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const [clientOptions, setClientOptions] = useState<OrderClientOption[]>([])
@@ -100,10 +113,12 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setMode("create")
     setOrderId(null)
     setStatus("draft")
-    setClientId(null)
+    setClientIdState(null)
+    setClientEmail(null)
     setDescription("")
-    setCurrency(DEFAULT_CURRENCY)
+    setCurrency("RUB")
     setLines([])
+    setLink(null)
   }, [])
 
   const openNew = useCallback(() => {
@@ -111,6 +126,25 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setIsActive(true)
     loadClients()
   }, [reset, loadClients])
+
+  const hydrate = useCallback((o: OrderDetail) => {
+    setMode("edit")
+    setOrderId(o.id)
+    setStatus(o.status)
+    setClientIdState(o.clientId)
+    setClientEmail(o.clientEmail)
+    setDescription(o.description ?? "")
+    setCurrency(o.currency)
+    setLink(o.link)
+    setLines(
+      o.items.map((i) => ({
+        productId: i.productId,
+        productName: i.productName ?? i.productId,
+        unitPrice: i.unitPrice,
+        quantity: i.quantity,
+      })),
+    )
+  }, [])
 
   const openEdit = useCallback(
     async (id: string) => {
@@ -127,18 +161,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
           return
         }
         const { order } = (await res.json()) as { order: OrderDetail }
-        setStatus(order.status)
-        setClientId(order.clientId)
-        setDescription(order.description ?? "")
-        setCurrency(order.currency)
-        setLines(
-          order.items.map((i) => ({
-            productId: i.productId,
-            productName: i.productName ?? i.productId,
-            unitPrice: i.unitPrice,
-            quantity: i.quantity,
-          })),
-        )
+        hydrate(order)
       } catch {
         toast.error("Failed to load order")
         setIsActive(false)
@@ -146,22 +169,40 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
         setLoading(false)
       }
     },
-    [loadClients],
+    [loadClients, hydrate],
   )
+
+  const reload = useCallback(async () => {
+    if (orderId) await openEdit(orderId)
+  }, [orderId, openEdit])
 
   const close = useCallback(() => {
     setIsActive(false)
     reset()
   }, [reset])
 
-  // Terminal-status orders open as a read-only preview. `draft` +
-  // `awaiting_client` are internally editable (see orders-format).
+  // Close the builder and tell the page a save/transition landed (refresh
+  // list + jump to Orders tab).
+  const notifySaved = useCallback(() => {
+    close()
+    onSaved?.()
+  }, [close, onSaved])
+
+  // Only drafts are internally editable (spec ownership model).
   const readOnly = mode === "edit" && !isOrderEditable(status)
+
+  const setClientId = useCallback(
+    (id: string) => {
+      setClientIdState(id)
+      const opt = clientOptions.find((o) => o.id === id)
+      setClientEmail(opt?.email ?? null)
+    },
+    [clientOptions],
+  )
 
   const addProduct = useCallback((p: AddableProduct, qty: number) => {
     const quantity = Math.max(1, Math.trunc(qty) || 1)
     setLines((prev) => {
-      // Merge a repeat add into the existing line instead of duplicating it.
       const i = prev.findIndex((l) => l.productId === p.id)
       if (i >= 0) {
         const next = [...prev]
@@ -170,12 +211,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
       }
       return [
         ...prev,
-        {
-          productId: p.id,
-          productName: p.name,
-          unitPrice: p.price ?? 0,
-          quantity,
-        },
+        { productId: p.id, productName: p.name, unitPrice: p.price ?? 0, quantity },
       ]
     })
   }, [])
@@ -194,10 +230,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setLines((prev) =>
       prev.map((l) =>
         l.productId === productId
-          ? {
-              ...l,
-              unitPrice: Math.max(0, Number.isFinite(price) ? price : 0),
-            }
+          ? { ...l, unitPrice: Math.max(0, Number.isFinite(price) ? price : 0) }
           : l,
       ),
     )
@@ -209,117 +242,113 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
 
   const total = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
 
-  // Full save (header + line items). The server recomputes position prices +
-  // the order total and replaces the whole item set.
-  const persist = useCallback(
-    async (targetStatus: OrderStatus): Promise<boolean> => {
-      if (!clientId) {
-        toast.error("Select a client first")
-        return false
-      }
-      if (targetStatus === "awaiting_client" && lines.length === 0) {
-        toast.error("Add at least one product before sending to the client")
-        return false
-      }
-      setSaving(true)
-      try {
-        const items = lines.map((l) => ({
-          productId: l.productId,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-        }))
-        const payload = {
-          clientId,
-          description,
-          currency,
-          status: targetStatus,
-          items,
-        }
-        const res =
-          mode === "create"
-            ? await fetch("/api/orders", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-              })
-            : await fetch("/api/orders", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: orderId, ...payload }),
-              })
+  // Save the draft content. Returns the order id (existing or freshly created)
+  // or null on failure. Promotes a new order into edit mode so subsequent
+  // transitions target the saved row.
+  const persist = useCallback(async (): Promise<string | null> => {
+    if (!clientId) {
+      toast.error("Select a client first")
+      return null
+    }
+    setSaving(true)
+    try {
+      const items = lines.map((l) => ({
+        productId: l.productId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+      }))
+      const payload = { clientId, description, currency, items }
+      if (mode === "create") {
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
         if (!res.ok) {
           const e = await res.json().catch(() => ({}))
           toast.error(e.error || "Failed to save order")
+          return null
+        }
+        const data = await res.json()
+        setMode("edit")
+        setOrderId(data.id)
+        return data.id as string
+      }
+      const res = await fetch("/api/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId, ...payload }),
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        toast.error(e.error || "Failed to save order")
+        return null
+      }
+      return orderId
+    } catch {
+      toast.error("Failed to save order")
+      return null
+    } finally {
+      setSaving(false)
+    }
+  }, [clientId, description, currency, lines, mode, orderId])
+
+  const saveDraft = useCallback(async () => {
+    const id = await persist()
+    if (id) {
+      toast.success("Draft saved")
+      close()
+      onSaved?.()
+    }
+  }, [persist, close, onSaved])
+
+  // Status transition via the link endpoint (mint/revoke lifecycle).
+  const linkAction = useCallback(
+    async (action: "pullback" | "cancel") => {
+      if (!orderId) return false
+      setSaving(true)
+      try {
+        const res = await fetch(`/api/orders/${orderId}/link`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        })
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}))
+          toast.error(e.error || "Action failed")
           return false
         }
         return true
       } catch {
-        toast.error("Failed to save order")
+        toast.error("Action failed")
         return false
       } finally {
         setSaving(false)
       }
     },
-    [clientId, description, currency, lines, mode, orderId],
+    [orderId],
   )
 
-  const saveDraft = useCallback(async () => {
-    // New orders default to draft; editing keeps the current editable status
-    // (a "Save" on an awaiting_client order leaves it sent).
-    const target: OrderStatus = mode === "create" ? "draft" : status
-    if (await persist(target)) {
-      toast.success("Order saved")
-      close()
-      onSaved?.()
+  // Pull an awaiting_client / cancelled order back to draft (revokes the live
+  // link) and re-open it editable.
+  const pullBackToDraft = useCallback(async () => {
+    if (await linkAction("pullback")) {
+      toast.success("Order is a draft again — the previous link no longer works")
+      await reload()
     }
-  }, [persist, mode, status, close, onSaved])
+  }, [linkAction, reload])
 
-  const sendToClient = useCallback(async () => {
-    if (await persist("awaiting_client")) {
-      toast.success("Order sent to client")
-      close()
-      onSaved?.()
-    }
-  }, [persist, close, onSaved])
-
-  // Back-to-draft persists the current draft lines too (preserves edits and,
-  // for a cancelled order, reopens it).
-  const backToDraft = useCallback(async () => {
-    if (await persist("draft")) {
-      toast.success("Order moved to draft")
-      close()
-      onSaved?.()
-    }
-  }, [persist, close, onSaved])
-
-  // Cancel is a pure status flip — works regardless of items / read-only.
   const cancelOrder = useCallback(async () => {
     if (mode !== "edit" || !orderId) {
-      // Nothing persisted yet — just discard the in-progress order.
-      close()
+      close() // nothing persisted yet — just discard
       return
     }
-    setSaving(true)
-    try {
-      const res = await fetch("/api/orders", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: orderId, statusOnly: true, status: "cancelled" }),
-      })
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
-        toast.error(e.error || "Failed to cancel order")
-        return
-      }
+    if (await linkAction("cancel")) {
       toast.success("Order cancelled")
       close()
       onSaved?.()
-    } catch {
-      toast.error("Failed to cancel order")
-    } finally {
-      setSaving(false)
     }
-  }, [mode, orderId, close, onSaved])
+  }, [mode, orderId, linkAction, close, onSaved])
 
   return {
     isActive,
@@ -330,14 +359,19 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     loading,
     saving,
     clientId,
+    clientEmail,
     description,
     currency,
     lines,
     total,
+    link,
     clientOptions,
     openNew,
     openEdit,
+    reload,
     close,
+    notifySaved,
+    persist,
     setClientId,
     setDescription,
     addProduct,
@@ -345,8 +379,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setUnitPrice,
     removeLine,
     saveDraft,
-    sendToClient,
-    backToDraft,
+    pullBackToDraft,
     cancelOrder,
   }
 }
@@ -378,9 +411,7 @@ export function AddToOrderButton({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-44 space-y-2" align="end">
-        <div className="text-xs font-medium text-muted-foreground">
-          Quantity
-        </div>
+        <div className="text-xs font-medium text-muted-foreground">Quantity</div>
         <Input
           type="number"
           min={1}
@@ -402,8 +433,169 @@ export function AddToOrderButton({
   )
 }
 
+// ── Send / resend / reopen dialog: collect recipient email, mint, show link ──
+function SendLinkDialog({
+  orderId,
+  sendMode,
+  defaultEmail,
+  onClose,
+  onSent,
+}: {
+  orderId: string
+  sendMode: SendMode
+  defaultEmail: string
+  onClose: () => void
+  onSent: () => void
+}) {
+  const [email, setEmail] = useState(defaultEmail)
+  const [sending, setSending] = useState(false)
+  const [linkUrl, setLinkUrl] = useState<string | null>(null)
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
+
+  const title =
+    sendMode === "send"
+      ? "Send order to client"
+      : sendMode === "resend"
+        ? "Re-send a new link"
+        : "Reopen order to client"
+
+  const submit = async () => {
+    if (!isValidEmail(email)) {
+      toast.error("Enter a valid recipient email")
+      return
+    }
+    setSending(true)
+    try {
+      const res = await fetch(`/api/orders/${orderId}/link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: sendMode, recipientEmail: email }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(data.error || "Failed to create the link")
+        return
+      }
+      setLinkUrl(data.link.url)
+      setExpiresAt(data.link.expiresAt)
+    } catch {
+      toast.error("Failed to create the link")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const copy = async () => {
+    if (!linkUrl) return
+    try {
+      await navigator.clipboard.writeText(linkUrl)
+      toast.success("Link copied")
+    } catch {
+      toast.error("Couldn't copy — select and copy manually")
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+
+        {linkUrl ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              The order is now awaiting client confirmation. Copy this link and
+              send it to the client — it won’t be shown again.
+              {expiresAt && (
+                <>
+                  {" "}
+                  It expires on{" "}
+                  <span className="font-medium">
+                    {formatOrderDate(expiresAt)}
+                  </span>
+                  .
+                </>
+              )}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input readOnly value={linkUrl} className="font-mono text-xs" />
+              <Button size="icon" variant="outline" onClick={copy}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            <DialogFooter>
+              <Button onClick={onSent}>Done</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">
+                Recipient email
+              </span>
+              <Input
+                type="email"
+                placeholder="client@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">
+                Defaults to the client’s email. The order can’t be sent without a
+                valid address.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose} disabled={sending}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={sending}>
+                {sending ? (
+                  <Loader className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-1" />
+                )}
+                Create link
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Link metadata strip shown for a sent (awaiting_client) order.
+function LinkMetaStrip({ link }: { link: OrderLinkMeta | null }) {
+  if (!link) return null
+  return (
+    <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+      <div className="flex items-center gap-2 font-medium">
+        <Link2 className="h-4 w-4" />
+        Client link {link.status === "active" ? "active" : link.status}
+      </div>
+      <div className="text-muted-foreground text-xs space-y-0.5">
+        {link.recipientEmail && <div>Sent to {link.recipientEmail}</div>}
+        <div>Expires {formatOrderDate(link.expiresAt)}</div>
+        <div>
+          {link.lastAccessedAt
+            ? `Client last opened ${formatOrderDate(link.lastAccessedAt)}`
+            : "Client hasn’t opened it yet"}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Sticky order panel (rendered atop the Catalog tab while active) ───
 export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
+  const [sendDialog, setSendDialog] = useState<{
+    orderId: string
+    mode: SendMode
+    email: string
+  } | null>(null)
+
   if (!builder.isActive) return null
 
   const {
@@ -413,263 +605,330 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
     loading,
     saving,
     clientId,
+    clientEmail,
     description,
     currency,
     lines,
     total,
+    link,
     clientOptions,
   } = builder
 
   const title =
-    mode === "create"
-      ? "New order"
-      : readOnly
-        ? "Order preview"
-        : "Edit order"
+    mode === "create" ? "New order" : readOnly ? "Order" : "Edit order"
+
+  // Save the draft (to get/keep an id), then open the send dialog.
+  const beginSend = async (sendMode: SendMode) => {
+    if (sendMode === "send" && lines.length === 0) {
+      toast.error("Add at least one product first")
+      return
+    }
+    let id = builder.orderId
+    if (sendMode === "send") {
+      id = await builder.persist()
+    }
+    if (!id) return
+    const email =
+      (sendMode === "resend" ? link?.recipientEmail : null) ?? clientEmail ?? ""
+    setSendDialog({ orderId: id, mode: sendMode, email })
+  }
 
   return (
-    <Card className="sticky top-2 z-20 border-primary/40 shadow-lg dark:border-gray-600">
-      <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold">{title}</span>
-          {mode === "edit" && (
-            <Badge
-              variant="secondary"
-              className={ORDER_STATUS_COLOR[status] ?? ""}
-            >
-              {ORDER_STATUS_LABEL[status] ?? status}
-            </Badge>
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Close order"
-          onClick={builder.close}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        {loading ? (
-          <div className="h-24 flex items-center justify-center">
-            <Loader className="animate-spin h-6 w-6" />
+    <>
+      <Card className="sticky top-2 z-20 border-primary/40 shadow-lg dark:border-gray-600">
+        <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold">{title}</span>
+            {mode === "edit" && (
+              <Badge
+                variant="secondary"
+                className={ORDER_STATUS_COLOR[status] ?? ""}
+              >
+                {ORDER_STATUS_LABEL[status] ?? status}
+              </Badge>
+            )}
           </div>
-        ) : (
-          <>
-            {/* Core attributes: client + description. */}
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,18rem)_1fr]">
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Client *</span>
-                <Select
-                  value={clientId ?? ""}
-                  onValueChange={(v) => builder.setClientId(v)}
-                  disabled={readOnly}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clientOptions.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">
-                  Description
-                </span>
-                <Textarea
-                  rows={1}
-                  className="min-h-9"
-                  placeholder="Optional note about this order"
-                  value={description}
-                  onChange={(e) => builder.setDescription(e.target.value)}
-                  disabled={readOnly}
-                />
-              </div>
-            </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close order"
+            onClick={builder.close}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </CardHeader>
 
-            {/* Line items. */}
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead className="w-32 text-right">
-                      Unit price
-                    </TableHead>
-                    <TableHead className="w-24 text-right">Qty</TableHead>
-                    <TableHead className="w-32 text-right">Position</TableHead>
-                    {!readOnly && <TableHead className="w-12" />}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lines.length === 0 ? (
+        <CardContent className="space-y-4">
+          {loading ? (
+            <div className="h-24 flex items-center justify-center">
+              <Loader className="animate-spin h-6 w-6" />
+            </div>
+          ) : (
+            <>
+              {status === "awaiting_client" && <LinkMetaStrip link={link} />}
+
+              {/* Core attributes. */}
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,18rem)_1fr]">
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Client *</span>
+                  <Select
+                    value={clientId ?? ""}
+                    onValueChange={(v) => builder.setClientId(v)}
+                    disabled={readOnly}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clientOptions.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">
+                    Description
+                  </span>
+                  <Textarea
+                    rows={1}
+                    className="min-h-9"
+                    placeholder="Optional note about this order"
+                    value={description}
+                    onChange={(e) => builder.setDescription(e.target.value)}
+                    disabled={readOnly}
+                  />
+                </div>
+              </div>
+
+              {/* Line items. */}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell
-                        colSpan={readOnly ? 4 : 5}
-                        className="h-20 text-center text-muted-foreground text-sm"
-                      >
-                        No products yet — search the catalog below and click
-                        “Add to order”.
-                      </TableCell>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="w-32 text-right">
+                        Unit price
+                      </TableHead>
+                      <TableHead className="w-24 text-right">Qty</TableHead>
+                      <TableHead className="w-32 text-right">Position</TableHead>
+                      {!readOnly && <TableHead className="w-12" />}
                     </TableRow>
-                  ) : (
-                    lines.map((l) => (
-                      <TableRow key={l.productId}>
-                        <TableCell className="font-medium">
-                          {l.productName}
+                  </TableHeader>
+                  <TableBody>
+                    {lines.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={readOnly ? 4 : 5}
+                          className="h-20 text-center text-muted-foreground text-sm"
+                        >
+                          {readOnly
+                            ? "No products on this order."
+                            : "No products yet — search the catalog below and click “Add to order”."}
                         </TableCell>
-                        <TableCell className="text-right">
-                          {readOnly ? (
-                            <span className="tabular-nums">
-                              {formatOrderAmount(l.unitPrice, currency)}
-                            </span>
-                          ) : (
-                            <Input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              value={String(l.unitPrice)}
-                              onChange={(e) =>
-                                builder.setUnitPrice(
-                                  l.productId,
-                                  Number(e.target.value),
-                                )
-                              }
-                              className="h-8 w-28 ml-auto text-right tabular-nums"
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {readOnly ? (
-                            <span className="tabular-nums">{l.quantity}</span>
-                          ) : (
-                            <Input
-                              type="number"
-                              min={1}
-                              value={String(l.quantity)}
-                              onChange={(e) =>
-                                builder.setQuantity(
-                                  l.productId,
-                                  Number(e.target.value),
-                                )
-                              }
-                              className="h-8 w-20 ml-auto text-right tabular-nums"
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatOrderAmount(
-                            l.unitPrice * l.quantity,
-                            currency,
-                          )}
-                        </TableCell>
-                        {!readOnly && (
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Remove line"
-                              onClick={() => builder.removeLine(l.productId)}
-                            >
-                              <Trash2 className="h-4 w-4 text-muted-foreground" />
-                            </Button>
-                          </TableCell>
-                        )}
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Total + actions. */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm">
-                <span className="text-muted-foreground">Total: </span>
-                <span className="font-semibold tabular-nums">
-                  {formatOrderAmount(total, currency)}
-                </span>
-                <span className="text-muted-foreground">
-                  {" "}
-                  · {lines.length} {lines.length === 1 ? "item" : "items"}
-                </span>
+                    ) : (
+                      lines.map((l) => (
+                        <TableRow key={l.productId}>
+                          <TableCell className="font-medium">
+                            {l.productName}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {readOnly ? (
+                              <span className="tabular-nums">
+                                {formatOrderAmount(l.unitPrice, currency)}
+                              </span>
+                            ) : (
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={String(l.unitPrice)}
+                                onChange={(e) =>
+                                  builder.setUnitPrice(
+                                    l.productId,
+                                    Number(e.target.value),
+                                  )
+                                }
+                                className="h-8 w-28 ml-auto text-right tabular-nums"
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {readOnly ? (
+                              <span className="tabular-nums">{l.quantity}</span>
+                            ) : (
+                              <Input
+                                type="number"
+                                min={1}
+                                value={String(l.quantity)}
+                                onChange={(e) =>
+                                  builder.setQuantity(
+                                    l.productId,
+                                    Number(e.target.value),
+                                  )
+                                }
+                                className="h-8 w-20 ml-auto text-right tabular-nums"
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatOrderAmount(l.unitPrice * l.quantity, currency)}
+                          </TableCell>
+                          {!readOnly && (
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Remove line"
+                                onClick={() => builder.removeLine(l.productId)}
+                              >
+                                <Trash2 className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {readOnly ? (
-                  <>
-                    {status === "cancelled" && (
+              {/* Total + actions. */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Total: </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatOrderAmount(total, currency)}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {lines.length} {lines.length === 1 ? "item" : "items"}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Draft (create or edit): full editing + send. */}
+                  {!readOnly && (
+                    <>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={builder.cancelOrder}
+                        disabled={saving}
+                      >
+                        <Ban className="h-4 w-4 mr-1" />
+                        {mode === "edit" ? "Cancel order" : "Discard"}
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={builder.backToDraft}
+                        onClick={builder.saveDraft}
+                        disabled={saving}
+                      >
+                        <Save className="h-4 w-4 mr-1" />
+                        {mode === "create" ? "Save draft" : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => beginSend("send")}
+                        disabled={saving}
+                      >
+                        <Send className="h-4 w-4 mr-1" />
+                        Send to client
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Sent: read-only + link management. */}
+                  {readOnly && status === "awaiting_client" && (
+                    <>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={builder.cancelOrder}
+                        disabled={saving}
+                      >
+                        <Ban className="h-4 w-4 mr-1" />
+                        Cancel order
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={builder.pullBackToDraft}
+                        disabled={saving}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-1" />
+                        Pull back to draft
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => beginSend("resend")}
+                        disabled={saving}
+                      >
+                        <Send className="h-4 w-4 mr-1" />
+                        Re-send link
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Confirmed / finalized: reopen to client or close. */}
+                  {readOnly &&
+                    (status === "confirmed" || status === "finalized") && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => beginSend("reopen")}
+                          disabled={saving}
+                        >
+                          <Send className="h-4 w-4 mr-1" />
+                          Reopen to client
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={builder.close}>
+                          Close
+                        </Button>
+                      </>
+                    )}
+
+                  {/* Cancelled: reopen as draft or close. */}
+                  {readOnly && status === "cancelled" && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={builder.pullBackToDraft}
                         disabled={saving}
                       >
                         <RotateCcw className="h-4 w-4 mr-1" />
                         Reopen as draft
                       </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={builder.close}
-                    >
-                      Close
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    {mode === "edit" && status === "awaiting_client" && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={builder.backToDraft}
-                        disabled={saving}
-                      >
-                        <RotateCcw className="h-4 w-4 mr-1" />
-                        Back to draft
+                      <Button variant="outline" size="sm" onClick={builder.close}>
+                        Close
                       </Button>
-                    )}
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={builder.cancelOrder}
-                      disabled={saving}
-                    >
-                      <Ban className="h-4 w-4 mr-1" />
-                      {mode === "edit" ? "Cancel order" : "Discard"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={builder.saveDraft}
-                      disabled={saving}
-                    >
-                      <Save className="h-4 w-4 mr-1" />
-                      {mode === "create" ? "Save draft" : "Save"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={builder.sendToClient}
-                      disabled={saving}
-                    >
-                      <Send className="h-4 w-4 mr-1" />
-                      Send to client
-                    </Button>
-                  </>
-                )}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {sendDialog && (
+        <SendLinkDialog
+          orderId={sendDialog.orderId}
+          sendMode={sendDialog.mode}
+          defaultEmail={sendDialog.email}
+          onClose={() => setSendDialog(null)}
+          onSent={() => {
+            setSendDialog(null)
+            builder.notifySaved()
+          }}
+        />
+      )}
+    </>
   )
 }

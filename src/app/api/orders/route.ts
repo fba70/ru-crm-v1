@@ -4,7 +4,6 @@ import {
   getOrder,
   createOrder,
   updateOrder,
-  setOrderStatus,
   listOrderClientOptions,
 } from "@/server/orders"
 import { orderStatus, type OrderStatus } from "@/db/schema"
@@ -70,12 +69,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/orders  — create. Required: clientId. Optional: description,
-// orderDate, status, currency, items[].
+// POST /api/orders  — create. Always creates a draft. Required: clientId.
+// Optional: description, orderDate, currency, items[]. Sending to the client
+// (→ awaiting_client) is a separate transition (`POST /api/orders/[id]/link`).
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { clientId, description, orderDate, status, currency, items } = body
+    const { clientId, description, orderDate, currency, items } = body
     if (!clientId) {
       return NextResponse.json(
         { error: "clientId is required" },
@@ -86,7 +86,6 @@ export async function POST(request: NextRequest) {
       clientId,
       description,
       orderDate,
-      status: isOrderStatus(status) ? status : undefined,
       currency,
       items,
     })
@@ -96,36 +95,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT /api/orders  — update. `statusOnly: true` + `status` is the quick
-// status-transition shortcut; otherwise a partial update of the order.
+// PUT /api/orders  — partial DRAFT content update (description / client /
+// currency / items). Rejected by the server unless the order is a draft.
+// Status transitions live on `POST /api/orders/[id]/link` so the guest-link
+// lifecycle stays in one place (spec invariant #7).
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, statusOnly, status } = body
+    const { id, clientId, description, orderDate, currency, items } = body
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 })
     }
-
-    if (statusOnly) {
-      if (!isOrderStatus(status)) {
-        return NextResponse.json(
-          { error: "Invalid status" },
-          { status: 400 },
-        )
-      }
-      await setOrderStatus(id, status)
-      return NextResponse.json({ success: true })
-    }
-
-    const { clientId, description, orderDate, currency, items } = body
-    await updateOrder(id, {
-      clientId,
-      description,
-      orderDate,
-      status: status !== undefined && isOrderStatus(status) ? status : undefined,
-      currency,
-      items,
-    })
+    await updateOrder(id, { clientId, description, orderDate, currency, items })
     return NextResponse.json({ success: true })
   } catch (error) {
     return errorResponse(error)

@@ -12,6 +12,7 @@ import {
 import { and, asc, count, desc, eq, ilike, inArray, or } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
+import { getOrderLinkMeta, type OrderLinkMeta } from "@/server/order-links"
 
 // Lightweight shape for the orders table — only the columns the table
 // renders (date / client / total / status), plus ids for row actions.
@@ -47,17 +48,25 @@ export type OrderDetail = {
   currency: string
   clientId: string
   clientName: string | null
+  // The order's client email — the default recipient when sending the order
+  // to the client (guest link). Null when the client has no email on file.
+  clientEmail: string | null
   userId: string
   userName: string | null
   organizationId: string
   createdAt: string
   updatedAt: string
   items: OrderItemRow[]
+  // Most relevant guest-link grant (active else latest), or null if never
+  // sent. The raw token is never included — only metadata.
+  link: OrderLinkMeta | null
 }
 
 export type OrderClientOption = {
   id: string
   name: string
+  // Used to prefill the "send to client" recipient email.
+  email: string | null
 }
 
 // One product line as supplied by a caller (create / update). `unitPrice`
@@ -248,6 +257,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     .select({
       order,
       clientName: client.name,
+      clientEmail: client.email,
       userName: user.name,
     })
     .from(order)
@@ -259,19 +269,23 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
   const h = headerRows[0]
   if (!h) return null
 
-  const itemRows = await db
-    .select({
-      id: orderItem.id,
-      productId: orderItem.productId,
-      productName: product.name,
-      quantity: orderItem.quantity,
-      unitPrice: orderItem.unitPrice,
-      positionPrice: orderItem.positionPrice,
-    })
-    .from(orderItem)
-    .leftJoin(product, eq(orderItem.productId, product.id))
-    .where(eq(orderItem.orderId, id))
-    .orderBy(asc(orderItem.createdAt))
+  const [itemRows, link] = await Promise.all([
+    db
+      .select({
+        id: orderItem.id,
+        productId: orderItem.productId,
+        productName: product.name,
+        quantity: orderItem.quantity,
+        unitPrice: orderItem.unitPrice,
+        positionPrice: orderItem.positionPrice,
+      })
+      .from(orderItem)
+      .leftJoin(product, eq(orderItem.productId, product.id))
+      .where(eq(orderItem.orderId, id))
+      .orderBy(asc(orderItem.createdAt)),
+    // Order already org-verified above, so the unscoped meta lookup is safe.
+    getOrderLinkMeta(id),
+  ])
 
   return {
     id: h.order.id,
@@ -282,6 +296,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     currency: h.order.currency,
     clientId: h.order.clientId,
     clientName: h.clientName,
+    clientEmail: h.clientEmail,
     userId: h.order.userId,
     userName: h.userName,
     organizationId: h.order.organizationId,
@@ -295,6 +310,7 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
       unitPrice: Number(r.unitPrice),
       positionPrice: Number(r.positionPrice),
     })),
+    link,
   }
 }
 
@@ -302,7 +318,6 @@ export async function createOrder(data: {
   clientId: string
   description?: string | null
   orderDate?: string | Date | null
-  status?: OrderStatus
   currency?: string | null
   items?: OrderItemInput[]
 }) {
@@ -319,11 +334,13 @@ export async function createOrder(data: {
   const now = new Date()
   const orderDate = data.orderDate ? new Date(data.orderDate) : now
 
+  // Orders always start as drafts. Sending to the client is a separate
+  // transition that mints the guest link (see `@/server/order-links`).
   await db.insert(order).values({
     id,
     orderDate,
     description: data.description?.trim() || null,
-    status: data.status ?? "draft",
+    status: "draft",
     totalAmount: money(total),
     currency: normalizeCurrency(data.currency),
     clientId: data.clientId,
@@ -357,7 +374,6 @@ export async function updateOrder(
     clientId?: string
     description?: string | null
     orderDate?: string | Date | null
-    status?: OrderStatus
     currency?: string | null
     // When provided, replaces the whole line-item set (delete + re-insert)
     // and recomputes the total. Cardinality is small; diffing is overkill.
@@ -365,7 +381,15 @@ export async function updateOrder(
   },
 ) {
   const { activeOrgId } = await requireOrgContext()
-  await assertOrderInOrg(orderId, activeOrgId)
+  const current = await assertOrderInOrg(orderId, activeOrgId)
+
+  // Content edits are only allowed while the order is a draft. Once it's been
+  // sent (awaiting_client) the CLIENT owns it; the internal user must pull it
+  // back to draft first. Status transitions go through `@/server/order-links`,
+  // never here. (Spec FR-10 / invariant #7.)
+  if (current.status !== "draft") {
+    throw new Error("Only draft orders can be edited")
+  }
 
   if (data.clientId !== undefined) {
     await assertClientInOrg(data.clientId, activeOrgId)
@@ -404,7 +428,6 @@ export async function updateOrder(
       ...(data.orderDate !== undefined && data.orderDate !== null
         ? { orderDate: new Date(data.orderDate) }
         : {}),
-      ...(data.status !== undefined ? { status: data.status } : {}),
       ...(data.currency !== undefined
         ? { currency: normalizeCurrency(data.currency) }
         : {}),
@@ -415,19 +438,12 @@ export async function updateOrder(
     .where(eq(order.id, orderId))
 }
 
-// Quick status-only transition (mirrors deals' `setDealStatus`).
-export async function setOrderStatus(orderId: string, status: OrderStatus) {
-  const { activeOrgId } = await requireOrgContext()
-  await assertOrderInOrg(orderId, activeOrgId)
-  await db.update(order).set({ status }).where(eq(order.id, orderId))
-}
-
 // Clients selectable when creating an order — active + initial, soft-deleted
 // excluded. Mirrors `listDealClientOptions`.
 export async function listOrderClientOptions(): Promise<OrderClientOption[]> {
   const { activeOrgId } = await requireOrgContext()
   const rows = await db
-    .select({ id: client.id, name: client.name })
+    .select({ id: client.id, name: client.name, email: client.email })
     .from(client)
     .where(
       and(

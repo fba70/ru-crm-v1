@@ -22,11 +22,20 @@ export const ORDER_STATUS_COLOR: Record<OrderStatus, string> = {
 
 export const ORDER_STATUSES = Object.keys(ORDER_STATUS_LABEL) as OrderStatus[]
 
-// `draft` + `awaiting_client` are the internally-editable states. Terminal
-// states render the builder read-only (preview). See `refs/spec-guest-order-link.md`
-// for the eventual ownership model that will tighten `awaiting_client`.
+// Only `draft` is internally editable. Once an order is sent
+// (`awaiting_client`) the CLIENT owns it — internal item edits are blocked
+// until the user pulls it back to draft (which revokes the live link). Every
+// other status is a read-only preview. This is the ownership model from
+// `refs/spec-guest-order-link.md` (FR-10).
 export function isOrderEditable(status: OrderStatus): boolean {
-  return status === "draft" || status === "awaiting_client"
+  return status === "draft"
+}
+
+// Structural email check (not RFC-exhaustive) — gates sending an order to a
+// client, since `awaiting_client` requires a deliverable recipient.
+export function isValidEmail(value: string): boolean {
+  const v = value.trim()
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 }
 
 export function formatOrderAmount(amount: number, currency: string): string {

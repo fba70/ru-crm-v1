@@ -231,6 +231,20 @@ export const orderStatus = pgEnum("order_status", [
 
 export type OrderStatus = (typeof orderStatus.enumValues)[number]
 
+// Guest order-confirmation link grant lifecycle (see
+// `refs/spec-guest-order-link.md`). `active` = a live link; `used` = the
+// client confirmed through it; `revoked` = killed by the internal user or
+// superseded by a re-send; `expired` = past its window. Exactly one `active`
+// grant may exist per order (enforced by a partial unique index).
+export const orderLinkStatus = pgEnum("order_link_status", [
+  "active",
+  "used",
+  "revoked",
+  "expired",
+])
+
+export type OrderLinkStatus = (typeof orderLinkStatus.enumValues)[number]
+
 // Deal lifecycle axis — orthogonal to the funnel stage (which is a sales
 // outcome). `active` is the default. `cancelled` is a real lost/withdrawn
 // deal kept for win-loss analytics (surfaced via "Include cancelled").
@@ -769,6 +783,43 @@ export const orderItem = pgTable(
 
 export type OrderItem = typeof orderItem.$inferSelect
 
+// Capability-based guest access grant for the order-confirmation loop. The
+// bearer of the raw token (never stored — only its sha256 hash) can review
+// and confirm exactly one order while it's `awaiting_client`. All lifecycle
+// writes go through `src/server/order-links.ts` (spec invariant #7). The
+// partial unique index guarantees at most one `active` grant per order
+// (invariant #1). `order` cascade-deletes its grants.
+export const orderAccessLink = pgTable(
+  "order_access_link",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => order.id, { onDelete: "cascade" }),
+    // sha256(rawToken) hex. The raw token is returned to the caller exactly
+    // once at mint time and never persisted.
+    tokenHash: text("token_hash").notNull(),
+    // Who the link was issued to (audit + the default re-send target). For
+    // `awaiting_client` it must be a structurally-valid email.
+    recipientEmail: text("recipient_email"),
+    status: orderLinkStatus("status").notNull().default("active"),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastAccessedAt: timestamp("last_accessed_at"),
+    confirmedAt: timestamp("confirmed_at"),
+  },
+  (table) => [
+    uniqueIndex("order_access_link_tokenHash_idx").on(table.tokenHash),
+    index("order_access_link_orderId_idx").on(table.orderId),
+    // Invariant #1: at most one live grant per order.
+    uniqueIndex("order_access_link_one_active_idx")
+      .on(table.orderId)
+      .where(sql`status = 'active'`),
+  ],
+)
+
+export type OrderAccessLink = typeof orderAccessLink.$inferSelect
+
 export const sourceType = pgEnum("source_type", ["external", "internal"])
 
 export type SourceType = (typeof sourceType.enumValues)[number]
@@ -1229,6 +1280,7 @@ export const orderRelations = relations(order, ({ one, many }) => ({
     references: [organization.id],
   }),
   items: many(orderItem),
+  links: many(orderAccessLink),
 }))
 
 export const orderItemRelations = relations(orderItem, ({ one }) => ({
@@ -1241,6 +1293,16 @@ export const orderItemRelations = relations(orderItem, ({ one }) => ({
     references: [product.id],
   }),
 }))
+
+export const orderAccessLinkRelations = relations(
+  orderAccessLink,
+  ({ one }) => ({
+    order: one(order, {
+      fields: [orderAccessLink.orderId],
+      references: [order.id],
+    }),
+  }),
+)
 
 export const invitationRelations = relations(invitation, ({ one }) => ({
   organization: one(organization, {
