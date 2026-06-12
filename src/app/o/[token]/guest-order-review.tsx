@@ -15,7 +15,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { CheckCircle2, Loader, Minus, Plus, Trash2 } from "lucide-react"
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
+import {
+  CheckCircle2,
+  ExternalLink,
+  ImageOff,
+  Loader,
+  Minus,
+  Plus,
+  Trash2,
+} from "lucide-react"
 import { formatOrderAmount, formatOrderDate } from "@/lib/orders-format"
 import type { GuestOrderView, GuestLineItem } from "@/server/order-links"
 import {
@@ -124,7 +137,14 @@ export function GuestOrderReview({
 
   return (
     <div className="min-h-screen bg-muted/30 py-8 px-4">
-      <div className="mx-auto max-w-2xl space-y-4">
+      <div className="mx-auto max-w-7xl space-y-4">
+        {/* Brand header */}
+        <div className="flex items-center justify-center pb-2">
+          {/* Local static SVG from /public — plain <img> keeps it config-free. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/ast_logo.svg" alt="AST" className="h-10 w-auto" />
+        </div>
+
         <Card>
           <CardHeader className="space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -160,11 +180,17 @@ export function GuestOrderReview({
               </div>
             )}
 
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-16">Image</TableHead>
                     <TableHead>Product</TableHead>
+                    <TableHead>Color</TableHead>
+                    <TableHead>Sugar</TableHead>
+                    <TableHead className="text-right">Alcohol</TableHead>
+                    <TableHead className="text-right">Volume</TableHead>
+                    <TableHead>Country / Region</TableHead>
                     <TableHead className="w-28 text-right">
                       Unit price
                     </TableHead>
@@ -177,7 +203,7 @@ export function GuestOrderReview({
                   {view.items.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={view.can.removeItem ? 5 : 4}
+                        colSpan={view.can.removeItem ? 11 : 10}
                         className="h-20 text-center text-sm text-muted-foreground"
                       >
                         No items on this order.
@@ -186,8 +212,65 @@ export function GuestOrderReview({
                   ) : (
                     view.items.map((l) => (
                       <TableRow key={l.id}>
+                        <TableCell>
+                          {l.imageUrl ? (
+                            <HoverCard openDelay={150} closeDelay={100}>
+                              <HoverCardTrigger asChild>
+                                {/* Remote catalog images (ast.wine CDN); plain
+                                    <img> avoids next/image remote-host config. */}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={l.imageUrl}
+                                  alt={l.productName ?? "Product"}
+                                  className="h-10 w-10 rounded object-cover bg-muted cursor-zoom-in"
+                                  loading="lazy"
+                                />
+                              </HoverCardTrigger>
+                              <HoverCardContent side="right" className="w-auto p-2">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={l.imageUrl}
+                                  alt={l.productName ?? "Product"}
+                                  className="max-h-80 max-w-80 rounded object-contain bg-muted"
+                                />
+                              </HoverCardContent>
+                            </HoverCard>
+                          ) : (
+                            <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
+                              <ImageOff className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="font-medium">
-                          {l.productName ?? "—"}
+                          <div className="flex items-center gap-1.5">
+                            <span>{l.productName ?? "—"}</span>
+                            {l.webPageUrl && (
+                              <a
+                                href={l.webPageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-foreground shrink-0"
+                                aria-label="Open product page"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {l.color ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {l.sugar ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                          {l.alcohol ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                          {l.bottleVolume ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {l.countryRegion ?? "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {formatOrderAmount(l.unitPrice, view.currency)}

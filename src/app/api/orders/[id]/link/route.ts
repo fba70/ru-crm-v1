@@ -5,6 +5,7 @@ import {
   reopenOrderToClient,
   returnOrderToDraft,
   cancelOrderAndRevoke,
+  finalizeOrder,
 } from "@/server/order-links"
 
 function errorResponse(error: unknown) {
@@ -43,6 +44,7 @@ function reasonResponse(reason: string) {
 //   reopen  confirmed/finalized/cancelled → awaiting_client (fresh link)
 //   pullback awaiting_client/cancelled → draft (revoke link)
 //   cancel  → cancelled (revoke link)
+//   finalize confirmed → finalized (internal only, no link change)
 // All org-scoping + status guards live in `@/server/order-links`.
 export async function POST(
   request: NextRequest,
@@ -77,6 +79,10 @@ export async function POST(
       }
       case "cancel": {
         const r = await cancelOrderAndRevoke(id)
+        return r.ok ? NextResponse.json(r) : reasonResponse(r.reason)
+      }
+      case "finalize": {
+        const r = await finalizeOrder(id)
         return r.ok ? NextResponse.json(r) : reasonResponse(r.reason)
       }
       default:

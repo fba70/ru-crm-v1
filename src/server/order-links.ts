@@ -234,6 +234,27 @@ export async function cancelOrderAndRevoke(
   return { ok: true, status: "cancelled" }
 }
 
+// confirmed → finalized. Internal-only (no grant change — a confirmed order
+// has no active link). Terminal: hand-off to accounting is a later step.
+export async function finalizeOrder(
+  orderId: string,
+): Promise<SimpleTransitionResult> {
+  const { orgId } = await requireOrgAndOrder(orderId)
+  const updated = await db
+    .update(order)
+    .set({ status: "finalized" })
+    .where(
+      and(
+        eq(order.id, orderId),
+        eq(order.organizationId, orgId),
+        eq(order.status, "confirmed"),
+      ),
+    )
+    .returning({ id: order.id })
+  if (updated.length === 0) return { ok: false, reason: "conflict" }
+  return { ok: true, status: "finalized" }
+}
+
 // Link metadata for the internal order view (no raw token — that's gone).
 export type OrderLinkMeta = {
   status: OrderLinkStatus
@@ -273,6 +294,15 @@ export async function getOrderLinkMeta(
 export type GuestLineItem = {
   id: string
   productName: string | null
+  imageUrl: string | null
+  // Product catalog detail surfaced on the client review form. Pulled from the
+  // real `web_page_url` column + `additional_metadata` jsonb keys.
+  webPageUrl: string | null
+  color: string | null
+  sugar: string | null
+  alcohol: string | null // already suffixed with "%" when present
+  bottleVolume: string | null
+  countryRegion: string | null // "country, region" (either side optional)
   quantity: number
   unitPrice: number
   positionPrice: number
@@ -339,6 +369,14 @@ export async function resolveOrderLink(
     .select({
       id: orderItem.id,
       productName: product.name,
+      imageUrl: product.imageUrl,
+      webPageUrl: product.webPageUrl,
+      color: sql<string | null>`${product.additionalMetadata} ->> 'color'`,
+      sugar: sql<string | null>`${product.additionalMetadata} ->> 'sugar'`,
+      alcohol: sql<string | null>`${product.additionalMetadata} ->> 'alcohol'`,
+      bottleVolume: sql<string | null>`${product.additionalMetadata} ->> 'bottle_volume'`,
+      countryName: sql<string | null>`${product.additionalMetadata} ->> 'country_name'`,
+      region: sql<string | null>`${product.additionalMetadata} ->> 'region'`,
       quantity: orderItem.quantity,
       unitPrice: orderItem.unitPrice,
       positionPrice: orderItem.positionPrice,
@@ -357,13 +395,30 @@ export async function resolveOrderLink(
       status: o.status,
       currency: o.currency,
       totalAmount: Number(o.totalAmount),
-      items: items.map((i) => ({
-        id: i.id,
-        productName: i.productName,
-        quantity: i.quantity,
-        unitPrice: Number(i.unitPrice),
-        positionPrice: Number(i.positionPrice),
-      })),
+      items: items.map((i) => {
+        const alcohol = i.alcohol?.trim()
+        return {
+          id: i.id,
+          productName: i.productName,
+          imageUrl: i.imageUrl,
+          webPageUrl: i.webPageUrl,
+          color: i.color?.trim() || null,
+          sugar: i.sugar?.trim() || null,
+          alcohol: alcohol
+            ? alcohol.includes("%")
+              ? alcohol
+              : `${alcohol}%`
+            : null,
+          bottleVolume: i.bottleVolume?.trim() || null,
+          countryRegion:
+            [i.countryName?.trim(), i.region?.trim()]
+              .filter(Boolean)
+              .join(", ") || null,
+          quantity: i.quantity,
+          unitPrice: Number(i.unitPrice),
+          positionPrice: Number(i.positionPrice),
+        }
+      }),
       grantStatus: gs,
       recipientEmail: grant.recipientEmail,
       expiresAt: grant.expiresAt.toISOString(),

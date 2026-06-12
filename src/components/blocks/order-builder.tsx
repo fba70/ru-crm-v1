@@ -39,6 +39,7 @@ import {
   Copy,
   Link2,
   Loader,
+  PackageCheck,
   Plus,
   RotateCcw,
   Save,
@@ -304,7 +305,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
 
   // Status transition via the link endpoint (mint/revoke lifecycle).
   const linkAction = useCallback(
-    async (action: "pullback" | "cancel") => {
+    async (action: "pullback" | "cancel" | "finalize") => {
       if (!orderId) return false
       setSaving(true)
       try {
@@ -350,6 +351,16 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     }
   }, [mode, orderId, linkAction, close, onSaved])
 
+  // confirmed → finalized (internal terminal state). For now a pure status
+  // change — accounting hand-off is a later step.
+  const finalizeOrder = useCallback(async () => {
+    if (await linkAction("finalize")) {
+      toast.success("Order finalized")
+      close()
+      onSaved?.()
+    }
+  }, [linkAction, close, onSaved])
+
   return {
     isActive,
     mode,
@@ -381,6 +392,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     saveDraft,
     pullBackToDraft,
     cancelOrder,
+    finalizeOrder,
   }
 }
 
@@ -874,7 +886,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                     </>
                   )}
 
-                  {/* Confirmed / finalized: reopen to client or close. */}
+                  {/* Confirmed / finalized: reopen to client, finalize, close. */}
                   {readOnly &&
                     (status === "confirmed" || status === "finalized") && (
                       <>
@@ -887,6 +899,16 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                           <Send className="h-4 w-4 mr-1" />
                           Reopen to client
                         </Button>
+                        {status === "confirmed" && (
+                          <Button
+                            size="sm"
+                            onClick={builder.finalizeOrder}
+                            disabled={saving}
+                          >
+                            <PackageCheck className="h-4 w-4 mr-1" />
+                            Finalize the order
+                          </Button>
+                        )}
                         <Button variant="outline" size="sm" onClick={builder.close}>
                           Close
                         </Button>
