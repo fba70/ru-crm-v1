@@ -15,6 +15,7 @@ import {
   AnyPgColumn,
 } from "drizzle-orm/pg-core"
 import type { ClientCustomFields } from "@/lib/client-custom-fields"
+import type { OrderRequestItemFilters } from "@/lib/order-request"
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -244,6 +245,47 @@ export const orderLinkStatus = pgEnum("order_link_status", [
 ])
 
 export type OrderLinkStatus = (typeof orderLinkStatus.enumValues)[number]
+
+// LLM-assisted "order from request" flow (see `src/app/CLAUDE.md` §
+// "Order from request"). A pasted client request is parsed into intent items;
+// the rep walks a wizard, one item per step, assembling a draft order.
+//
+// `order_request` lifecycle: `parsing` (LLM split in progress) → `ready`
+// (items available, draft order minted) → `assembling` (rep walking the
+// wizard) → `done` (handed off to the draft order's own lifecycle) /
+// `abandoned` (rep dropped it). The draft `order` it builds owns the real
+// order lifecycle; this status only tracks the assistant session.
+export const orderRequestStatus = pgEnum("order_request_status", [
+  "parsing",
+  "ready",
+  "assembling",
+  "done",
+  "abandoned",
+])
+
+export type OrderRequestStatus = (typeof orderRequestStatus.enumValues)[number]
+
+// How an intent item maps onto the catalog. `explicit` = the text named a
+// specific product (Cyrillic, often transliterated) → match by a Latin
+// `searchPhrase`; quantity is usually given. `discovery` = a vague/category
+// request → narrow with `filters`; quantity is rep-entered.
+export const orderRequestItemMode = pgEnum("order_request_item_mode", [
+  "explicit",
+  "discovery",
+])
+
+export type OrderRequestItemMode = (typeof orderRequestItemMode.enumValues)[number]
+
+// Per-step progress in the wizard. `pending` (not yet handled) → `added`
+// (the rep added one or more lines from it) / `skipped` (rep moved past it).
+export const orderRequestItemStatus = pgEnum("order_request_item_status", [
+  "pending",
+  "added",
+  "skipped",
+])
+
+export type OrderRequestItemStatus =
+  (typeof orderRequestItemStatus.enumValues)[number]
 
 // Deal lifecycle axis — orthogonal to the funnel stage (which is a sales
 // outcome). `active` is the default. `cancelled` is a real lost/withdrawn
@@ -820,6 +862,105 @@ export const orderAccessLink = pgTable(
 
 export type OrderAccessLink = typeof orderAccessLink.$inferSelect
 
+// ── Order from request (LLM-assisted assembly) ───────────────────────
+//
+// Durable header for one pasted client request. The rep picks the client +
+// adds a comment (as in "New order"), pastes the free-text message, and the
+// LLM splits it into `order_request_item` rows. The wizard then assembles a
+// draft `order` (linked via `orderId`) by walking the items one at a time,
+// reusing the manual order builder. This row is the resumable session state;
+// the real order lifecycle lives on the linked `order`.
+export const orderRequest = pgTable(
+  "order_request",
+  {
+    id: text("id").primaryKey(),
+    // The pasted client message, verbatim.
+    rawText: text("raw_text").notNull(),
+    // Rep's note (mirrors the "New order" description; copied onto the draft
+    // order's description when the draft is minted).
+    comment: text("comment"),
+    status: orderRequestStatus("status").notNull().default("parsing"),
+    // Populated when the LLM split fails, so the UI can surface it + offer a
+    // manual fallback (the rep can still build the order by hand).
+    parseError: text("parse_error"),
+    // `restrict` to match `order.clientId` (clients are soft-deleted only).
+    clientId: text("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "restrict" }),
+    // The draft order being assembled. Null until the wizard mints it; set
+    // null (not cascade) if that order is later hard-deleted so the request
+    // row survives as a record of the parse.
+    orderId: text("order_id").references(() => order.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("order_request_organizationId_idx").on(table.organizationId),
+    index("order_request_userId_idx").on(table.userId),
+    index("order_request_clientId_idx").on(table.clientId),
+    index("order_request_orderId_idx").on(table.orderId),
+    index("order_request_status_idx").on(table.status),
+  ],
+)
+
+export type OrderRequest = typeof orderRequest.$inferSelect
+
+// One intent item parsed from a request — a single wizard step that can
+// produce 0..N order lines. `mode` decides the matching strategy: `explicit`
+// uses `searchPhrase` (a Latin transliteration of the named brand);
+// `discovery` uses `filters` (catalog attribute filters). `quantityHint` is
+// the raw qty text (e.g. "6", "15 л", "0,7") — no unit math, the rep confirms.
+// `ordinal` is the 0-based step order. `order_request` cascade-deletes items.
+export const orderRequestItem = pgTable(
+  "order_request_item",
+  {
+    id: text("id").primaryKey(),
+    requestId: text("request_id")
+      .notNull()
+      .references(() => orderRequest.id, { onDelete: "cascade" }),
+    // 0-based wizard step order.
+    ordinal: integer("ordinal").notNull().default(0),
+    // Exact fragment of the message this item came from (shown for context).
+    rawSnippet: text("raw_snippet").notNull(),
+    // Short human label for the step header (e.g. "William Lawson's",
+    // "Российские игристые вина").
+    label: text("label"),
+    mode: orderRequestItemMode("mode").notNull(),
+    // Catalog attribute filters for `discovery` items (empty for `explicit`).
+    filters: jsonb("filters")
+      .notNull()
+      .default({})
+      .$type<OrderRequestItemFilters>(),
+    // Latin-transliterated brand search (explicit) or a Russian phrase
+    // (discovery fallback). Fed to `listProducts({ q })`.
+    searchPhrase: text("search_phrase"),
+    // Raw quantity text as written, prefilled into the qty field when clean.
+    quantityHint: text("quantity_hint"),
+    status: orderRequestItemStatus("status").notNull().default("pending"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("order_request_item_requestId_idx").on(table.requestId),
+  ],
+)
+
+export type OrderRequestItem = typeof orderRequestItem.$inferSelect
+
 export const sourceType = pgEnum("source_type", ["external", "internal"])
 
 export type SourceType = (typeof sourceType.enumValues)[number]
@@ -1300,6 +1441,39 @@ export const orderAccessLinkRelations = relations(
     order: one(order, {
       fields: [orderAccessLink.orderId],
       references: [order.id],
+    }),
+  }),
+)
+
+export const orderRequestRelations = relations(
+  orderRequest,
+  ({ one, many }) => ({
+    client: one(client, {
+      fields: [orderRequest.clientId],
+      references: [client.id],
+    }),
+    order: one(order, {
+      fields: [orderRequest.orderId],
+      references: [order.id],
+    }),
+    user: one(user, {
+      fields: [orderRequest.userId],
+      references: [user.id],
+    }),
+    organization: one(organization, {
+      fields: [orderRequest.organizationId],
+      references: [organization.id],
+    }),
+    items: many(orderRequestItem),
+  }),
+)
+
+export const orderRequestItemRelations = relations(
+  orderRequestItem,
+  ({ one }) => ({
+    request: one(orderRequest, {
+      fields: [orderRequestItem.requestId],
+      references: [orderRequest.id],
     }),
   }),
 )

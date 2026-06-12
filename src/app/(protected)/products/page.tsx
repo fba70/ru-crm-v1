@@ -39,12 +39,19 @@ import {
   OrderBuilderPanel,
   AddToOrderButton,
 } from "@/components/blocks/order-builder"
-import { ExternalLink, Eye, ImageOff, Loader, Plus, X } from "lucide-react"
+import {
+  NewOrderFromRequestDialog,
+  OrderRequestWizardStrip,
+} from "@/components/blocks/order-request-wizard"
+import { toast } from "sonner"
+import { ExternalLink, Eye, ImageOff, Loader, Plus, Sparkles, X } from "lucide-react"
 import type {
   ProductRow,
   ListProductsResult,
   ProductFilterOptions,
 } from "@/app/api/products/route"
+import type { OrderRequestItemView } from "@/app/api/order-requests/route"
+import { parseQtyHint } from "@/lib/order-request"
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 const DEFAULT_PAGE_SIZE = 10
@@ -273,6 +280,161 @@ export default function ProductsPage() {
     setTab("catalog")
   }
 
+  // ── Order-from-request assistant ───────────────────────────────────
+  // The paste dialog creates + parses a request; `startAssembly` then mints an
+  // empty draft order (linked to the request) and walks the parsed intent
+  // items one at a time, pre-filtering the catalog below for each step.
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false)
+  const [wizard, setWizard] = useState<{
+    requestId: string
+    items: OrderRequestItemView[]
+    index: number
+  } | null>(null)
+
+  // Pre-filter the catalog for one intent item (explicit → search phrase,
+  // discovery → catalog filters). Sets both the committed filters and the
+  // debounced text mirrors so the controls reflect the applied narrowing.
+  const applyItemToFilters = useCallback((item: OrderRequestItemView) => {
+    const f = item.filters ?? {}
+    const phrase = item.searchPhrase ?? ""
+    const min = f.priceMin != null ? String(f.priceMin) : ""
+    const max = f.priceMax != null ? String(f.priceMax) : ""
+    setSearchInput(phrase)
+    setPriceMinInput(min)
+    setPriceMaxInput(max)
+    setAwardsInput("")
+    setFilters({
+      ...EMPTY_FILTERS,
+      q: phrase,
+      category: f.category ?? ALL,
+      type: f.type ?? ALL,
+      color: f.color ?? ALL,
+      sugar: f.sugar ?? ALL,
+      aging: f.aging ?? ALL,
+      bottleVolume: f.bottleVolume ?? ALL,
+      countryName: f.countryName ?? ALL,
+      priceMin: min,
+      priceMax: max,
+    })
+    setPage(1)
+  }, [])
+
+  const startAssembly = useCallback(
+    async (requestId: string) => {
+      try {
+        const res = await fetch(
+          `/api/order-requests?id=${encodeURIComponent(requestId)}`,
+        )
+        if (!res.ok) {
+          toast.error("Failed to load the parsed request")
+          return
+        }
+        const { request } = (await res.json()) as {
+          request: {
+            clientId: string
+            comment: string | null
+            parseError: string | null
+            items: OrderRequestItemView[]
+          }
+        }
+
+        // Mint an empty draft up front so the order is durable + linkable from
+        // the start, then drive the existing builder in edit mode on it.
+        const oRes = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: request.clientId,
+            description: request.comment ?? "",
+            items: [],
+          }),
+        })
+        const oData = await oRes.json().catch(() => ({}))
+        if (!oRes.ok) {
+          toast.error(oData.error || "Failed to create the draft order")
+          return
+        }
+        const orderId = oData.id as string
+        await fetch("/api/order-requests", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: requestId, action: "linkOrder", orderId }),
+        }).catch(() => {})
+
+        await builder.openEdit(orderId)
+        setTab("catalog")
+
+        if (request.items.length === 0) {
+          toast.message(
+            request.parseError
+              ? "Couldn't split the request — build the order manually."
+              : "No product requests found — build the order manually.",
+          )
+          return
+        }
+        setWizard({ requestId, items: request.items, index: 0 })
+        applyItemToFilters(request.items[0])
+      } catch {
+        toast.error("Failed to start the assistant")
+      }
+    },
+    [builder, applyItemToFilters],
+  )
+
+  // Stamp the current item's outcome and advance, or end the walkthrough.
+  const advanceWizard = useCallback(
+    (status: "added" | "skipped") => {
+      setWizard((w) => {
+        if (!w) return w
+        const item = w.items[w.index]
+        if (item) {
+          fetch("/api/order-requests", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: w.requestId,
+              action: "itemStatus",
+              itemId: item.id,
+              status,
+            }),
+          }).catch(() => {})
+        }
+        const next = w.index + 1
+        if (next >= w.items.length) {
+          fetch("/api/order-requests", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: w.requestId, action: "status", status: "done" }),
+          }).catch(() => {})
+          toast.success("All items reviewed — check the order and send it.")
+          return null
+        }
+        applyItemToFilters(w.items[next])
+        return { ...w, index: next }
+      })
+    },
+    [applyItemToFilters],
+  )
+
+  const closeWizard = useCallback(() => {
+    setWizard((w) => {
+      if (w) {
+        fetch("/api/order-requests", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: w.requestId, action: "status", status: "done" }),
+        }).catch(() => {})
+      }
+      return null
+    })
+  }, [])
+
+  // The parsed quantity for the current step prefills the add-to-order field.
+  const currentWizardItem = wizard ? wizard.items[wizard.index] : null
+  const addDefaultQty = currentWizardItem
+    ? parseQtyHint(currentWizardItem.quantityHint)
+    : 1
+
   // Guards against an out-of-order response overwriting a newer one.
   const reqIdRef = useRef(0)
 
@@ -316,6 +478,12 @@ export default function ProductsPage() {
     load()
   }, [load])
 
+  // When the builder closes by any path (saved, sent, discarded), drop the
+  // wizard strip so it never lingers over an inactive order.
+  useEffect(() => {
+    if (!builder.isActive && wizard) setWizard(null)
+  }, [builder.isActive, wizard])
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
   const rangeEnd = Math.min(page * pageSize, total)
@@ -333,13 +501,34 @@ export default function ProductsPage() {
               <TabsTrigger value="catalog">Product Catalog</TabsTrigger>
               <TabsTrigger value="orders">Orders</TabsTrigger>
             </TabsList>
-            <Button size="sm" onClick={startNewOrder} disabled={builder.isActive}>
-              <Plus className="h-4 w-4 mr-1" />
-              New order
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => setRequestDialogOpen(true)}
+                disabled={builder.isActive}
+              >
+                <Sparkles className="h-4 w-4 mr-1" />
+                New order from request
+              </Button>
+              <Button size="sm" onClick={startNewOrder} disabled={builder.isActive}>
+                <Plus className="h-4 w-4 mr-1" />
+                New order
+              </Button>
+            </div>
           </div>
 
           <TabsContent value="catalog" className="mt-4 space-y-4">
+            {wizard && currentWizardItem && builder.isActive && (
+              <OrderRequestWizardStrip
+                step={wizard.index}
+                total={wizard.items.length}
+                item={currentWizardItem}
+                onSkip={() => advanceWizard("skipped")}
+                onNext={() => advanceWizard("added")}
+                onSkipRest={closeWizard}
+                onClose={closeWizard}
+              />
+            )}
             <OrderBuilderPanel builder={builder} />
             <Card>
               <CardHeader>
@@ -610,6 +799,7 @@ export default function ProductsPage() {
                             {showAddCol && (
                               <TableCell className="text-center">
                                 <AddToOrderButton
+                                  defaultQty={addDefaultQty}
                                   onAdd={(qty) =>
                                     builder.addProduct(
                                       { id: p.id, name: p.name, price: p.price },
@@ -710,6 +900,12 @@ export default function ProductsPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <NewOrderFromRequestDialog
+        open={requestDialogOpen}
+        onOpenChange={setRequestDialogOpen}
+        onCreated={startAssembly}
+      />
     </div>
   )
 }

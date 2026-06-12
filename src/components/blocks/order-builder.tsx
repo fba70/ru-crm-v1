@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -397,21 +397,32 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
 }
 
 // ── Add-to-order popover (rendered per catalog row) ──────────────────
+// `defaultQty` prefills the quantity field — the order-from-request wizard
+// passes the parsed quantity for the current step so explicit-line adds land
+// at the right count without retyping.
 export function AddToOrderButton({
   onAdd,
   disabled,
+  defaultQty = 1,
 }: {
   onAdd: (qty: number) => void
   disabled?: boolean
+  defaultQty?: number
 }) {
   const [open, setOpen] = useState(false)
-  const [qty, setQty] = useState("1")
+  const [qty, setQty] = useState(String(defaultQty))
+
+  // Keep the field in sync when the wizard advances to a step with a
+  // different parsed quantity (the button instances persist across rows).
+  useEffect(() => {
+    setQty(String(defaultQty))
+  }, [defaultQty])
 
   const commit = () => {
     const n = Math.max(1, Math.trunc(Number(qty)) || 1)
     onAdd(n)
     setOpen(false)
-    setQty("1")
+    setQty(String(defaultQty))
   }
 
   return (
