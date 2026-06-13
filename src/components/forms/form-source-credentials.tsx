@@ -62,11 +62,11 @@ export function FormSourceCredentials({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Configure credentials — {sourceName}</DialogTitle>
+          <DialogTitle>Настройка учётных данных — {sourceName}</DialogTitle>
           <DialogDescription>
-            Credentials are write-only. After saving, the existing values
-            cannot be read back through the UI. To rotate, paste a fresh
-            value and save again.
+            Учётные данные доступны только для записи. После сохранения их
+            нельзя прочитать через интерфейс. Для замены вставьте новое значение
+            и сохраните снова.
           </DialogDescription>
         </DialogHeader>
 
@@ -106,7 +106,7 @@ export function FormSourceCredentials({
           provider === "whatsapp" ||
           provider === "aichat") && (
           <p className="text-sm text-muted-foreground py-4">
-            This source provider does not require credentials.
+            Этот провайдер источника не требует учётных данных.
           </p>
         )}
       </DialogContent>
@@ -134,7 +134,7 @@ async function submitCredentials(opts: {
     if (!res.ok) {
       return {
         ok: false,
-        error: data.error ?? "Request failed",
+        error: data.error ?? "Запрос не выполнен",
         issues: data.issues,
       }
     }
@@ -142,7 +142,7 @@ async function submitCredentials(opts: {
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : "Network error",
+      error: err instanceof Error ? err.message : "Ошибка сети",
     }
   }
 }
@@ -160,7 +160,7 @@ function NylasFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
 
   async function handleSave() {
     if (!grantId.trim()) {
-      toast.error("Grant ID is required")
+      toast.error("Укажите Grant ID")
       return
     }
     setBusy(true)
@@ -174,7 +174,7 @@ function NylasFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
       toast.error(formatError(out.error, out.issues))
       return
     }
-    toast.success("Credentials saved")
+    toast.success("Учётные данные сохранены")
     onSaved()
     onClose()
   }
@@ -182,34 +182,33 @@ function NylasFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <Label htmlFor="nylas-grant-id">Grant ID (this is the credential)</Label>
+        <Label htmlFor="nylas-grant-id">Grant ID (это и есть учётные данные)</Label>
         <Input
           id="nylas-grant-id"
           value={grantId}
           onChange={(e) => setGrantId(e.target.value)}
-          placeholder="e.g. 30c70eb1-bbe2-4e0e-9cc7-..."
+          placeholder="напр. 30c70eb1-bbe2-4e0e-9cc7-..."
           autoComplete="off"
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          For Nylas-backed Email sources, the <strong>Grant ID</strong> is
-          the only credential required — one Grant ID is permanently bound
-          to one specific mailbox at the time it&apos;s created in Nylas.
-          To get one: open the Nylas dashboard → Grants → connect (or pick)
-          the mailbox you want this source to read → copy the resulting
-          UUID and paste it here. The platform-level{" "}
+          Для источников «Почта» на базе Nylas <strong>Grant ID</strong> —
+          единственные необходимые учётные данные: один Grant ID навсегда
+          привязан к конкретному почтовому ящику в момент создания в Nylas.
+          Чтобы получить его: откройте панель Nylas → Grants → подключите (или
+          выберите) нужный почтовый ящик → скопируйте полученный UUID и вставьте
+          сюда. Платформенные{" "}
           <code className="text-[10px]">NYLAS_API_KEY</code> /{" "}
-          <code className="text-[10px]">NYLAS_API_URI</code> are shared
-          across every source under the same Nylas Application and are not
-          configured here.
+          <code className="text-[10px]">NYLAS_API_URI</code> общие для всех
+          источников в рамках одного приложения Nylas и здесь не настраиваются.
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Cancel
+          Отмена
         </Button>
         <Button type="button" onClick={handleSave} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>
@@ -223,11 +222,11 @@ function GchatFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
 
   async function handleSave() {
     if (!serviceAccountJson.trim()) {
-      toast.error("Service account JSON is required")
+      toast.error("Укажите JSON сервисного аккаунта")
       return
     }
     if (!impersonateUser.trim()) {
-      toast.error("Impersonate user is required")
+      toast.error("Укажите пользователя для имперсонации")
       return
     }
     setBusy(true)
@@ -244,7 +243,7 @@ function GchatFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
       toast.error(formatError(out.error, out.issues))
       return
     }
-    toast.success("Credentials saved")
+    toast.success("Учётные данные сохранены")
     onSaved()
     onClose()
   }
@@ -252,7 +251,7 @@ function GchatFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <Label htmlFor="gchat-sa">Service account JSON</Label>
+        <Label htmlFor="gchat-sa">JSON сервисного аккаунта</Label>
         <Textarea
           id="gchat-sa"
           value={serviceAccountJson}
@@ -264,13 +263,13 @@ function GchatFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          Paste the full JSON file content. Must contain client_email and
-          private_key. Domain-wide delegation must be enabled for this
-          service account in Google Workspace Admin.
+          Вставьте полное содержимое JSON-файла. Должно содержать client_email и
+          private_key. Для этого сервисного аккаунта в Google Workspace Admin
+          должно быть включено делегирование на уровне домена.
         </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="gchat-impersonate">Impersonate user</Label>
+        <Label htmlFor="gchat-impersonate">Пользователь для имперсонации</Label>
         <Input
           id="gchat-impersonate"
           type="email"
@@ -280,17 +279,17 @@ function GchatFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
           autoComplete="off"
         />
         <p className="text-xs text-muted-foreground">
-          Workspace user to impersonate via DWD. Required for Chat
-          attachment download (the media endpoint only accepts user-auth
-          scopes).
+          Пользователь Workspace для имперсонации через DWD. Требуется для
+          скачивания вложений из Chat (медиа-эндпоинт принимает только
+          пользовательские scope).
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Cancel
+          Отмена
         </Button>
         <Button type="button" onClick={handleSave} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>
@@ -303,7 +302,7 @@ function GdriveFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
 
   async function handleSave() {
     if (!serviceAccountJson.trim()) {
-      toast.error("Service account JSON is required")
+      toast.error("Укажите JSON сервисного аккаунта")
       return
     }
     setBusy(true)
@@ -317,7 +316,7 @@ function GdriveFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
       toast.error(formatError(out.error, out.issues))
       return
     }
-    toast.success("Credentials saved")
+    toast.success("Учётные данные сохранены")
     onSaved()
     onClose()
   }
@@ -325,7 +324,7 @@ function GdriveFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <Label htmlFor="gdrive-sa">Service account JSON</Label>
+        <Label htmlFor="gdrive-sa">JSON сервисного аккаунта</Label>
         <Textarea
           id="gdrive-sa"
           value={serviceAccountJson}
@@ -337,17 +336,16 @@ function GdriveFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          Paste the full JSON file content. The service account must
-          have read access to the shared Drive(s) configured for this
-          source.
+          Вставьте полное содержимое JSON-файла. У сервисного аккаунта должен
+          быть доступ на чтение к общим дискам, настроенным для этого источника.
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Cancel
+          Отмена
         </Button>
         <Button type="button" onClick={handleSave} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>
@@ -361,11 +359,11 @@ function TelegramFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
 
   async function handleSave() {
     if (!botToken.trim()) {
-      toast.error("Bot token is required")
+      toast.error("Укажите токен бота")
       return
     }
     if (!webhookSecret.trim()) {
-      toast.error("Webhook secret is required")
+      toast.error("Укажите секрет веб-хука")
       return
     }
     setBusy(true)
@@ -382,7 +380,7 @@ function TelegramFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
       toast.error(formatError(out.error, out.issues))
       return
     }
-    toast.success("Credentials saved — webhook registered with Telegram")
+    toast.success("Учётные данные сохранены — веб-хук зарегистрирован в Telegram")
     onSaved()
     onClose()
   }
@@ -390,7 +388,7 @@ function TelegramFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <Label htmlFor="tg-bot-token">Bot token</Label>
+        <Label htmlFor="tg-bot-token">Токен бота</Label>
         <Input
           id="tg-bot-token"
           value={botToken}
@@ -400,37 +398,38 @@ function TelegramFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          The token <strong>@BotFather</strong> gave you when you created the
-          bot (<code className="text-[10px]">/newbot</code>). It grants full
-          control of the bot — treat it as a secret. Each organization runs
-          its own bot, so paste the token for <em>this</em> org&apos;s bot.
+          Токен, который <strong>@BotFather</strong> выдал при создании бота
+          (<code className="text-[10px]">/newbot</code>). Он даёт полный контроль
+          над ботом — храните его как секрет. Каждая организация использует
+          своего бота, поэтому вставьте токен бота <em>этой</em> организации.
         </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="tg-webhook-secret">Webhook secret</Label>
+        <Label htmlFor="tg-webhook-secret">Секрет веб-хука</Label>
         <Input
           id="tg-webhook-secret"
           value={webhookSecret}
           onChange={(e) => setWebhookSecret(e.target.value)}
-          placeholder="a high-entropy random string"
+          placeholder="случайная строка с высокой энтропией"
           autoComplete="off"
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          A random string <em>you</em> generate (e.g.{" "}
+          Случайная строка, которую генерируете <em>вы</em> (напр.{" "}
           <code className="text-[10px]">openssl rand -hex 32</code>). Telegram
-          echoes it back on every delivery so we can reject forgeries. Saving
-          here automatically registers the bot&apos;s webhook with Telegram
-          (only chars A–Z, a–z, 0–9, <code className="text-[10px]">_</code>{" "}
-          and <code className="text-[10px]">-</code> are allowed).
+          возвращает её при каждой доставке, чтобы можно было отклонять подделки.
+          Сохранение здесь автоматически регистрирует веб-хук бота в Telegram
+          (допустимы только символы A–Z, a–z, 0–9,{" "}
+          <code className="text-[10px]">_</code> и{" "}
+          <code className="text-[10px]">-</code>).
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Cancel
+          Отмена
         </Button>
         <Button type="button" onClick={handleSave} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>

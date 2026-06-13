@@ -108,7 +108,7 @@ export function NewOrderDialog({
     }
     // AI path — needs a client to attribute the parsed order.
     if (!clientId) {
-      toast.error("Select a client to analyse the request")
+      toast.error("Выберите клиента для анализа запроса")
       return
     }
     setSubmitting(true)
@@ -120,14 +120,14 @@ export function NewOrderDialog({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        toast.error(data.error || "Failed to analyse the request")
+        toast.error(data.error || "Не удалось проанализировать запрос")
         return
       }
       onAssemble(data.id as string)
       reset()
       onOpenChange(false)
     } catch {
-      toast.error("Failed to analyse the request")
+      toast.error("Не удалось проанализировать запрос")
     } finally {
       setSubmitting(false)
     }
@@ -137,19 +137,19 @@ export function NewOrderDialog({
     <Dialog open={open} onOpenChange={(o) => !submitting && onOpenChange(o)}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>New order</DialogTitle>
+          <DialogTitle>Новый заказ</DialogTitle>
           <DialogDescription>
-            Build manually, or paste a client&rsquo;s free-text message below to
-            have it split into product requests and walk you through the order.
+            Создайте вручную или вставьте ниже сообщение клиента — оно будет
+            разобрано на товарные позиции, и мастер проведёт вас по заказу.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <span className="text-xs text-muted-foreground">Client</span>
+            <span className="text-xs text-muted-foreground">Клиент</span>
             <Select value={clientId} onValueChange={setClientId} disabled={submitting}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a client (optional for manual)" />
+                <SelectValue placeholder="Выберите клиента (необязательно для ручного создания)" />
               </SelectTrigger>
               <SelectContent>
                 {clientOptions.map((c) => (
@@ -162,11 +162,11 @@ export function NewOrderDialog({
           </div>
 
           <div className="space-y-1">
-            <span className="text-xs text-muted-foreground">Description</span>
+            <span className="text-xs text-muted-foreground">Описание</span>
             <Textarea
               rows={1}
               className="min-h-9"
-              placeholder="Optional note (becomes the order description)"
+              placeholder="Необязательная заметка (станет описанием заказа)"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               disabled={submitting}
@@ -175,14 +175,14 @@ export function NewOrderDialog({
 
           <div className="space-y-1">
             <span className="text-xs text-muted-foreground">
-              Client request{" "}
+              Запрос клиента{" "}
               <span className="text-muted-foreground/70">
-                — leave empty to build manually
+                — оставьте пустым для ручного создания
               </span>
             </span>
             <Textarea
               rows={7}
-              placeholder="Paste the WhatsApp / email / chat message here to auto-assemble the order…"
+              placeholder="Вставьте сюда сообщение из WhatsApp / почты / чата для автоматической сборки заказа…"
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
               disabled={submitting}
@@ -196,23 +196,23 @@ export function NewOrderDialog({
             onClick={() => onOpenChange(false)}
             disabled={submitting}
           >
-            Cancel
+            Отмена
           </Button>
           <Button onClick={submit} disabled={submitting}>
             {submitting ? (
               <>
                 <Loader className="h-4 w-4 mr-1 animate-spin" />
-                Analysing the request…
+                Анализ запроса…
               </>
             ) : hasRequest ? (
               <>
                 <Sparkles className="h-4 w-4 mr-1" />
-                Analyse &amp; start
+                Проанализировать и начать
               </>
             ) : (
               <>
                 <Plus className="h-4 w-4 mr-1" />
-                Build order
+                Создать заказ
               </>
             )}
           </Button>
@@ -228,15 +228,15 @@ export function NewOrderDialog({
 // table below is pre-filtered to this item's filters / search phrase; the
 // rep adds products from it, then advances.
 const FILTER_LABELS: Record<string, string> = {
-  category: "Category",
-  type: "Type",
-  color: "Color",
-  sugar: "Sugar",
-  aging: "Aging",
-  bottleVolume: "Volume",
-  countryName: "Country",
-  priceMin: "From ₽",
-  priceMax: "To ₽",
+  category: "Категория",
+  type: "Тип",
+  color: "Цвет",
+  sugar: "Сахар",
+  aging: "Выдержка",
+  bottleVolume: "Объём",
+  countryName: "Страна",
+  priceMin: "От ₽",
+  priceMax: "До ₽",
 }
 
 export function OrderRequestWizardStrip({
@@ -275,16 +275,16 @@ export function OrderRequestWizardStrip({
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles className="h-4 w-4 text-primary shrink-0" />
           <span className="font-semibold">
-            Request item {step + 1} of {total}
+            Позиция запроса {step + 1} из {total}
           </span>
           <Badge variant="secondary">
-            {item.mode === "explicit" ? "Named product" : "Discovery"}
+            {item.mode === "explicit" ? "Конкретный товар" : "Подбор"}
           </Badge>
         </div>
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Exit assistant (keep the order)"
+          aria-label="Закрыть мастер (сохранить заказ)"
           onClick={onClose}
         >
           <X className="h-4 w-4" />
@@ -302,7 +302,7 @@ export function OrderRequestWizardStrip({
         <div className="flex flex-wrap items-center gap-1.5">
           {item.quantityHint && (
             <Badge variant="outline" className="font-normal">
-              Asked: {item.quantityHint}
+              Запрошено: {item.quantityHint}
             </Badge>
           )}
           {filterChips.map((c) => (
@@ -319,28 +319,28 @@ export function OrderRequestWizardStrip({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Pick matching products from the catalog below and click{" "}
-          <span className="font-medium">Add</span>. Adjust quantities in the
-          order, then move on.
+          Выберите подходящие товары из каталога ниже и нажмите{" "}
+          <span className="font-medium">«Добавить»</span>. При необходимости
+          измените количество в заказе и переходите дальше.
         </p>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={onSkipRest}>
-            Skip the rest
+            Пропустить остальные
           </Button>
           <Button variant="outline" size="sm" onClick={onSkip}>
             <SkipForward className="h-4 w-4 mr-1" />
-            Skip this
+            Пропустить
           </Button>
           <Button size="sm" onClick={onNext}>
             {isLast ? (
               <>
                 <PackageCheck className="h-4 w-4 mr-1" />
-                Finish &amp; review
+                Завершить и проверить
               </>
             ) : (
               <>
-                Next item
+                Следующая позиция
                 <ChevronRight className="h-4 w-4 ml-1" />
               </>
             )}

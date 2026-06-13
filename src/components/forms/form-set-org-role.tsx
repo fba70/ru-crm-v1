@@ -21,6 +21,13 @@ import {
 import { authClient } from "@/lib/auth-client"
 import { toast } from "sonner"
 
+// Display labels — DB enum keys stay English.
+const ORG_ROLE_LABEL: Record<string, string> = {
+  owner: "Владелец",
+  admin: "Администратор",
+  member: "Участник",
+}
+
 export default function SetOrgRoleDialog({
   memberId,
   memberName,
@@ -49,11 +56,11 @@ export default function SetOrgRoleDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to update role")
+        toast.error(error.message || "Не удалось изменить роль")
         return
       }
 
-      toast.success(`Role updated to "${role}" for ${memberName}`)
+      toast.success(`Роль изменена на «${ORG_ROLE_LABEL[role] ?? role}» для ${memberName}`)
       onSuccess?.()
       setOpen(false)
     })
@@ -63,19 +70,19 @@ export default function SetOrgRoleDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Role
+          Роль
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Set Role for {memberName}</DialogTitle>
+          <DialogTitle>Назначить роль для {memberName}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-gray-400">
-            Current role: <span className="text-foreground">{currentRole}</span>
+            Текущая роль: <span className="text-foreground">{ORG_ROLE_LABEL[currentRole] ?? currentRole}</span>
           </p>
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">New Role</label>
+            <label className="text-sm text-gray-400">Новая роль</label>
             <Select
               value={role}
               onValueChange={(val) =>
@@ -86,9 +93,9 @@ export default function SetOrgRoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="owner">Owner</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="owner">Владелец</SelectItem>
+                <SelectItem value="admin">Администратор</SelectItem>
+                <SelectItem value="member">Участник</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -98,7 +105,7 @@ export default function SetOrgRoleDialog({
               className="w-full"
               loading={isPending}
             >
-              Save Role
+              Сохранить роль
             </LoadingButton>
           </DialogFooter>
         </div>

@@ -17,6 +17,14 @@ const STATUS_COLOR: Record<string, string> = {
   deleted: "bg-red-500/15 text-red-600 dark:text-red-400",
 }
 
+// UI display labels for the status badge (DB enum values stay English).
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активный",
+  initial: "Новый",
+  suspended: "Приостановлен",
+  deleted: "Удалён",
+}
+
 export function ContactCard({
   contact,
   onChanged,
@@ -51,7 +59,7 @@ export function ContactCard({
                 variant="secondary"
                 className={STATUS_COLOR[contact.status] ?? ""}
               >
-                {contact.status}
+                {STATUS_LABEL[contact.status] ?? contact.status}
               </Badge>
             </div>
           )}
@@ -61,7 +69,7 @@ export function ContactCard({
           contact={contact}
           onSuccess={onChanged}
           trigger={
-            <Button variant="ghost" size="icon" aria-label="Edit contact">
+            <Button variant="ghost" size="icon" aria-label="Редактировать контакт">
               <Pencil className="h-4 w-4" />
             </Button>
           }
@@ -93,7 +101,7 @@ export function ContactCard({
           </div>
         )}
         {contact.userName && (
-          <div className="text-xs pt-1">Created by {contact.userName}</div>
+          <div className="text-xs pt-1">Создал {contact.userName}</div>
         )}
       </CardContent>
     </Card>

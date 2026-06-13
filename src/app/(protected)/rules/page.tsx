@@ -20,11 +20,11 @@ export default function RulesPage() {
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">RULES</h1>
+      <h1 className="text-2xl font-medium mt-2">ПРАВИЛА</h1>
 
       <Card className="w-full max-w-7xl">
         <CardHeader>
-          <CardTitle className="text-xl font-medium">System rules</CardTitle>
+          <CardTitle className="text-xl font-medium">Системные правила</CardTitle>
         </CardHeader>
         <CardContent>
           <TableRules
@@ -39,7 +39,7 @@ export default function RulesPage() {
 
       <Card className="w-full max-w-7xl">
         <CardHeader>
-          <CardTitle className="text-xl font-medium">Custom rules</CardTitle>
+          <CardTitle className="text-xl font-medium">Пользовательские правила</CardTitle>
         </CardHeader>
         <CardContent>
           <TableRules

@@ -3,7 +3,7 @@ import { Suspense } from "react"
 import { SignInForm } from "@/components/forms/form-sign-in"
 
 export const metadata: Metadata = {
-  title: "Sign in",
+  title: "Вход",
 }
 
 export default function SignIn() {

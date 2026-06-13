@@ -88,8 +88,8 @@ export const auth = betterAuth({
     async sendResetPassword({ user, url }) {
       await sendEmails({
         to: user.email,
-        subject: "Reset your password",
-        body: `Click this link to reset your password: ${url}`,
+        subject: "Сброс пароля",
+        body: `Перейдите по этой ссылке, чтобы сбросить пароль: ${url}`,
       })
     },
     // requireEmailVerification: true, // if user can access the app without email verified
@@ -100,8 +100,8 @@ export const auth = betterAuth({
     async sendVerificationEmail({ user, url }) {
       await sendEmails({
         to: user.email,
-        subject: "Verify your email address",
-        body: `Click this link to verify your email: ${url}`,
+        subject: "Подтверждение адреса email",
+        body: `Перейдите по этой ссылке, чтобы подтвердить email: ${url}`,
       })
     },
   },
@@ -128,7 +128,7 @@ export const auth = betterAuth({
           const slug = uniqueUsernameGenerator(config)
           await auth.api.createOrganization({
             body: {
-              name: "My Organization",
+              name: "Моя организация",
               slug: slug,
               logo: "",
               metadata: {},
@@ -191,18 +191,18 @@ export const auth = betterAuth({
       disableSignUp: true,
       async sendVerificationOTP({ email, otp, type }) {
         const subjectMap = {
-          "sign-in": "Your sign-in code",
-          "email-verification": "Verify your email",
-          "forget-password": "Your password reset code",
-          "change-email": "Confirm your new email",
+          "sign-in": "Ваш код для входа",
+          "email-verification": "Подтверждение email",
+          "forget-password": "Код для сброса пароля",
+          "change-email": "Подтверждение нового email",
         } as const
         await sendEmails({
           to: email,
           subject: subjectMap[type],
           body: `
-            <p>Your verification code is:</p>
+            <p>Ваш код подтверждения:</p>
             <p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${otp}</p>
-            <p>This code expires in 5 minutes.</p>
+            <p>Срок действия кода — 5 минут.</p>
           `,
         })
       },
@@ -224,12 +224,12 @@ export const auth = betterAuth({
         const inviteLink = `${appUrl}/accept-invitation/${data.id}`
         await sendEmails({
           to: data.email,
-          subject: `You've been invited to join ${data.organization.name}`,
+          subject: `Вас пригласили присоединиться к ${data.organization.name}`,
           body: `
-            <p>Hi,</p>
-            <p><strong>${data.inviter.user.name}</strong> (${data.inviter.user.email}) has invited you to join <strong>${data.organization.name}</strong>.</p>
-            <p><a href="${inviteLink}">Click here to accept the invitation</a></p>
-            <p>If you don't have an account yet, you'll be able to create one.</p>
+            <p>Здравствуйте,</p>
+            <p><strong>${data.inviter.user.name}</strong> (${data.inviter.user.email}) приглашает вас присоединиться к <strong>${data.organization.name}</strong>.</p>
+            <p><a href="${inviteLink}">Нажмите здесь, чтобы принять приглашение</a></p>
+            <p>Если у вас ещё нет аккаунта, вы сможете его создать.</p>
           `,
         })
       },

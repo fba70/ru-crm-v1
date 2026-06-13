@@ -33,8 +33,8 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 const signInSchema = z.object({
-  email: z.email({ message: "Please enter a valid email" }),
-  password: z.string().min(1, { message: "Password is required" }),
+  email: z.email({ message: "Введите корректный email" }),
+  password: z.string().min(1, { message: "Введите пароль" }),
   rememberMe: z.boolean().optional(),
 })
 
@@ -70,10 +70,10 @@ export function SignInForm() {
     setLoading(false)
 
     if (error) {
-      setError(error.message || "Unknown authorization error")
-      toast.error(error.message || "Unknown authorization error")
+      setError(error.message || "Неизвестная ошибка авторизации")
+      toast.error(error.message || "Неизвестная ошибка авторизации")
     } else {
-      toast.success("Sign-In is successful!")
+      toast.success("Вход выполнен успешно!")
       router.push(redirect)
     }
   }
@@ -88,20 +88,20 @@ export function SignInForm() {
     })
 
     setLoading(false)
-    toast.success("Redirecting to social provider for authentication...")
+    toast.success("Перенаправляем к внешнему провайдеру для авторизации…")
 
     if (error) {
-      setError(error.message || "Unknown authorization error")
-      toast.error(error.message || "Unknown authorization error")
+      setError(error.message || "Неизвестная ошибка авторизации")
+      toast.error(error.message || "Неизвестная ошибка авторизации")
     }
   }
 
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-lg md:text-xl">Sign In</CardTitle>
+        <CardTitle className="text-lg md:text-xl">Вход</CardTitle>
         <CardDescription className="text-xs md:text-sm">
-          Sign-in to your account with email or using social providers
+          Войдите в аккаунт по email или через внешних провайдеров
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -131,18 +131,18 @@ export function SignInForm() {
               render={({ field }) => (
                 <FormItem>
                   <div className="flex items-center">
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel>Пароль</FormLabel>
                     <Link
                       href="/forgot-password"
                       className="ml-auto inline-block text-sm underline"
                     >
-                      Forgot your password?
+                      Забыли пароль?
                     </Link>
                   </div>
                   <FormControl>
                     <PasswordInput
                       autoComplete="current-password"
-                      placeholder="Password"
+                      placeholder="Пароль"
                       {...field}
                     />
                   </FormControl>
@@ -162,7 +162,7 @@ export function SignInForm() {
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
-                  <FormLabel>Remember me</FormLabel>
+                  <FormLabel>Запомнить меня</FormLabel>
                 </FormItem>
               )}
             />
@@ -174,7 +174,7 @@ export function SignInForm() {
             )}
 
             <LoadingButton type="submit" className="w-full" loading={loading}>
-              Login
+              Войти
             </LoadingButton>
 
             <div className="flex w-full flex-col items-center justify-between gap-4 mt-4">
@@ -185,7 +185,7 @@ export function SignInForm() {
                 className="w-full gap-2"
                 disabled={loading}
               >
-                <Link href="/sign-in/otp">Sign in with email OTP</Link>
+                <Link href="/sign-in/otp">Войти по одноразовому коду (email)</Link>
               </Button>
 
               <Button
@@ -196,7 +196,7 @@ export function SignInForm() {
                 onClick={() => handleSocialSignIn("google")}
               >
                 <GoogleIcon width="0.98em" height="1em" />
-                Sign in with Google
+                Войти через Google
               </Button>
 
               <Button
@@ -207,7 +207,7 @@ export function SignInForm() {
                 onClick={() => handleSocialSignIn("github")}
               >
                 <GitHubIcon />
-                Sign in with Github
+                Войти через GitHub
               </Button>
             </div>
           </form>
@@ -216,9 +216,9 @@ export function SignInForm() {
       <CardFooter>
         <div className="flex w-full justify-center border-t pt-4">
           <p className="text-muted-foreground text-center text-xs">
-            Don&apos;t have an account?{" "}
+            Нет аккаунта?{" "}
             <Link href="/sign-up" className="underline">
-              Sign up
+              Зарегистрироваться
             </Link>
           </p>
         </div>

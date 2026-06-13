@@ -63,11 +63,11 @@ export default function AdminEditUserDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to update user")
+        toast.error(error.message || "Не удалось обновить пользователя")
         return
       }
 
-      toast.success("User updated successfully")
+      toast.success("Пользователь обновлён")
       onSuccess?.()
       setOpen(false)
     })
@@ -77,12 +77,12 @@ export default function AdminEditUserDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Edit
+          Изменить
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Edit User</DialogTitle>
+          <DialogTitle>Редактировать пользователя</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -91,7 +91,7 @@ export default function AdminEditUserDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name</FormLabel>
+                  <FormLabel className="text-gray-400">Имя</FormLabel>
                   <FormControl>
                     <Input {...field} />
                   </FormControl>
@@ -114,7 +114,7 @@ export default function AdminEditUserDialog({
             />
             <DialogFooter>
               <LoadingButton type="submit" className="w-full" loading={isPending}>
-                Save
+                Сохранить
               </LoadingButton>
             </DialogFooter>
           </form>

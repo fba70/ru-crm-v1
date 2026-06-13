@@ -42,6 +42,14 @@ import type { EntityStatus } from "@/db/schema"
 const STATUSES: EntityStatus[] = ["active", "suspended", "initial", "deleted"]
 const NO_CLIENT = "__none__"
 
+// UI display labels for status (DB enum values stay English).
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активный",
+  suspended: "Приостановлен",
+  initial: "Новый",
+  deleted: "Удалён",
+}
+
 type ContactFormData = {
   name: string
   nameNative: string
@@ -128,20 +136,22 @@ export default function ContactEditDialog({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to save contact")
+          toast.error(err.error || "Не удалось сохранить контакт")
           return
         }
-        toast.success(mode === "create" ? "Contact created" : "Contact updated")
+        toast.success(mode === "create" ? "Контакт создан" : "Контакт обновлён")
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to save contact")
+        toast.error("Не удалось сохранить контакт")
       }
     })
   }
 
   const title =
-    mode === "create" ? "New contact" : `Edit contact: ${contact?.name ?? ""}`
+    mode === "create"
+      ? "Новый контакт"
+      : `Редактирование контакта: ${contact?.name ?? ""}`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -156,12 +166,12 @@ export default function ContactEditDialog({
               <FormField
                 control={form.control}
                 name="name"
-                rules={{ required: "Name is required" }}
+                rules={{ required: "Укажите имя" }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Name *</FormLabel>
+                    <FormLabel className="text-gray-400">Имя *</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Contact name" />
+                      <Input {...field} placeholder="Имя контакта" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -173,12 +183,12 @@ export default function ContactEditDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-gray-400">
-                      Native name
+                      Имя на родном языке
                     </FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="Local-language name (e.g. 张伟)"
+                        placeholder="Имя на родном языке (напр. 张伟)"
                       />
                     </FormControl>
                     <FormMessage />
@@ -193,9 +203,9 @@ export default function ContactEditDialog({
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Phone</FormLabel>
+                    <FormLabel className="text-gray-400">Телефон</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="+1 555 000 0000" />
+                      <Input {...field} placeholder="+7 999 000 0000" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -225,9 +235,9 @@ export default function ContactEditDialog({
               name="position"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Position</FormLabel>
+                  <FormLabel className="text-gray-400">Должность</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="e.g. CTO" />
+                    <Input {...field} placeholder="напр. директор по ИТ" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -240,12 +250,12 @@ export default function ContactEditDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-gray-400">
-                    Also known as
+                    Другие имена
                   </FormLabel>
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="Other spellings / nicknames, comma-separated (e.g. Евгений Богданов, Женя)"
+                      placeholder="Другие написания / прозвища через запятую (напр. Евгений Богданов, Женя)"
                     />
                   </FormControl>
                   <FormMessage />
@@ -259,18 +269,18 @@ export default function ContactEditDialog({
                 name="clientId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Client</FormLabel>
+                    <FormLabel className="text-gray-400">Клиент</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="No client" />
+                          <SelectValue placeholder="Без клиента" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value={NO_CLIENT}>No client</SelectItem>
+                        <SelectItem value={NO_CLIENT}>Без клиента</SelectItem>
                         {clientOptions.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name}
@@ -287,7 +297,7 @@ export default function ContactEditDialog({
                 name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Status</FormLabel>
+                    <FormLabel className="text-gray-400">Статус</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -300,7 +310,7 @@ export default function ContactEditDialog({
                       <SelectContent>
                         {STATUSES.map((s) => (
                           <SelectItem key={s} value={s}>
-                            {s.charAt(0).toUpperCase() + s.slice(1)}
+                            {STATUS_LABEL[s] ?? s}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -317,10 +327,10 @@ export default function ContactEditDialog({
                 variant="outline"
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                Отмена
               </Button>
               <LoadingButton type="submit" loading={isPending}>
-                {mode === "create" ? "Create" : "Save"}
+                {mode === "create" ? "Создать" : "Сохранить"}
               </LoadingButton>
             </DialogFooter>
           </form>

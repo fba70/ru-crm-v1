@@ -51,28 +51,46 @@ type Row = {
 
 type Response = { rows: Row[]; total: number }
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 const MIME_BUCKETS: { value: string; label: string }[] = [
   { value: "pdf", label: "PDF" },
-  { value: "image", label: "Image" },
-  { value: "audio", label: "Audio" },
-  { value: "video", label: "Video" },
-  { value: "office", label: "Office (Word / Excel / PowerPoint)" },
-  { value: "other", label: "Other / no mime" },
+  { value: "image", label: "Изображение" },
+  { value: "audio", label: "Аудио" },
+  { value: "video", label: "Видео" },
+  { value: "office", label: "Офис (Word / Excel / PowerPoint)" },
+  { value: "other", label: "Другое / без типа" },
 ]
 
-const PARSE_STATUSES: { value: ParseStatus; label: string }[] = [
-  { value: "pending", label: "Pending" },
-  { value: "processing", label: "Processing" },
-  { value: "complete", label: "Complete" },
-  { value: "failed", label: "Failed" },
-  { value: "skipped", label: "Skipped" },
-]
+// Display labels for the parse/upload status badges + filters (DB enum
+// values stay English).
+const PARSE_STATUS_LABEL: Record<ParseStatus, string> = {
+  pending: "В очереди",
+  processing: "Обработка",
+  complete: "Готово",
+  failed: "Ошибка",
+  skipped: "Пропущено",
+}
+const UPLOAD_STATUS_LABEL: Record<R2UploadStatus, string> = {
+  pending: "В очереди",
+  complete: "Готово",
+  failed: "Ошибка",
+}
 
-const UPLOAD_STATUSES: { value: R2UploadStatus; label: string }[] = [
-  { value: "pending", label: "Pending" },
-  { value: "complete", label: "Complete" },
-  { value: "failed", label: "Failed" },
-]
+const PARSE_STATUSES: { value: ParseStatus; label: string }[] = (
+  ["pending", "processing", "complete", "failed", "skipped"] as ParseStatus[]
+).map((value) => ({ value, label: PARSE_STATUS_LABEL[value] }))
+
+const UPLOAD_STATUSES: { value: R2UploadStatus; label: string }[] = (
+  ["pending", "complete", "failed"] as R2UploadStatus[]
+).map((value) => ({ value, label: UPLOAD_STATUS_LABEL[value] }))
 
 // Default sliding window — last 7 days based on `source_created_at`.
 // The route applies the same default when both date params are blank,
@@ -89,7 +107,7 @@ function daysAgoUtc(days: number): string {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—"
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(iso).toLocaleString("ru-RU", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -106,7 +124,7 @@ function itemTitle(row: Row): string {
   const m = row.metadataJson
   if (row.externalType === "email") {
     const subject = typeof m.subject === "string" ? m.subject : ""
-    return subject || "(no subject)"
+    return subject || "(без темы)"
   }
   if (row.externalType === "chat_message") {
     const text = typeof m.text === "string" ? m.text : ""
@@ -116,7 +134,7 @@ function itemTitle(row: Row): string {
       const preview = previewFromRawText(rawText)
       if (preview) return preview
     }
-    return "(empty message)"
+    return "(пустое сообщение)"
   }
   return row.filename ?? row.externalId
 }
@@ -150,7 +168,7 @@ function ParseBadge({ row }: { row: Row }) {
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${palette[ps]}`}
       title={row.parseError ?? undefined}
     >
-      {ps}
+      {PARSE_STATUS_LABEL[ps]}
     </span>
   )
 }
@@ -167,7 +185,7 @@ function UploadBadge({ status }: { status: R2UploadStatus }) {
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${palette[status]}`}
     >
-      {status}
+      {UPLOAD_STATUS_LABEL[status]}
     </span>
   )
 }
@@ -223,12 +241,12 @@ export function TableStoredContent({
       if (dateTo) params.set("date_to", dateTo)
       const res = await fetch(`/api/sources/stored?${params.toString()}`)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Failed to load")
+      if (!res.ok) throw new Error(data.error || "Не удалось загрузить")
       const r = data as Response
       setRows(r.rows)
       setTotal(r.total)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -315,14 +333,14 @@ export function TableStoredContent({
       <div className="flex flex-wrap gap-2 items-end">
         <div className="min-w-44">
           <label className="text-xs text-muted-foreground mb-1 block">
-            Source
+            Источник
           </label>
           <Select value={sourceId} onValueChange={setSourceId}>
             <SelectTrigger className="h-8 w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All sources</SelectItem>
+              <SelectItem value={ALL}>Все источники</SelectItem>
               {sources.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
@@ -334,14 +352,14 @@ export function TableStoredContent({
 
         <div className="min-w-44">
           <label className="text-xs text-muted-foreground mb-1 block">
-            File type
+            Тип файла
           </label>
           <Select value={mime} onValueChange={setMime}>
             <SelectTrigger className="h-8 w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All types</SelectItem>
+              <SelectItem value={ALL}>Все типы</SelectItem>
               {MIME_BUCKETS.map((b) => (
                 <SelectItem key={b.value} value={b.value}>
                   {b.label}
@@ -353,14 +371,14 @@ export function TableStoredContent({
 
         <div className="min-w-36">
           <label className="text-xs text-muted-foreground mb-1 block">
-            Parse status
+            Статус разбора
           </label>
           <Select value={parseStatus} onValueChange={setParseStatus}>
             <SelectTrigger className="h-8 w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All</SelectItem>
+              <SelectItem value={ALL}>Все</SelectItem>
               {PARSE_STATUSES.map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}
@@ -372,14 +390,14 @@ export function TableStoredContent({
 
         <div className="min-w-36">
           <label className="text-xs text-muted-foreground mb-1 block">
-            Upload status
+            Статус загрузки
           </label>
           <Select value={uploadStatus} onValueChange={setUploadStatus}>
             <SelectTrigger className="h-8 w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All</SelectItem>
+              <SelectItem value={ALL}>Все</SelectItem>
               {UPLOAD_STATUSES.map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}
@@ -391,10 +409,10 @@ export function TableStoredContent({
 
         <div className="flex-1 min-w-44">
           <label className="text-xs text-muted-foreground mb-1 block">
-            Filename
+            Имя файла
           </label>
           <Input
-            placeholder="Filename contains…"
+            placeholder="Имя файла содержит…"
             value={filenameSearch}
             onChange={(e) => setFilenameSearch(e.target.value)}
             className="h-8 text-sm"
@@ -405,7 +423,7 @@ export function TableStoredContent({
       <div className="flex flex-wrap gap-2 items-end">
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">
-            From (UTC)
+            С (UTC)
           </label>
           <Input
             type="date"
@@ -417,7 +435,7 @@ export function TableStoredContent({
 
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">
-            To (UTC)
+            По (UTC)
           </label>
           <Input
             type="date"
@@ -434,27 +452,27 @@ export function TableStoredContent({
           disabled={!filtersActive}
           onClick={clearFilters}
         >
-          Clear filters
+          Сбросить фильтры
         </Button>
       </div>
 
       <div className="text-xs text-muted-foreground">
         {loading
-          ? "Loading…"
-          : `${total} ${total === 1 ? "item" : "items"}${filtersActive ? " (filtered)" : ""}`}
+          ? "Загрузка…"
+          : `${total} ${plural(total, ["элемент", "элемента", "элементов"])}${filtersActive ? " (отфильтровано)" : ""}`}
       </div>
 
       <div className="rounded-md border overflow-hidden">
         <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-40">Date</TableHead>
-              <TableHead className="w-32">Source</TableHead>
-              <TableHead className="w-40">Mime</TableHead>
-              <TableHead>Filename / Title</TableHead>
-              <TableHead className="w-24">Parse</TableHead>
-              <TableHead className="w-24">Upload</TableHead>
-              <TableHead className="w-16">Preview</TableHead>
+              <TableHead className="w-40">Дата</TableHead>
+              <TableHead className="w-32">Источник</TableHead>
+              <TableHead className="w-40">MIME</TableHead>
+              <TableHead>Имя файла / Заголовок</TableHead>
+              <TableHead className="w-24">Разбор</TableHead>
+              <TableHead className="w-24">Загрузка</TableHead>
+              <TableHead className="w-16">Просмотр</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -463,7 +481,7 @@ export function TableStoredContent({
                 <TableCell colSpan={7}>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
                     <Loader className="h-4 w-4 animate-spin" />
-                    Loading items…
+                    Загрузка элементов…
                   </div>
                 </TableCell>
               </TableRow>
@@ -479,7 +497,7 @@ export function TableStoredContent({
               <TableRow>
                 <TableCell colSpan={7}>
                   <p className="text-sm text-muted-foreground py-6 text-center">
-                    No items match these filters.
+                    Нет элементов по заданным фильтрам.
                   </p>
                 </TableCell>
               </TableRow>
@@ -520,8 +538,8 @@ export function TableStoredContent({
                         onClick={() => openPreview(row)}
                         title={
                           canPreview
-                            ? "Preview parsed markdown from R2"
-                            : "Preview available once the file is uploaded to R2"
+                            ? "Просмотр разобранного текста из R2"
+                            : "Просмотр доступен после загрузки файла в R2"
                         }
                       >
                         <Eye className="h-3.5 w-3.5" />
@@ -547,7 +565,7 @@ export function TableStoredContent({
       {/* Pager */}
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-muted-foreground">
-          Page {page} of {totalPages}
+          Страница {page} из {totalPages}
         </span>
         <div className="flex items-center gap-1">
           <Button

@@ -40,32 +40,32 @@ export type AuthSession = NonNullable<
 
 export const items = [
   {
-    title: "Dashboard",
+    title: "Домашняя",
     url: "/dashboard",
     icon: Home,
   },
   {
-    title: "Clients",
+    title: "Клиенты",
     url: "/clients",
     icon: Users,
   },
   {
-    title: "Orders",
+    title: "Заказы",
     url: "/products",
     icon: Package,
   },
   {
-    title: "Tasks",
+    title: "Задачи",
     url: "/tasks",
     icon: ListChecks,
   },
   {
-    title: "Rules",
+    title: "Правила",
     url: "/rules",
     icon: PencilRuler,
   },
   {
-    title: "Sources",
+    title: "Источники",
     url: "/sources",
     icon: Database,
   },
@@ -100,7 +100,7 @@ export function AppSidebar({ session }: { session: AuthSession }) {
             </div>
           ) : (
             <Image
-              src="/TP_golden_icon_small.jpg"
+              src="/logo.png"
               alt="Logo"
               width={40}
               height={40}
@@ -150,7 +150,7 @@ export function AppSidebar({ session }: { session: AuthSession }) {
                 }`}
               >
                 <CircleUserRound size={24} className="mr-3 ml-1" />
-                <span className="text-sm">Account</span>
+                <span className="text-sm">Эккаунт</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -166,27 +166,11 @@ export function AppSidebar({ session }: { session: AuthSession }) {
                   }`}
                 >
                   <ShieldCheck size={24} className="mr-3 ml-1" />
-                  <span className="text-sm">Settings</span>
+                  <span className="text-sm">Настройки</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
-
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link
-                href={"/docs"}
-                className={`flex items-center p-2 rounded-md ${
-                  pathname === "/docs"
-                    ? "bg-gray-200 dark:bg-gray-600 text-orange-400"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-white"
-                }`}
-              >
-                <FileText size={24} className="mr-3 ml-1" />
-                <span className="text-sm">Documents</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
 
           <SidebarMenuItem>
             <NotificationsDrawer compact={!open} />

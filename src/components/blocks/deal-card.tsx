@@ -137,15 +137,15 @@ export function DealCard({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to move deal")
+          toast.error(err.error || "Не удалось переместить сделку")
           return
         }
         const stageName =
-          stages.find((s) => s.id === nextStageId)?.name ?? "stage"
-        toast.success(`Moved to ${stageName}`)
+          stages.find((s) => s.id === nextStageId)?.name ?? "этап"
+        toast.success(`Перемещено: ${stageName}`)
         onChanged()
       } catch {
-        toast.error("Failed to move deal")
+        toast.error("Не удалось переместить сделку")
       }
     })
   }
@@ -168,7 +168,7 @@ export function DealCard({
                 variant="secondary"
                 className="bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
               >
-                Cancelled
+                Отменена
               </Badge>
             )}
             {deal.status === "deleted" && (
@@ -176,7 +176,7 @@ export function DealCard({
                 variant="secondary"
                 className="bg-red-500/15 text-red-600 dark:text-red-300"
               >
-                Deleted
+                Удалена
               </Badge>
             )}
           </div>
@@ -186,7 +186,7 @@ export function DealCard({
           deal={deal}
           onSuccess={onChanged}
           trigger={
-            <Button variant="ghost" size="icon" aria-label="Edit deal">
+            <Button variant="ghost" size="icon" aria-label="Редактировать сделку">
               <Pencil className="h-4 w-4" />
             </Button>
           }
@@ -194,10 +194,10 @@ export function DealCard({
       </CardHeader>
       <CardContent className="flex-1 space-y-3 text-sm">
         {deal.description && (
-          <TextPreview label="Description" text={deal.description} />
+          <TextPreview label="Описание" text={deal.description} />
         )}
-        {deal.reasoning && <TextPreview label="Reason" text={deal.reasoning} />}
-        {deal.changes && <TextPreview label="Changes" text={deal.changes} />}
+        {deal.reasoning && <TextPreview label="Причина" text={deal.reasoning} />}
+        {deal.changes && <TextPreview label="Изменения" text={deal.changes} />}
 
         <div className="space-y-1 text-muted-foreground">
           {deal.clientName && (
@@ -208,7 +208,7 @@ export function DealCard({
           )}
           <div className="flex items-center gap-2 truncate">
             <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">Created {formatDate(deal.createdAt)}</span>
+            <span className="truncate">Создано {formatDate(deal.createdAt)}</span>
           </div>
         </div>
 
@@ -218,7 +218,7 @@ export function DealCard({
 
         <div className="pt-1 space-y-1">
           <div className="text-xs text-muted-foreground">
-            Move the funnel phase:
+            Переместить по воронке:
           </div>
           <Select
             value={deal.funnelStageId}

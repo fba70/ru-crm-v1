@@ -48,13 +48,13 @@ const PROVIDERS: { value: SourceProvider; label: string }[] = [
 ]
 
 const TYPES: { value: SourceType; label: string }[] = [
-  { value: "external", label: "external" },
-  { value: "internal", label: "internal" },
+  { value: "external", label: "Внешний" },
+  { value: "internal", label: "Внутренний" },
 ]
 
 const STATUSES: { value: SourceStatus; label: string }[] = [
-  { value: "active", label: "active" },
-  { value: "inactive", label: "inactive" },
+  { value: "active", label: "Активен" },
+  { value: "inactive", label: "Неактивен" },
 ]
 
 type FormValues = {
@@ -115,7 +115,7 @@ export default function FormAdminEditSource({
         if (!cancelled) setOrgOptions(data.organizations ?? [])
       })
       .catch(() => {
-        if (!cancelled) toast.error("Failed to load organizations")
+        if (!cancelled) toast.error("Не удалось загрузить организации")
       })
       .finally(() => {
         if (!cancelled) setOrgsLoading(false)
@@ -131,7 +131,7 @@ export default function FormAdminEditSource({
   const onSubmit = (values: FormValues) => {
     startTransition(async () => {
       if (!values.isSystem && !values.ownerOrganizationId) {
-        toast.error("Pick an organization, or mark this source as system")
+        toast.error("Выберите организацию или отметьте источник как системный")
         return
       }
 
@@ -164,10 +164,15 @@ export default function FormAdminEditSource({
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        toast.error(err.error || `Failed to ${isEdit ? "update" : "create"} source`)
+        toast.error(
+          err.error ||
+            (isEdit
+              ? "Не удалось обновить источник"
+              : "Не удалось создать источник"),
+        )
         return
       }
-      toast.success(`Source ${isEdit ? "updated" : "created"}`)
+      toast.success(isEdit ? "Источник обновлён" : "Источник создан")
       onSuccess?.()
       setOpen(false)
     })
@@ -178,20 +183,20 @@ export default function FormAdminEditSource({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {isEdit ? (
-          <Button variant="ghost" size="icon" aria-label="Edit source">
+          <Button variant="ghost" size="icon" aria-label="Редактировать источник">
             <Pencil className="h-4 w-4" />
           </Button>
         ) : (
           <Button size="sm">
             <Plus className="h-4 w-4 mr-1" />
-            Add new
+            Добавить
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800 max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? `Edit Source: ${source!.name}` : "New Source"}
+            {isEdit ? `Редактировать источник: ${source!.name}` : "Новый источник"}
           </DialogTitle>
         </DialogHeader>
         <Form {...form}>
@@ -202,12 +207,12 @@ export default function FormAdminEditSource({
             <FormField
               control={form.control}
               name="name"
-              rules={{ required: "Name is required" }}
+              rules={{ required: "Укажите название" }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name</FormLabel>
+                  <FormLabel className="text-gray-400">Название</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="e.g. Engineering Drive" />
+                    <Input {...field} placeholder="напр. Диск разработки" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -219,12 +224,12 @@ export default function FormAdminEditSource({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Description</FormLabel>
+                  <FormLabel className="text-gray-400">Описание</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       rows={2}
-                      placeholder="Short description shown to admins"
+                      placeholder="Краткое описание для администраторов"
                     />
                   </FormControl>
                   <FormMessage />
@@ -238,7 +243,7 @@ export default function FormAdminEditSource({
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Type</FormLabel>
+                    <FormLabel className="text-gray-400">Тип</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -265,7 +270,7 @@ export default function FormAdminEditSource({
                 name="provider"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Provider</FormLabel>
+                    <FormLabel className="text-gray-400">Провайдер</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -294,7 +299,7 @@ export default function FormAdminEditSource({
                 name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Status</FormLabel>
+                    <FormLabel className="text-gray-400">Статус</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -321,7 +326,7 @@ export default function FormAdminEditSource({
                 name="isSystem"
                 render={({ field }) => (
                   <FormItem className="flex flex-col gap-1">
-                    <FormLabel className="text-gray-400">System source</FormLabel>
+                    <FormLabel className="text-gray-400">Системный источник</FormLabel>
                     <div className="flex items-center gap-2 h-9">
                       <FormControl>
                         <Checkbox
@@ -330,7 +335,7 @@ export default function FormAdminEditSource({
                         />
                       </FormControl>
                       <span className="text-sm text-muted-foreground">
-                        Available to every organization
+                        Доступен каждой организации
                       </span>
                     </div>
                   </FormItem>
@@ -344,7 +349,7 @@ export default function FormAdminEditSource({
               render={({ field }) => (
                 <FormItem className="flex flex-col gap-1">
                   <FormLabel className="text-gray-400">
-                    Auto Parse
+                    Авторазбор
                   </FormLabel>
                   <div className="flex items-center gap-2 h-9">
                     <FormControl>
@@ -354,9 +359,10 @@ export default function FormAdminEditSource({
                       />
                     </FormControl>
                     <span className="text-sm text-muted-foreground">
-                      Daily cron may sync, parse, and upload items from this
-                      source. Off = cron skips this source entirely; manual
-                      actions still work.
+                      Ежедневный крон может синхронизировать, разбирать и
+                      загружать элементы из этого источника. Выкл = крон
+                      полностью пропускает источник; ручные действия
+                      продолжают работать.
                     </span>
                   </div>
                 </FormItem>
@@ -370,7 +376,7 @@ export default function FormAdminEditSource({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-gray-400">
-                      Owner organization
+                      Организация-владелец
                     </FormLabel>
                     <Select
                       value={field.value || ""}
@@ -382,8 +388,8 @@ export default function FormAdminEditSource({
                           <SelectValue
                             placeholder={
                               orgsLoading
-                                ? "Loading…"
-                                : "Pick an organization"
+                                ? "Загрузка…"
+                                : "Выберите организацию"
                             }
                           />
                         </SelectTrigger>
@@ -409,7 +415,7 @@ export default function FormAdminEditSource({
                 an existing source row. */}
             {PROVIDERS_WITH_CREDENTIALS.has(provider) && (
               <FormItem>
-                <FormLabel className="text-gray-400">Provider config</FormLabel>
+                <FormLabel className="text-gray-400">Настройки провайдера</FormLabel>
                 {isEdit && source ? (
                   <>
                     <Button
@@ -419,19 +425,19 @@ export default function FormAdminEditSource({
                       onClick={() => setConfigOpen(true)}
                     >
                       <Settings className="h-3.5 w-3.5 mr-1" />
-                      Edit config
+                      Изменить настройки
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Non-secret connection routing (spaceId, driveId,
-                      …). Schema-driven per provider — the dialog
-                      pre-fills with the current values and validates on
-                      save.
+                      Несекретные параметры подключения (spaceId, driveId,
+                      …). Схема своя для каждого провайдера — диалог
+                      подставляет текущие значения и проверяет их при
+                      сохранении.
                     </p>
                   </>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Save the source first — provider config is edited
-                    afterward via the schema-driven dialog.
+                    Сначала сохраните источник — настройки провайдера
+                    редактируются после этого в диалоге по схеме.
                   </p>
                 )}
               </FormItem>
@@ -439,7 +445,7 @@ export default function FormAdminEditSource({
 
             {PROVIDERS_WITH_CREDENTIALS.has(provider) && (
               <FormItem>
-                <FormLabel className="text-gray-400">Credentials</FormLabel>
+                <FormLabel className="text-gray-400">Учётные данные</FormLabel>
                 {isEdit && source ? (
                   <>
                     <div className="flex items-center gap-2">
@@ -447,7 +453,7 @@ export default function FormAdminEditSource({
                         variant={source.hasCredentials ? "default" : "outline"}
                         className="text-xs"
                       >
-                        {source.hasCredentials ? "Configured" : "Not configured"}
+                        {source.hasCredentials ? "Настроено" : "Не настроено"}
                       </Badge>
                       <Button
                         type="button"
@@ -456,20 +462,20 @@ export default function FormAdminEditSource({
                         onClick={() => setCredsOpen(true)}
                       >
                         <KeyRound className="h-3.5 w-3.5 mr-1" />
-                        {source.hasCredentials ? "Replace" : "Configure"}
+                        {source.hasCredentials ? "Заменить" : "Настроить"}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Credentials are write-only and validated against the
-                      provider&apos;s schema. Existing values are never
-                      displayed back; submitting replaces them.
+                      Учётные данные доступны только для записи и проверяются
+                      по схеме провайдера. Существующие значения никогда не
+                      показываются; отправка формы заменяет их.
                     </p>
                   </>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Save the source first — credentials are configured
-                    afterward via the per-provider schema-driven dialog
-                    (Configure button appears in edit mode).
+                    Сначала сохраните источник — учётные данные настраиваются
+                    после этого в диалоге по схеме провайдера (кнопка
+                    «Настроить» появляется в режиме редактирования).
                   </p>
                 )}
               </FormItem>
@@ -481,7 +487,7 @@ export default function FormAdminEditSource({
                 className="w-full"
                 loading={isPending}
               >
-                {isEdit ? "Save" : "Create"}
+                {isEdit ? "Сохранить" : "Создать"}
               </LoadingButton>
             </DialogFooter>
           </form>

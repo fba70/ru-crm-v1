@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { SignUpForm } from "@/components/forms/form-sign-up"
 
 export const metadata: Metadata = {
-  title: "Sign up",
+  title: "Регистрация",
 }
 
 export default function SignUp() {

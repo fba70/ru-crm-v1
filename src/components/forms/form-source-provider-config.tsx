@@ -61,12 +61,12 @@ export function FormSourceProviderConfig({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Edit provider config — {sourceName}</DialogTitle>
+          <DialogTitle>Настройки провайдера — {sourceName}</DialogTitle>
           <DialogDescription>
-            Non-secret connection routing. These fields identify which
-            mailbox / space / drive this source pulls from. Secrets
-            (API keys, service-account JSON) live on the Credentials
-            form, not here.
+            Несекретные параметры подключения. Эти поля указывают, из какого
+            ящика / пространства / диска источник читает данные. Секреты (API-
+            ключи, JSON сервисного аккаунта) задаются на форме «Учётные
+            данные», а не здесь.
           </DialogDescription>
         </DialogHeader>
 
@@ -109,7 +109,8 @@ export function FormSourceProviderConfig({
           provider === "whatsapp" ||
           provider === "aichat") && (
           <p className="text-sm text-muted-foreground py-4">
-            This source provider has no configurable connection params.
+            У этого провайдера источника нет настраиваемых параметров
+            подключения.
           </p>
         )}
       </DialogContent>
@@ -135,7 +136,7 @@ async function submitConfig(opts: {
     if (!res.ok) {
       return {
         ok: false,
-        error: data.error ?? "Request failed",
+        error: data.error ?? "Запрос не выполнен",
         issues: data.issues,
       }
     }
@@ -143,7 +144,7 @@ async function submitConfig(opts: {
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : "Network error",
+      error: err instanceof Error ? err.message : "Ошибка сети",
     }
   }
 }
@@ -176,12 +177,12 @@ function NylasFields(props: Omit<FieldsProps, "initialConfig">) {
   return (
     <div className="space-y-4 py-2">
       <p className="text-sm text-muted-foreground">
-        Nylas sources have no non-secret connection params — the
-        per-mailbox grant id is configured under Credentials.
+        У источников Nylas нет несекретных параметров подключения — grant id
+        для каждого почтового ящика настраивается в разделе «Учётные данные».
       </p>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={props.onClose}>
-          Close
+          Закрыть
         </Button>
       </DialogFooter>
     </div>
@@ -207,7 +208,7 @@ function GchatFields({
 
   async function handleSave() {
     if (!spaceId.trim()) {
-      toast.error("Space ID is required")
+      toast.error("Укажите Space ID")
       return
     }
     setBusy(true)
@@ -221,7 +222,7 @@ function GchatFields({
       toast.error(formatError(out.error, out.issues))
       return
     }
-    toast.success("Provider config saved")
+    toast.success("Настройки провайдера сохранены")
     onSaved()
     onClose()
   }
@@ -239,17 +240,17 @@ function GchatFields({
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          Full Google Chat space resource path. Must start with
+          Полный путь ресурса пространства Google Chat. Должен начинаться с
           <code className="ml-1 px-1 bg-muted rounded text-[11px]">spaces/</code>.
-          Find it in the URL when viewing the space, or via the Chat API.
+          Найдите его в URL при просмотре пространства или через Chat API.
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Cancel
+          Отмена
         </Button>
         <Button type="button" onClick={handleSave} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>
@@ -287,7 +288,7 @@ function TelegramFields({
       toast.error(formatError(out.error, out.issues))
       return
     }
-    toast.success("Provider config saved")
+    toast.success("Настройки провайдера сохранены")
     onSaved()
     onClose()
   }
@@ -295,7 +296,7 @@ function TelegramFields({
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <Label htmlFor="telegram-bot-username">Bot username (optional)</Label>
+        <Label htmlFor="telegram-bot-username">Имя бота (необязательно)</Label>
         <Input
           id="telegram-bot-username"
           value={botUsername}
@@ -305,18 +306,18 @@ function TelegramFields({
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          The bot&apos;s @username without the leading @. Used to detect
-          @-mentions in groups and to build deep links. Not required for
-          direct-message ingestion. The bot token + webhook secret are set
-          on the Credentials form.
+          @username бота без ведущего @. Используется для распознавания
+          @-упоминаний в группах и построения deep-ссылок. Не требуется для
+          приёма личных сообщений. Токен бота и секрет веб-хука задаются на
+          форме «Учётные данные».
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Cancel
+          Отмена
         </Button>
         <Button type="button" onClick={handleSave} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>
@@ -338,7 +339,7 @@ function GdriveFields({
 
   async function handleSave() {
     if (!driveId.trim()) {
-      toast.error("Drive ID is required")
+      toast.error("Укажите Drive ID")
       return
     }
     setBusy(true)
@@ -352,7 +353,7 @@ function GdriveFields({
       toast.error(formatError(out.error, out.issues))
       return
     }
-    toast.success("Provider config saved")
+    toast.success("Настройки провайдера сохранены")
     onSaved()
     onClose()
   }
@@ -370,18 +371,18 @@ function GdriveFields({
           spellCheck={false}
         />
         <p className="text-xs text-muted-foreground">
-          Shared Drive identifier. Find it in the URL when viewing the
-          drive in Google Drive (the segment after
+          Идентификатор общего диска. Найдите его в URL при просмотре диска в
+          Google Drive (сегмент после
           <code className="ml-1 px-1 bg-muted rounded text-[11px]">/drive/folders/</code>
           ).
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
-          Cancel
+          Отмена
         </Button>
         <Button type="button" onClick={handleSave} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>

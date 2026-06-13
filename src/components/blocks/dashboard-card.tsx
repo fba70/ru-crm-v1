@@ -34,20 +34,20 @@ import type { CardRow } from "@/app/api/cards/route"
 import type { CardCategory, CardPriority } from "@/db/schema"
 
 const PRIORITY_LABEL: Record<CardPriority, string> = {
-  normal: "Normal",
-  high: "High",
+  normal: "Обычный",
+  high: "Высокий",
 }
 
 const CATEGORY_LABEL: Record<CardCategory, string> = {
-  client_activity: "Client activity",
-  colleagues_activity: "Colleagues activity",
-  business_info: "Business info",
-  action_required: "Action required",
-  ambiguity: "Ambiguity",
-  data_intelligence: "Data intelligence",
-  momentum: "Momentum",
-  log_only: "Log only",
-  new_order: "New order",
+  client_activity: "Активность клиента",
+  colleagues_activity: "Активность коллег",
+  business_info: "Бизнес-информация",
+  action_required: "Требуется действие",
+  ambiguity: "Неоднозначность",
+  data_intelligence: "Аналитика данных",
+  momentum: "Динамика",
+  log_only: "Только запись",
+  new_order: "Новый заказ",
 }
 
 const CATEGORY_COLOR: Record<CardCategory, string> = {
@@ -148,20 +148,20 @@ export function DashboardCard({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to accept card")
+          toast.error(err.error || "Не удалось принять карточку")
           return
         }
-        toast.success("Card accepted")
+        toast.success("Карточка принята")
         onChanged()
       } catch {
-        toast.error("Failed to accept card")
+        toast.error("Не удалось принять карточку")
       }
     })
   }
 
   const handleReject = () => {
     if (!rejectReason.trim()) {
-      toast.error("Please provide a rejection reason")
+      toast.error("Укажите причину отклонения")
       return
     }
     startTransition(async () => {
@@ -177,15 +177,15 @@ export function DashboardCard({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to reject card")
+          toast.error(err.error || "Не удалось отклонить карточку")
           return
         }
-        toast.success("Card rejected")
+        toast.success("Карточка отклонена")
         setRejectOpen(false)
         setRejectReason("")
         onChanged()
       } catch {
-        toast.error("Failed to reject card")
+        toast.error("Не удалось отклонить карточку")
       }
     })
   }
@@ -212,7 +212,7 @@ export function DashboardCard({
           </CardTitle>
           <Link href={`/cards/${card.id}`} className="shrink-0">
             <Button variant="outline" size="sm">
-              Details
+              Подробнее
             </Button>
           </Link>
         </div>
@@ -222,7 +222,7 @@ export function DashboardCard({
               className={PRIORITY_COLOR[card.priority]}
               variant="secondary"
             >
-              {PRIORITY_LABEL[card.priority]} priority
+              {PRIORITY_LABEL[card.priority]} приоритет
             </Badge>
             <Badge
               className={CATEGORY_COLOR[card.category]}
@@ -235,7 +235,7 @@ export function DashboardCard({
                 variant="secondary"
                 className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
               >
-                Accepted
+                Принята
               </Badge>
             )}
             {card.rejectionReason && (
@@ -243,7 +243,7 @@ export function DashboardCard({
                 variant="secondary"
                 className="bg-red-500/15 text-red-700 dark:text-red-300"
               >
-                Rejected
+                Отклонена
               </Badge>
             )}
           </div>
@@ -255,19 +255,19 @@ export function DashboardCard({
 
       <CardContent className="flex-1 min-h-0 flex flex-col gap-3 text-sm overflow-hidden">
         <div className="space-y-2 min-h-0">
-          {analysis && <MessageField label="Analysis" text={analysis} />}
+          {analysis && <MessageField label="Анализ" text={analysis} />}
           {recommendation && (
-            <MessageField label="Recommendation" text={recommendation} />
+            <MessageField label="Рекомендация" text={recommendation} />
           )}
           {!analysis && !recommendation && (
-            <p className="text-muted-foreground italic">No message content.</p>
+            <p className="text-muted-foreground italic">Нет содержимого.</p>
           )}
         </div>
 
         {card.rejectionReason && (
           <div className="rounded-md border border-red-300/50 bg-red-500/5 p-2 text-xs">
             <div className="font-semibold text-red-700 dark:text-red-300 mb-0.5">
-              Rejection reason
+              Причина отклонения
             </div>
             <div className="text-muted-foreground line-clamp-2">
               {card.rejectionReason}
@@ -306,7 +306,7 @@ export function DashboardCard({
             {card.sourceItemTitle && (
               <div className="flex items-center gap-2 truncate">
                 <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Source: {card.sourceItemTitle}</span>
+                <span className="truncate">Источник: {card.sourceItemTitle}</span>
               </div>
             )}
           </div>
@@ -325,7 +325,7 @@ export function DashboardCard({
                     client message (message.orderRequest). */}
                 <Link href={`/products?orderFromCard=${card.id}`}>
                   <ShoppingCart className="h-4 w-4 mr-1" />
-                  Create order
+                  Создать заказ
                 </Link>
               </Button>
             )}
@@ -338,7 +338,7 @@ export function DashboardCard({
               disabled={isPending}
             >
               <Check className="h-4 w-4 mr-1" />
-              Accept
+              Принять
             </Button>
             <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
               <DialogTrigger asChild>
@@ -349,21 +349,21 @@ export function DashboardCard({
                   disabled={isPending}
                 >
                   <X className="h-4 w-4 mr-1" />
-                  Reject
+                  Отклонить
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Reject card</DialogTitle>
+                  <DialogTitle>Отклонить карточку</DialogTitle>
                   <DialogDescription>
-                    Provide a short reason. It will be saved with the card so
-                    the team can see why it was dismissed.
+                    Укажите краткую причину. Она сохранится вместе с карточкой,
+                    чтобы команда видела, почему её отклонили.
                   </DialogDescription>
                 </DialogHeader>
                 <Textarea
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Why is this card being rejected?"
+                  placeholder="Почему вы отклоняете эту карточку?"
                   rows={4}
                   autoFocus
                 />
@@ -373,13 +373,13 @@ export function DashboardCard({
                     onClick={() => setRejectOpen(false)}
                     disabled={isPending}
                   >
-                    Cancel
+                    Отмена
                   </Button>
                   <Button
                     onClick={handleReject}
                     disabled={isPending || !rejectReason.trim()}
                   >
-                    Reject card
+                    Отклонить карточку
                   </Button>
                 </DialogFooter>
               </DialogContent>

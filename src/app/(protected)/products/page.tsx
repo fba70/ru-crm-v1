@@ -142,10 +142,10 @@ function FilterSelect({
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-full">
-        <SelectValue placeholder="All" />
+        <SelectValue placeholder="Все" />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={ALL}>All</SelectItem>
+        <SelectItem value={ALL}>Все</SelectItem>
         {options.map((o) => (
           <SelectItem key={o} value={o}>
             {o}
@@ -345,7 +345,8 @@ export default function ProductsPage() {
     const f = item.filters ?? {}
     const min = f.priceMin != null ? String(f.priceMin) : ""
     const max = f.priceMax != null ? String(f.priceMax) : ""
-    const phrase = (item.label ?? "").trim() || item.searchTerms[0]?.trim() || ""
+    const phrase =
+      (item.label ?? "").trim() || item.searchTerms[0]?.trim() || ""
     setSearchInput(phrase)
     setWizardSearch(phrase)
     setPriceMinInput(min)
@@ -374,7 +375,7 @@ export default function ProductsPage() {
           `/api/order-requests?id=${encodeURIComponent(requestId)}`,
         )
         if (!res.ok) {
-          toast.error("Failed to load the parsed request")
+          toast.error("Не удалось загрузить разобранный запрос")
           return
         }
         const { request } = (await res.json()) as {
@@ -399,7 +400,7 @@ export default function ProductsPage() {
         })
         const oData = await oRes.json().catch(() => ({}))
         if (!oRes.ok) {
-          toast.error(oData.error || "Failed to create the draft order")
+          toast.error(oData.error || "Не удалось создать черновик заказа")
           return
         }
         const orderId = oData.id as string
@@ -415,15 +416,15 @@ export default function ProductsPage() {
         if (request.items.length === 0) {
           toast.message(
             request.parseError
-              ? "Couldn't split the request — build the order manually."
-              : "No product requests found — build the order manually.",
+              ? "Не удалось разобрать запрос — создайте заказ вручную."
+              : "Товарные позиции не найдены — создайте заказ вручную.",
           )
           return
         }
         setWizard({ requestId, items: request.items, index: 0 })
         applyItemToFilters(request.items[0])
       } catch {
-        toast.error("Failed to start the assistant")
+        toast.error("Не удалось запустить мастер")
       }
     },
     [builder, applyItemToFilters],
@@ -452,9 +453,13 @@ export default function ProductsPage() {
           fetch("/api/order-requests", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: w.requestId, action: "status", status: "done" }),
+            body: JSON.stringify({
+              id: w.requestId,
+              action: "status",
+              status: "done",
+            }),
           }).catch(() => {})
-          toast.success("All items reviewed — check the order and send it.")
+          toast.success("Все позиции проверены — проверьте заказ и отправьте его.")
           return null
         }
         applyItemToFilters(w.items[next])
@@ -470,7 +475,11 @@ export default function ProductsPage() {
         fetch("/api/order-requests", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: w.requestId, action: "status", status: "done" }),
+          body: JSON.stringify({
+            id: w.requestId,
+            action: "status",
+            status: "done",
+          }),
         }).catch(() => {})
       }
       return null
@@ -569,7 +578,7 @@ export default function ProductsPage() {
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">PRODUCTS</h1>
+      <h1 className="text-2xl font-medium mt-2">ЗАКАЗЫ & ПРОДУКТЫ</h1>
 
       <div className="w-full max-w-7xl px-4">
         <Tabs value={tab} onValueChange={setTab} className="w-full">
@@ -578,8 +587,8 @@ export default function ProductsPage() {
               filled → LLM split + assembly wizard. */}
           <div className="flex items-center justify-between gap-2">
             <TabsList>
-              <TabsTrigger value="catalog">Product Catalog</TabsTrigger>
-              <TabsTrigger value="orders">Orders</TabsTrigger>
+              <TabsTrigger value="catalog">Каталог товаров</TabsTrigger>
+              <TabsTrigger value="orders">Заказы</TabsTrigger>
             </TabsList>
             <Button
               size="sm"
@@ -587,7 +596,7 @@ export default function ProductsPage() {
               disabled={builder.isActive}
             >
               <Plus className="h-4 w-4 mr-1" />
-              New order
+              Новый заказ
             </Button>
           </div>
 
@@ -609,13 +618,13 @@ export default function ProductsPage() {
             )}
             <Card>
               <CardHeader>
-                <CardTitle>Product Catalog</CardTitle>
+                <CardTitle>Каталог товаров</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Top row: search + clear-all. */}
                 <div className="flex flex-wrap items-center gap-2">
                   <Input
-                    placeholder="Search products…"
+                    placeholder="Поиск товаров…"
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     className="flex-1 min-w-60"
@@ -627,121 +636,121 @@ export default function ProductsPage() {
                     disabled={!filtersActive}
                   >
                     <X className="h-4 w-4 mr-1" />
-                    Clear
+                    Очистить
                   </Button>
                 </div>
 
                 {/* Filter grid. Every control filters server-side over the whole
                 catalog; several can be combined at once. */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-2">
-                  <FilterField label="Category">
+                  <FilterField label="Категория">
                     <FilterSelect
                       value={filters.category}
                       onChange={(v) => setSelect("category", v)}
                       options={categories}
                     />
                   </FilterField>
-                  <FilterField label="Type">
+                  <FilterField label="Тип">
                     <FilterSelect
                       value={filters.type}
                       onChange={(v) => setSelect("type", v)}
                       options={options.type}
                     />
                   </FilterField>
-                  <FilterField label="Color">
+                  <FilterField label="Цвет">
                     <FilterSelect
                       value={filters.color}
                       onChange={(v) => setSelect("color", v)}
                       options={options.color}
                     />
                   </FilterField>
-                  <FilterField label="Sugar">
+                  <FilterField label="Сахар">
                     <FilterSelect
                       value={filters.sugar}
                       onChange={(v) => setSelect("sugar", v)}
                       options={options.sugar}
                     />
                   </FilterField>
-                  <FilterField label="Country">
+                  <FilterField label="Страна">
                     <FilterSelect
                       value={filters.countryName}
                       onChange={(v) => setSelect("countryName", v)}
                       options={options.countryName}
                     />
                   </FilterField>
-                  <FilterField label="Year">
+                  <FilterField label="Год">
                     <FilterSelect
                       value={filters.year}
                       onChange={(v) => setSelect("year", v)}
                       options={options.year}
                     />
                   </FilterField>
-                  <FilterField label="Aging (years)">
+                  <FilterField label="Выдержка (лет)">
                     <FilterSelect
                       value={filters.aging}
                       onChange={(v) => setSelect("aging", v)}
                       options={options.aging}
                     />
                   </FilterField>
-                  <FilterField label="Bottle volume (ml)">
+                  <FilterField label="Объём бутылки (мл)">
                     <FilterSelect
                       value={filters.bottleVolume}
                       onChange={(v) => setSelect("bottleVolume", v)}
                       options={options.bottleVolume}
                     />
                   </FilterField>
-                  <FilterField label="Appellation">
+                  <FilterField label="Аппелласьон">
                     <FilterSelect
                       value={filters.appelacion}
                       onChange={(v) => setSelect("appelacion", v)}
                       options={options.appelacion}
                     />
                   </FilterField>
-                  <FilterField label="Rating">
+                  <FilterField label="Рейтинг">
                     <FilterSelect
                       value={filters.rating}
                       onChange={(v) => setSelect("rating", v)}
                       options={options.rating}
                     />
                   </FilterField>
-                  <FilterField label="In stock">
+                  <FilterField label="В наличии">
                     <Select
                       value={filters.inStock}
                       onValueChange={(v) => setSelect("inStock", v)}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="All" />
+                        <SelectValue placeholder="Все" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={ALL}>All</SelectItem>
-                        <SelectItem value="in">In stock</SelectItem>
-                        <SelectItem value="out">Out of stock</SelectItem>
+                        <SelectItem value={ALL}>Все</SelectItem>
+                        <SelectItem value="in">В наличии</SelectItem>
+                        <SelectItem value="out">Нет в наличии</SelectItem>
                       </SelectContent>
                     </Select>
                   </FilterField>
-                  <FilterField label="Awards (contains)">
+                  <FilterField label="Награды (содержит)">
                     <Input
-                      placeholder="e.g. Gold, 91/100…"
+                      placeholder="напр. Gold, 91/100…"
                       value={awardsInput}
                       onChange={(e) => setAwardsInput(e.target.value)}
                     />
                   </FilterField>
-                  <FilterField label="Price from (₽)">
+                  <FilterField label="Цена от (₽)">
                     <Input
                       type="number"
                       inputMode="decimal"
                       min={0}
-                      placeholder="min"
+                      placeholder="от"
                       value={priceMinInput}
                       onChange={(e) => setPriceMinInput(e.target.value)}
                     />
                   </FilterField>
-                  <FilterField label="Price to (₽)">
+                  <FilterField label="Цена до (₽)">
                     <Input
                       type="number"
                       inputMode="decimal"
                       min={0}
-                      placeholder="max"
+                      placeholder="до"
                       value={priceMaxInput}
                       onChange={(e) => setPriceMaxInput(e.target.value)}
                     />
@@ -751,8 +760,8 @@ export default function ProductsPage() {
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-xs text-muted-foreground">
                     {total === 0
-                      ? "No products"
-                      : `${rangeStart}–${rangeEnd} of ${total.toLocaleString()} products`}
+                      ? "Нет товаров"
+                      : `${rangeStart}–${rangeEnd} из ${total.toLocaleString()} товаров`}
                   </div>
                 </div>
 
@@ -760,16 +769,16 @@ export default function ProductsPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-16">Image</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right w-28">Price</TableHead>
-                        <TableHead className="text-right w-24">Stock</TableHead>
-                        <TableHead className="w-20 text-center">Page</TableHead>
-                        <TableHead className="w-20 text-center">Info</TableHead>
+                        <TableHead className="w-16">Фото</TableHead>
+                        <TableHead>Название</TableHead>
+                        <TableHead>Категория</TableHead>
+                        <TableHead className="text-right w-28">Цена</TableHead>
+                        <TableHead className="text-right w-24">Остаток</TableHead>
+                        <TableHead className="w-20 text-center">Стр.</TableHead>
+                        <TableHead className="w-20 text-center">Инфо</TableHead>
                         {showAddCol && (
                           <TableHead className="w-24 text-center">
-                            Order
+                            В заказ
                           </TableHead>
                         )}
                       </TableRow>
@@ -791,8 +800,8 @@ export default function ProductsPage() {
                             className="h-40 text-center text-muted-foreground"
                           >
                             {filtersActive
-                              ? "No products match the filters."
-                              : "No products yet."}
+                              ? "Нет товаров по заданным фильтрам."
+                              : "Пока нет товаров."}
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -837,7 +846,7 @@ export default function ProductsPage() {
                                 {p.name}
                                 {showBestMatch && idx === 0 && (
                                   <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">
-                                    Best match
+                                    Лучшее совпадение
                                   </Badge>
                                 )}
                               </span>
@@ -858,7 +867,7 @@ export default function ProductsPage() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-orange-400 hover:underline inline-flex items-center"
-                                  aria-label={`Open ${p.name} page`}
+                                  aria-label={`Открыть страницу ${p.name}`}
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                 </a>
@@ -873,7 +882,7 @@ export default function ProductsPage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    aria-label={`Full info for ${p.name}`}
+                                    aria-label={`Подробная информация: ${p.name}`}
                                   >
                                     <Eye className="h-4 w-4" />
                                   </Button>
@@ -912,7 +921,7 @@ export default function ProductsPage() {
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">
-                      Rows per page
+                      Строк на странице
                     </span>
                     <Select
                       value={String(pageSize)}
@@ -953,7 +962,7 @@ export default function ProductsPage() {
                         </PaginationItem>
                         <PaginationItem>
                           <span className="flex h-9 items-center px-3 text-sm text-muted-foreground">
-                            Page {page} of {totalPages}
+                            Страница {page} из {totalPages}
                           </span>
                         </PaginationItem>
                         <PaginationItem>
@@ -981,7 +990,7 @@ export default function ProductsPage() {
           <TabsContent value="orders" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Orders</CardTitle>
+                <CardTitle>Заказы</CardTitle>
               </CardHeader>
               <CardContent>
                 <OrdersTable

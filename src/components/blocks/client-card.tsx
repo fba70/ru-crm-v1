@@ -27,6 +27,14 @@ const STATUS_COLOR: Record<string, string> = {
   deleted: "bg-red-500/15 text-red-600 dark:text-red-400",
 }
 
+// UI display labels for the status badge (DB enum values stay English).
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активный",
+  initial: "Новый",
+  suspended: "Приостановлен",
+  deleted: "Удалён",
+}
+
 export function ClientCard({
   client,
   onChanged,
@@ -59,7 +67,7 @@ export function ClientCard({
                 variant="secondary"
                 className={STATUS_COLOR[client.status] ?? ""}
               >
-                {client.status}
+                {STATUS_LABEL[client.status] ?? client.status}
               </Badge>
             </div>
           )}
@@ -72,8 +80,8 @@ export function ClientCard({
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Lookup on web"
-                title="Lookup on web"
+                aria-label="Поиск в интернете"
+                title="Поиск в интернете"
               >
                 <Globe className="h-4 w-4" />
               </Button>
@@ -84,7 +92,7 @@ export function ClientCard({
             client={client}
             onSuccess={onChanged}
             trigger={
-              <Button variant="ghost" size="icon" aria-label="Edit client">
+              <Button variant="ghost" size="icon" aria-label="Редактировать клиента">
                 <Pencil className="h-4 w-4" />
               </Button>
             }
@@ -135,7 +143,7 @@ export function ClientCard({
         {client.contacts.length > 0 && (
           <div className="rounded-md border p-2 space-y-1">
             <div className="text-xs font-medium text-muted-foreground">
-              Contacts ({client.contacts.length})
+              Контакты ({client.contacts.length})
             </div>
             {preview.map((c) => (
               <div key={c.id} className="text-sm truncate">
@@ -147,7 +155,7 @@ export function ClientCard({
             ))}
             {moreCount > 0 && (
               <div className="text-xs text-muted-foreground">
-                +{moreCount} more (open to view)
+                +{moreCount} ещё (откройте, чтобы посмотреть)
               </div>
             )}
           </div>
@@ -155,11 +163,11 @@ export function ClientCard({
 
         <div className="flex items-center justify-between gap-2 pt-1">
           <span className="text-xs text-muted-foreground truncate">
-            {client.userName ? `Created by ${client.userName}` : ""}
+            {client.userName ? `Создал ${client.userName}` : ""}
           </span>
           <Button asChild variant="outline" size="sm" className="shrink-0">
             <Link href={`/clients/${client.id}`}>
-              Details
+              Подробнее
               <ArrowRight className="h-3.5 w-3.5 ml-1" />
             </Link>
           </Button>

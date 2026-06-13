@@ -16,9 +16,18 @@ import { Upload, X } from "lucide-react"
 import { toast } from "sonner"
 
 function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024) return `${bytes} Б`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
+}
+
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
 }
 
 type UploadResult =
@@ -86,14 +95,14 @@ export function DropoffUploadDialog({
         body: fd,
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Upload failed")
+      if (!res.ok) throw new Error(data.error || "Ошибка загрузки")
 
       const results = (data.results ?? []) as UploadResult[]
       const okCount = results.filter((r) => r.ok).length
       const failed = results.filter((r) => !r.ok)
       if (okCount > 0) {
         toast.success(
-          `Parsed ${okCount} ${okCount === 1 ? "file" : "files"} → Processed`,
+          `Разобрано ${okCount} ${plural(okCount, ["файл", "файла", "файлов"])} → Обработано`,
         )
       }
       for (const f of failed) {
@@ -104,8 +113,8 @@ export function DropoffUploadDialog({
       reset()
       onOpenChange(false)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error"
-      toast.error(`Upload: ${msg}`)
+      const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
+      toast.error(`Загрузка: ${msg}`)
     } finally {
       setUploading(false)
     }
@@ -122,7 +131,7 @@ export function DropoffUploadDialog({
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Drop off files</DialogTitle>
+          <DialogTitle>Загрузка файлов</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -161,7 +170,7 @@ export function DropoffUploadDialog({
           >
             <Upload className="h-6 w-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground text-center">
-              Drop files here, or click to browse
+              Перетащите файлы сюда или нажмите для выбора
             </p>
             <input
               ref={inputRef}
@@ -197,7 +206,7 @@ export function DropoffUploadDialog({
                     className="h-6 w-6 shrink-0"
                     disabled={uploading}
                     onClick={() => removeAt(i)}
-                    aria-label={`Remove ${f.name}`}
+                    aria-label={`Удалить ${f.name}`}
                   >
                     <X className="h-3 w-3" />
                   </Button>
@@ -208,12 +217,12 @@ export function DropoffUploadDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="dropoff-description" className="text-gray-400">
-              Description (optional)
+              Описание (необязательно)
             </Label>
             <Textarea
               id="dropoff-description"
               rows={3}
-              placeholder="Briefly describe what these files are…"
+              placeholder="Кратко опишите, что это за файлы…"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               disabled={uploading}
@@ -227,7 +236,7 @@ export function DropoffUploadDialog({
             onClick={() => onOpenChange(false)}
             disabled={uploading}
           >
-            Cancel
+            Отмена
           </Button>
           <LoadingButton
             type="button"
@@ -235,7 +244,7 @@ export function DropoffUploadDialog({
             loading={uploading}
             disabled={selected.length === 0}
           >
-            Upload &amp; parse{selected.length > 0 ? ` (${selected.length})` : ""}
+            Загрузить и разобрать{selected.length > 0 ? ` (${selected.length})` : ""}
           </LoadingButton>
         </DialogFooter>
       </DialogContent>

@@ -18,7 +18,7 @@ import { z } from "zod"
 import { authClient } from "@/lib/auth-client"
 
 const forgotPasswordSchema = z.object({
-  email: z.email({ message: "Please enter a valid email" }),
+  email: z.email({ message: "Введите корректный email" }),
 })
 
 type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>
@@ -43,9 +43,9 @@ export function ForgotPasswordForm() {
     })
 
     if (error) {
-      setError(error.message || "Something went wrong")
+      setError(error.message || "Что-то пошло не так")
     } else {
-      setSuccess("Reset password email sent if provided email address exists!")
+      setSuccess("Если указанный email существует, письмо для сброса пароля отправлено!")
     }
 
     form.reset()
@@ -88,7 +88,7 @@ export function ForgotPasswordForm() {
             )}
 
             <LoadingButton type="submit" className="w-full" loading={loading}>
-              Send reset link
+              Отправить ссылку для сброса
             </LoadingButton>
           </form>
         </Form>

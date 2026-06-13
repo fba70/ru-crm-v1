@@ -36,7 +36,7 @@ export default async function ClientDetailPage({
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">CLIENT</h1>
+      <h1 className="text-2xl font-medium mt-2">КЛИЕНТ</h1>
       <div className="w-full max-w-7xl px-4">
         <ClientDetailShell detail={detail} sources={sources} />
       </div>

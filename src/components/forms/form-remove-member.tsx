@@ -33,11 +33,11 @@ export default function RemoveMemberDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to remove member")
+        toast.error(error.message || "Не удалось удалить участника")
         return
       }
 
-      toast.success(`${memberName} has been removed from the organization`)
+      toast.success(`${memberName} удалён из организации`)
       onSuccess?.()
       setOpen(false)
     })
@@ -47,27 +47,28 @@ export default function RemoveMemberDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="destructive" size="sm">
-          Remove
+          Удалить
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Remove {memberName}</DialogTitle>
+          <DialogTitle>Удалить {memberName}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-gray-500">
-          Are you sure you want to remove <strong>{memberName}</strong> from the
-          organization? They will lose access to all organization resources.
+          Вы уверены, что хотите удалить <strong>{memberName}</strong> из
+          организации? Пользователь потеряет доступ ко всем ресурсам
+          организации.
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
-            Cancel
+            Отмена
           </Button>
           <LoadingButton
             variant="destructive"
             onClick={handleRemove}
             loading={isPending}
           >
-            Remove
+            Удалить
           </LoadingButton>
         </DialogFooter>
       </DialogContent>

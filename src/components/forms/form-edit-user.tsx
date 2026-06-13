@@ -74,12 +74,12 @@ export default function UpdateUserDialog({
       })
 
       if (error) {
-        setError(error || "Something went wrong")
-        toast.error(error || "Something went wrong")
+        setError(error || "Что-то пошло не так")
+        toast.error(error || "Что-то пошло не так")
       } else {
         if (onSuccess) onSuccess()
-        setSuccess("User data has been updated successfully!")
-        toast.success("User data has been updated successfully!")
+        setSuccess("Данные пользователя успешно обновлены!")
+        toast.success("Данные пользователя успешно обновлены!")
       }
 
       form.reset()
@@ -91,11 +91,11 @@ export default function UpdateUserDialog({
     const file = e.target.files?.[0]
     if (!file) return
     if (!["image/png", "image/jpeg"].includes(file.type)) {
-      alert("Only PNG or JPEG allowed")
+      alert("Допустимы только PNG или JPEG")
       return
     }
     if (file.size > 300 * 1024) {
-      alert("File must be less than 300kb")
+      alert("Файл должен быть меньше 300 КБ")
       return
     }
     const reader = new FileReader()
@@ -111,12 +111,12 @@ export default function UpdateUserDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="default" className="mt-4">
-          Edit User Profile
+          Редактировать профиль
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader className="mb-2">
-          <DialogTitle>Edit User Profile</DialogTitle>
+          <DialogTitle>Редактировать профиль</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -125,7 +125,7 @@ export default function UpdateUserDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name</FormLabel>
+                  <FormLabel className="text-gray-400">Имя</FormLabel>
                   <FormControl>
                     <Input id="name" {...field} />
                   </FormControl>
@@ -138,7 +138,7 @@ export default function UpdateUserDialog({
               name="image"
               render={() => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Profile Image</FormLabel>
+                  <FormLabel className="text-gray-400">Фото профиля</FormLabel>
                   <FormControl>
                     <Input
                       id="image"
@@ -150,7 +150,7 @@ export default function UpdateUserDialog({
                   {imagePreview && (
                     <Image
                       src={imagePreview}
-                      alt="Preview"
+                      alt="Предпросмотр"
                       width={64}
                       height={64}
                       unoptimized
@@ -179,7 +179,7 @@ export default function UpdateUserDialog({
                 className="w-full"
                 loading={isPending}
               >
-                Save
+                Сохранить
               </LoadingButton>
             </DialogFooter>
           </form>

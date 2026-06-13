@@ -29,6 +29,15 @@ import type { RuleRow } from "@/app/api/rules/route"
 
 type Period = "last_day" | "last_3_days" | "last_week" | "specific"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -120,7 +129,7 @@ export function ExploreSourcesDialog({
           setRuleId(loadedRules[0].id)
         }
       } catch {
-        toast.error("Could not load sources or rules")
+        toast.error("Не удалось загрузить источники или правила")
       } finally {
         if (!cancelled) setLoadingOptions(false)
       }
@@ -174,15 +183,15 @@ export function ExploreSourcesDialog({
 
   const handleSubmit = async () => {
     if (!ruleId) {
-      toast.error("Pick a rule first")
+      toast.error("Сначала выберите правило")
       return
     }
     if (!allSources && selectedSourceIds.size === 0) {
-      toast.error("Pick at least one source or switch to All sources")
+      toast.error("Выберите хотя бы один источник или переключитесь на «Все источники»")
       return
     }
     if (period === "specific" && (!specificFrom || !specificTo)) {
-      toast.error("Pick both From and To dates")
+      toast.error("Укажите обе даты — «С» и «По»")
       return
     }
 
@@ -202,7 +211,7 @@ export function ExploreSourcesDialog({
       })
       const data = await res.json()
       if (!res.ok) {
-        toast.error(data.error || "Card generation failed")
+        toast.error(data.error || "Не удалось сгенерировать карточки")
         return
       }
       const r = data.result as {
@@ -217,22 +226,29 @@ export function ExploreSourcesDialog({
       if (r.errors && r.errors.length > 0) {
         console.warn("[explore-sources] per-item errors:", r.errors)
       }
-      const summary = `${r.cardsCreated} card${
-        r.cardsCreated === 1 ? "" : "s"
-      } created · ${r.scanned} scanned · ${r.skippedNotRelevant} skipped`
+      const summary = `Создано ${r.cardsCreated} ${plural(r.cardsCreated, [
+        "карточка",
+        "карточки",
+        "карточек",
+      ])} · просмотрено ${r.scanned} · пропущено ${r.skippedNotRelevant}`
       if (r.capped > 0) {
-        toast.success(`${summary} (capped — ${r.capped} extra not analyzed)`, {
-          duration: 8000,
-        })
+        toast.success(
+          `${summary} (достигнут предел — ${r.capped} не проанализировано)`,
+          {
+            duration: 8000,
+          },
+        )
       } else if (r.failed > 0) {
-        toast.warning(`${summary} · ${r.failed} failed`, { duration: 8000 })
+        toast.warning(`${summary} · ошибок: ${r.failed}`, { duration: 8000 })
       } else {
         toast.success(summary)
       }
       onCardsGenerated()
       setOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Card generation failed")
+      toast.error(
+        e instanceof Error ? e.message : "Не удалось сгенерировать карточки",
+      )
     } finally {
       setRunning(false)
     }
@@ -243,26 +259,26 @@ export function ExploreSourcesDialog({
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Explore sources</DialogTitle>
+          <DialogTitle>Исследовать источники</DialogTitle>
           <DialogDescription>
-            Run the chosen rule against source items in the selected window.
-            Hard cap of {previewCap} items per click — re-run with a tighter
-            window if you have more.
+            Запустите выбранное правило по элементам источников за указанный
+            период. Не более {previewCap} элементов за один запуск — при
+            необходимости сузьте период и повторите.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 py-2">
           <section className="space-y-2">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-              Time period
+              Период
             </Label>
             <div className="flex flex-wrap gap-2">
               {(
                 [
-                  { key: "last_day", label: "Last day" },
-                  { key: "last_3_days", label: "Last 3 days" },
-                  { key: "last_week", label: "Last week" },
-                  { key: "specific", label: "Specific dates" },
+                  { key: "last_day", label: "За день" },
+                  { key: "last_3_days", label: "За 3 дня" },
+                  { key: "last_week", label: "За неделю" },
+                  { key: "specific", label: "Указать даты" },
                 ] as const
               ).map((p) => (
                 <Button
@@ -280,7 +296,7 @@ export function ExploreSourcesDialog({
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <div className="flex items-center gap-2">
                   <Label htmlFor="explore-from" className="text-xs">
-                    From
+                    С
                   </Label>
                   <Input
                     id="explore-from"
@@ -292,7 +308,7 @@ export function ExploreSourcesDialog({
                 </div>
                 <div className="flex items-center gap-2">
                   <Label htmlFor="explore-to" className="text-xs">
-                    To
+                    По
                   </Label>
                   <Input
                     id="explore-to"
@@ -308,7 +324,7 @@ export function ExploreSourcesDialog({
 
           <section className="space-y-2">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-              Sources
+              Источники
             </Label>
             <div className="flex items-center gap-2">
               <Checkbox
@@ -320,7 +336,7 @@ export function ExploreSourcesDialog({
                 htmlFor="explore-all-sources"
                 className="text-sm cursor-pointer"
               >
-                All org sources
+                Все источники организации
               </Label>
             </div>
             {!allSources && (
@@ -328,11 +344,11 @@ export function ExploreSourcesDialog({
                 {loadingOptions ? (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Loader className="h-3.5 w-3.5 animate-spin" />
-                    Loading sources…
+                    Загрузка источников…
                   </div>
                 ) : sources.length === 0 ? (
                   <div className="text-xs text-muted-foreground italic">
-                    No sources configured for this org.
+                    Для организации не настроены источники.
                   </div>
                 ) : (
                   sources.map((s) => (
@@ -363,17 +379,17 @@ export function ExploreSourcesDialog({
               htmlFor="explore-rule"
               className="text-xs uppercase tracking-wide text-muted-foreground"
             >
-              Rule
+              Правило
             </Label>
             <Select value={ruleId} onValueChange={setRuleId}>
               <SelectTrigger id="explore-rule" className="w-full">
                 <SelectValue
                   placeholder={
                     loadingOptions
-                      ? "Loading rules…"
+                      ? "Загрузка правил…"
                       : rules.length === 0
-                        ? "No org rules configured"
-                        : "Pick a rule"
+                        ? "Нет настроенных правил"
+                        : "Выберите правило"
                   }
                 />
               </SelectTrigger>
@@ -387,11 +403,12 @@ export function ExploreSourcesDialog({
             </Select>
             {rules.length === 0 && !loadingOptions && (
               <p className="text-xs rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-                This organization has no Custom rules. Create one on the{" "}
+                В организации нет пользовательских правил. Сначала создайте его
+                на странице{" "}
                 <a href="/rules" className="underline font-medium">
-                  Rules page
-                </a>{" "}
-                first.
+                  «Правила»
+                </a>
+                .
               </p>
             )}
           </section>
@@ -401,7 +418,7 @@ export function ExploreSourcesDialog({
               htmlFor="explore-model"
               className="text-xs uppercase tracking-wide text-muted-foreground"
             >
-              Model
+              Модель
             </Label>
             <Select value={modelKey} onValueChange={setModelKey}>
               <SelectTrigger id="explore-model" className="w-full">
@@ -431,10 +448,10 @@ export function ExploreSourcesDialog({
                 htmlFor="explore-include-already"
                 className="text-sm cursor-pointer leading-snug"
               >
-                Re-analyze items already processed by a previous run
+                Повторно проанализировать элементы, уже обработанные ранее
                 <span className="block text-xs text-muted-foreground font-normal mt-0.5">
-                  By default, items the pipeline has already considered are
-                  skipped. Tick this for ad-hoc re-runs.
+                  По умолчанию уже обработанные элементы пропускаются. Отметьте
+                  для повторного запуска вручную.
                 </span>
               </Label>
             </div>
@@ -445,21 +462,27 @@ export function ExploreSourcesDialog({
               <Sparkles className="h-4 w-4 text-amber-500" />
               {previewLoading ? (
                 <span className="text-muted-foreground">
-                  Counting eligible items…
+                  Подсчёт подходящих элементов…
                 </span>
               ) : previewCount === null ? (
                 <span className="text-muted-foreground">
-                  Pick a window to see how many items will be analyzed.
+                  Выберите период, чтобы увидеть, сколько элементов будет
+                  проанализировано.
                 </span>
               ) : (
                 <span>
-                  <strong>{Math.min(previewCount, previewCap)}</strong> item
-                  {previewCount === 1 ? "" : "s"} will be analyzed
+                  Будет проанализировано{" "}
+                  <strong>{Math.min(previewCount, previewCap)}</strong>{" "}
+                  {plural(Math.min(previewCount, previewCap), [
+                    "элемент",
+                    "элемента",
+                    "элементов",
+                  ])}
                   {previewCount > previewCap && (
                     <>
                       {" "}
                       <span className="text-muted-foreground">
-                        ({previewCount - previewCap} more outside the cap)
+                        (ещё {previewCount - previewCap} сверх предела)
                       </span>
                     </>
                   )}
@@ -468,8 +491,7 @@ export function ExploreSourcesDialog({
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Only items that have been parsed and uploaded to R2 are
-              eligible.
+              Подходят только элементы, которые разобраны и загружены в R2.
             </p>
           </section>
         </div>
@@ -480,7 +502,7 @@ export function ExploreSourcesDialog({
             onClick={() => setOpen(false)}
             disabled={running}
           >
-            Cancel
+            Отмена
           </Button>
           <Button
             onClick={handleSubmit}
@@ -494,12 +516,12 @@ export function ExploreSourcesDialog({
             {running ? (
               <>
                 <Loader className="h-4 w-4 mr-1 animate-spin" />
-                Analyzing…
+                Анализ…
               </>
             ) : (
               <>
                 <Sparkles className="h-4 w-4 mr-1" />
-                Run analysis
+                Запустить анализ
               </>
             )}
           </Button>

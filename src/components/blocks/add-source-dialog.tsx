@@ -22,6 +22,15 @@ import { toast } from "sonner"
 import { getProvider } from "@/lib/sources/providers"
 import type { TemplateRow } from "@/server/templates"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 type Props = {
   open: boolean
   onOpenChange: (next: boolean) => void
@@ -61,12 +70,12 @@ export function AddSourceDialog({
     fetch("/api/sources/org/instantiate")
       .then(async (res) => {
         const data = await res.json()
-        if (!res.ok) throw new Error(data.error || "Failed to load templates")
+        if (!res.ok) throw new Error(data.error || "Не удалось загрузить шаблоны")
         if (!cancelled) setTemplates(data.templates ?? [])
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unknown error")
+          setError(err instanceof Error ? err.message : "Неизвестная ошибка")
         }
       })
       .finally(() => {
@@ -86,14 +95,14 @@ export function AddSourceDialog({
         body: JSON.stringify({ templateId: template.id }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Failed to add source")
+      if (!res.ok) throw new Error(data.error || "Не удалось добавить источник")
       toast.success(
-        `${template.name} added — open Edit config + Configure credentials to finish setup`,
+        `${template.name} добавлен — откройте «Изменить настройки» и «Настроить учётные данные», чтобы завершить настройку`,
       )
       onCreated()
       onOpenChange(false)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Unknown error")
+      toast.error(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setSubmitting(null)
     }
@@ -103,26 +112,26 @@ export function AddSourceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add source</DialogTitle>
+          <DialogTitle>Добавить источник</DialogTitle>
           <DialogDescription>
-            Pick a template to add to your organisation. The source will
-            be created with template defaults; finish setup by clicking
-            <strong> Edit config </strong> and <strong> Configure </strong>
-            on the new row.
+            Выберите шаблон для добавления в организацию. Источник создаётся с
+            настройками шаблона по умолчанию; завершите настройку, нажав
+            <strong> «Изменить настройки» </strong> и
+            <strong> «Настроить» </strong> в новой строке.
           </DialogDescription>
         </DialogHeader>
 
         {loading ? (
           <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
             <Loader className="h-4 w-4 animate-spin mr-2" />
-            Loading templates…
+            Загрузка шаблонов…
           </div>
         ) : error ? (
           <p className="text-sm text-destructive py-4">{error}</p>
         ) : templates.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4">
-            No templates available. Ask a platform admin to create one
-            in Settings → Templates.
+            Нет доступных шаблонов. Попросите администратора платформы создать
+            его в «Настройки → Шаблоны».
           </p>
         ) : (
           <ul className="space-y-2 py-2">
@@ -146,10 +155,14 @@ export function AddSourceDialog({
                     )}
                     {existingCount > 0 && (
                       <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                        You already have {existingCount} source
-                        {existingCount === 1 ? "" : "s"} of this type.
-                        Adding another creates a parallel instance with
-                        its own credentials.
+                        У вас уже есть {existingCount}{" "}
+                        {plural(existingCount, [
+                          "источник",
+                          "источника",
+                          "источников",
+                        ])}{" "}
+                        этого типа. Добавление ещё одного создаёт параллельный
+                        экземпляр с собственными учётными данными.
                       </p>
                     )}
                   </div>
@@ -162,12 +175,12 @@ export function AddSourceDialog({
                     {inFlight ? (
                       <>
                         <Loader className="h-3.5 w-3.5 mr-1 animate-spin" />
-                        Adding…
+                        Добавление…
                       </>
                     ) : (
                       <>
                         <Plus className="h-3.5 w-3.5 mr-1" />
-                        Add
+                        Добавить
                       </>
                     )}
                   </Button>
@@ -183,7 +196,7 @@ export function AddSourceDialog({
             type="button"
             onClick={() => onOpenChange(false)}
           >
-            Close
+            Закрыть
           </Button>
         </DialogFooter>
       </DialogContent>

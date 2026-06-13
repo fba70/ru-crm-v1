@@ -29,7 +29,7 @@ function DashboardContent() {
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
       <h1 className="text-2xl font-medium mt-2">
-        AI-NATIVE BUSINESS OPERATING SYSTEM
+        AI ОПЕРАЦИОННАЯ СИСТЕМА ДЛЯ БИЗНЕСА
       </h1>
 
       <div className="w-full max-w-7xl px-4">
@@ -59,7 +59,7 @@ function DashboardContent() {
                   </Button>
                 )}
                 <h3 className="text-sm font-semibold">
-                  {content.title || "Detail view"}
+                  {content.title || "Подробности"}
                 </h3>
               </div>
               <Button variant="ghost" size="icon-sm" onClick={closePanel}>
@@ -74,8 +74,8 @@ function DashboardContent() {
             >
               <div className="px-4 pt-3">
                 <TabsList>
-                  <TabsTrigger value="rendered">Rendered</TabsTrigger>
-                  <TabsTrigger value="source">Source</TabsTrigger>
+                  <TabsTrigger value="rendered">Просмотр</TabsTrigger>
+                  <TabsTrigger value="source">Исходный код</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -134,7 +134,7 @@ class RendererErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <p className="text-sm text-muted-foreground italic p-4">
-          Could not render structured content.
+          Не удалось отобразить структурированный контент.
         </p>
       )
     }

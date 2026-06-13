@@ -37,27 +37,27 @@ const PAGE_SIZE = 6
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "closed"]
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-  closed: "Closed",
+  todo: "К выполнению",
+  in_progress: "В работе",
+  done: "Выполнено",
+  closed: "Закрыто",
 }
 
 const TYPES: TaskType[] = ["meet", "call", "email", "offer", "docs", "other"]
 const TYPE_LABELS: Record<TaskType, string> = {
-  meet: "Meet",
-  call: "Call",
+  meet: "Встреча",
+  call: "Звонок",
   email: "Email",
-  offer: "Offer",
-  docs: "Docs",
-  other: "Other",
+  offer: "Предложение",
+  docs: "Документы",
+  other: "Другое",
 }
 
 const PRIORITIES: TaskPriority[] = ["low", "medium", "high"]
 const PRIORITY_LABELS: Record<TaskPriority, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
+  low: "Низкий",
+  medium: "Средний",
+  high: "Высокий",
 }
 
 const ALL = "__all__"
@@ -218,7 +218,8 @@ export default function TasksPage() {
       if (needle && !t.name.toLowerCase().includes(needle)) return false
       if (typeFilter !== ALL && t.type !== typeFilter) return false
       if (priorityFilter !== ALL && t.priority !== priorityFilter) return false
-      if (assigneeFilter !== ALL && t.assigneeId !== assigneeFilter) return false
+      if (assigneeFilter !== ALL && t.assigneeId !== assigneeFilter)
+        return false
       if (clientFilter !== ALL && (t.clientId ?? "") !== clientFilter)
         return false
       if (contactFilter !== ALL && (t.contactId ?? "") !== contactFilter)
@@ -265,11 +266,11 @@ export default function TasksPage() {
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">TASKS</h1>
+      <h1 className="text-2xl font-medium mt-2">ЗАДАЧИ</h1>
 
       <Card className="w-full max-w-7xl">
         <CardHeader>
-          <CardTitle>Kanban board</CardTitle>
+          <CardTitle>Канбан-доска</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex justify-end mb-3">
@@ -279,7 +280,7 @@ export default function TasksPage() {
               trigger={
                 <Button size="sm">
                   <Plus className="h-4 w-4 mr-1" />
-                  New task
+                  Новая задача
                 </Button>
               }
             />
@@ -287,16 +288,16 @@ export default function TasksPage() {
 
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
             <Input
-              placeholder="Search by name…"
+              placeholder="Поиск по названию…"
               value={nameFilter}
               onChange={(e) => setNameFilter(e.target.value)}
             />
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="w-full justify-center">
-                <SelectValue placeholder="Type" />
+                <SelectValue placeholder="Тип" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All types</SelectItem>
+                <SelectItem value={ALL}>Все типы</SelectItem>
                 {TYPES.map((t) => (
                   <SelectItem key={t} value={t}>
                     {TYPE_LABELS[t]}
@@ -306,10 +307,10 @@ export default function TasksPage() {
             </Select>
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger className="w-full justify-center">
-                <SelectValue placeholder="Priority" />
+                <SelectValue placeholder="Приоритет" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All priorities</SelectItem>
+                <SelectItem value={ALL}>Все приоритеты</SelectItem>
                 {PRIORITIES.map((p) => (
                   <SelectItem key={p} value={p}>
                     {PRIORITY_LABELS[p]}
@@ -319,10 +320,10 @@ export default function TasksPage() {
             </Select>
             <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
               <SelectTrigger className="w-full justify-center">
-                <SelectValue placeholder="Assignee" />
+                <SelectValue placeholder="Исполнитель" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All assignees</SelectItem>
+                <SelectItem value={ALL}>Все исполнители</SelectItem>
                 {members.map((m) => (
                   <SelectItem key={m.id} value={m.id}>
                     {m.name}
@@ -332,10 +333,10 @@ export default function TasksPage() {
             </Select>
             <Select value={clientFilter} onValueChange={setClientFilter}>
               <SelectTrigger className="w-full justify-center">
-                <SelectValue placeholder="Client" />
+                <SelectValue placeholder="Клиент" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All clients</SelectItem>
+                <SelectItem value={ALL}>Все клиенты</SelectItem>
                 {clientOptions.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
@@ -345,10 +346,10 @@ export default function TasksPage() {
             </Select>
             <Select value={contactFilter} onValueChange={setContactFilter}>
               <SelectTrigger className="w-full justify-center">
-                <SelectValue placeholder="Contact" />
+                <SelectValue placeholder="Контакт" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All contacts</SelectItem>
+                <SelectItem value={ALL}>Все контакты</SelectItem>
                 {contactOptions.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
@@ -360,7 +361,7 @@ export default function TasksPage() {
 
           <div className="mb-3 flex items-center justify-between">
             <div className="text-xs text-muted-foreground">
-              {filteredTasks.length} of {tasks.length} tasks
+              {filteredTasks.length} из {tasks.length} задач
             </div>
             <Button
               variant="ghost"
@@ -369,7 +370,7 @@ export default function TasksPage() {
               disabled={!hasActiveFilters}
             >
               <X className="h-4 w-4 mr-1" />
-              Clear filters
+              Сбросить фильтры
             </Button>
           </div>
 
@@ -396,8 +397,8 @@ export default function TasksPage() {
                     onChanged={refreshAll}
                     emptyLabel={
                       hasActiveFilters
-                        ? `No tasks match the filters in "${STATUS_LABELS[s]}".`
-                        : `No tasks in "${STATUS_LABELS[s]}".`
+                        ? `Нет задач по фильтрам в «${STATUS_LABELS[s]}».`
+                        : `Нет задач в «${STATUS_LABELS[s]}».`
                     }
                   />
                 </TabsContent>
@@ -409,7 +410,7 @@ export default function TasksPage() {
 
       <Card className="w-full max-w-7xl">
         <CardHeader>
-          <CardTitle>Timeline</CardTitle>
+          <CardTitle>Хронология</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (

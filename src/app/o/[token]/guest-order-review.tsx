@@ -66,7 +66,7 @@ function QtyStepper({
         className="h-8 w-8"
         disabled={disabled || line.quantity <= 1}
         onClick={() => commit(line.quantity - 1)}
-        aria-label="Decrease quantity"
+        aria-label="Уменьшить количество"
       >
         <Minus className="h-3.5 w-3.5" />
       </Button>
@@ -92,7 +92,7 @@ function QtyStepper({
         className="h-8 w-8"
         disabled={disabled}
         onClick={() => commit(line.quantity + 1)}
-        aria-label="Increase quantity"
+        aria-label="Увеличить количество"
       >
         <Plus className="h-3.5 w-3.5" />
       </Button>
@@ -122,10 +122,10 @@ export function GuestOrderReview({
       if (!r.ok) {
         toast.error(
           r.reason === "conflict"
-            ? "This order was updated elsewhere. Refreshing…"
+            ? "Этот заказ был изменён в другом месте. Обновляем…"
             : r.reason === "forbidden"
-              ? "This order can no longer be edited."
-              : "Something went wrong. Please reload.",
+              ? "Этот заказ больше нельзя редактировать."
+              : "Что-то пошло не так. Пожалуйста, перезагрузите страницу.",
         )
         router.refresh()
         return
@@ -148,7 +148,7 @@ export function GuestOrderReview({
         <Card>
           <CardHeader className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-xl">Review your order</CardTitle>
+              <CardTitle className="text-xl">Проверьте ваш заказ</CardTitle>
               <Badge variant="secondary">
                 {formatOrderDate(view.orderDate)}
               </Badge>
@@ -165,10 +165,10 @@ export function GuestOrderReview({
               <div className="flex items-start gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
                 <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                 <div>
-                  <div className="font-medium">Order confirmed</div>
+                  <div className="font-medium">Заказ подтверждён</div>
                   <div className="text-muted-foreground">
-                    Thanks — your confirmation has been sent back. This page is
-                    now read-only.
+                    Спасибо — ваше подтверждение отправлено. Эта страница теперь
+                    доступна только для просмотра.
                   </div>
                 </div>
               </div>
@@ -176,7 +176,7 @@ export function GuestOrderReview({
 
             {!editable && !confirmed && (
               <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-                This order is currently read-only.
+                Этот заказ сейчас доступен только для просмотра.
               </div>
             )}
 
@@ -184,18 +184,18 @@ export function GuestOrderReview({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-16">Image</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Color</TableHead>
-                    <TableHead>Sugar</TableHead>
-                    <TableHead className="text-right">Alcohol</TableHead>
-                    <TableHead className="text-right">Volume</TableHead>
-                    <TableHead>Country / Region</TableHead>
+                    <TableHead className="w-16">Фото</TableHead>
+                    <TableHead>Товар</TableHead>
+                    <TableHead>Цвет</TableHead>
+                    <TableHead>Сахар</TableHead>
+                    <TableHead className="text-right">Алкоголь</TableHead>
+                    <TableHead className="text-right">Объём</TableHead>
+                    <TableHead>Страна / регион</TableHead>
                     <TableHead className="w-28 text-right">
-                      Unit price
+                      Цена за ед.
                     </TableHead>
-                    <TableHead className="w-36 text-center">Qty</TableHead>
-                    <TableHead className="w-28 text-right">Position</TableHead>
+                    <TableHead className="w-36 text-center">Кол-во</TableHead>
+                    <TableHead className="w-28 text-right">Сумма</TableHead>
                     {view.can.removeItem && <TableHead className="w-12" />}
                   </TableRow>
                 </TableHeader>
@@ -206,7 +206,7 @@ export function GuestOrderReview({
                         colSpan={view.can.removeItem ? 11 : 10}
                         className="h-20 text-center text-sm text-muted-foreground"
                       >
-                        No items on this order.
+                        В этом заказе нет позиций.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -221,7 +221,7 @@ export function GuestOrderReview({
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={l.imageUrl}
-                                  alt={l.productName ?? "Product"}
+                                  alt={l.productName ?? "Товар"}
                                   className="h-10 w-10 rounded object-cover bg-muted cursor-zoom-in"
                                   loading="lazy"
                                 />
@@ -230,7 +230,7 @@ export function GuestOrderReview({
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={l.imageUrl}
-                                  alt={l.productName ?? "Product"}
+                                  alt={l.productName ?? "Товар"}
                                   className="max-h-80 max-w-80 rounded object-contain bg-muted"
                                 />
                               </HoverCardContent>
@@ -250,7 +250,7 @@ export function GuestOrderReview({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-muted-foreground hover:text-foreground shrink-0"
-                                aria-label="Open product page"
+                                aria-label="Открыть страницу товара"
                               >
                                 <ExternalLink className="h-3.5 w-3.5" />
                               </a>
@@ -303,11 +303,11 @@ export function GuestOrderReview({
                               variant="ghost"
                               size="icon"
                               disabled={pending}
-                              aria-label="Remove item"
+                              aria-label="Удалить позицию"
                               onClick={() =>
                                 run(
                                   () => removeItemAction(token, l.id),
-                                  "Item removed",
+                                  "Позиция удалена",
                                 )
                               }
                             >
@@ -323,7 +323,7 @@ export function GuestOrderReview({
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total</span>
+              <span className="text-sm text-muted-foreground">Итого</span>
               <span className="text-lg font-semibold tabular-nums">
                 {formatOrderAmount(view.totalAmount, view.currency)}
               </span>
@@ -340,12 +340,12 @@ export function GuestOrderReview({
                   onClick={() =>
                     run(
                       () => confirmOrderAction(token),
-                      "Order confirmed — thank you!",
+                      "Заказ подтверждён — спасибо!",
                     )
                   }
                 >
                   <CheckCircle2 className="h-4 w-4 mr-1" />
-                  Confirm order
+                  Подтвердить заказ
                 </Button>
               </div>
             )}
@@ -353,8 +353,8 @@ export function GuestOrderReview({
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          You can adjust quantities or remove items, then confirm. You can’t add
-          new products to this order.
+          Вы можете изменить количество или удалить позиции, а затем подтвердить
+          заказ. Добавлять новые товары в этот заказ нельзя.
         </p>
       </div>
     </div>

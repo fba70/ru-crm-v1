@@ -110,14 +110,14 @@ export default function AdminEditUserOrgsDialog({
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
-          toast.error(data.error || "Failed to save memberships")
+          toast.error(data.error || "Не удалось сохранить участие в организациях")
           return
         }
-        toast.success(`Organizations updated for ${userName}`)
+        toast.success(`Организации обновлены для ${userName}`)
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to save memberships")
+        toast.error("Не удалось сохранить участие в организациях")
       }
     })
   }
@@ -126,22 +126,22 @@ export default function AdminEditUserOrgsDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Organizations
+          Организации
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Organizations for {userName}</DialogTitle>
+          <DialogTitle>Организации для {userName}</DialogTitle>
           <DialogDescription>
-            Add or remove organizations and set the role in each. Changes apply
-            when you save.
+            Добавляйте или удаляйте организации и задавайте роль в каждой.
+            Изменения применяются при сохранении.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Not a member of any organization yet.
+              Пока не состоит ни в одной организации.
             </p>
           ) : (
             <div className="space-y-2">
@@ -161,15 +161,15 @@ export default function AdminEditUserOrgsDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="owner">Owner</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="owner">Владелец</SelectItem>
+                      <SelectItem value="admin">Администратор</SelectItem>
+                      <SelectItem value="member">Участник</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Remove ${r.organizationName}`}
+                    aria-label={`Удалить ${r.organizationName}`}
                     onClick={() => removeRow(r.organizationId)}
                   >
                     <Trash2 className="h-4 w-4 text-muted-foreground" />
@@ -186,8 +186,8 @@ export default function AdminEditUserOrgsDialog({
                 <SelectValue
                   placeholder={
                     availableOrgs.length
-                      ? "Add an organization…"
-                      : "No more organizations"
+                      ? "Добавить организацию…"
+                      : "Больше нет организаций"
                   }
                 />
               </SelectTrigger>
@@ -204,7 +204,7 @@ export default function AdminEditUserOrgsDialog({
               onClick={addRow}
               disabled={!addOrgId}
             >
-              Add
+              Добавить
             </Button>
           </div>
 
@@ -214,7 +214,7 @@ export default function AdminEditUserOrgsDialog({
               className="w-full"
               loading={isPending}
             >
-              Save organizations
+              Сохранить организации
             </LoadingButton>
           </DialogFooter>
         </div>

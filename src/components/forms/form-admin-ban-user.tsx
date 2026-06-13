@@ -63,11 +63,11 @@ export default function AdminBanUserDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to ban user")
+        toast.error(error.message || "Не удалось заблокировать пользователя")
         return
       }
 
-      toast.success(`${userName} has been banned`)
+      toast.success(`${userName} заблокирован`)
       form.reset()
       onSuccess?.()
       setOpen(false)
@@ -81,11 +81,11 @@ export default function AdminBanUserDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to unban user")
+        toast.error(error.message || "Не удалось разблокировать пользователя")
         return
       }
 
-      toast.success(`${userName} has been unbanned`)
+      toast.success(`${userName} разблокирован`)
       onSuccess?.()
       setOpen(false)
     })
@@ -98,19 +98,21 @@ export default function AdminBanUserDialog({
           variant={isBanned ? "secondary" : "destructive"}
           size="sm"
         >
-          {isBanned ? "Unban" : "Ban"}
+          {isBanned ? "Разблокировать" : "Заблокировать"}
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
           <DialogTitle>
-            {isBanned ? `Unban ${userName}` : `Ban ${userName}`}
+            {isBanned
+              ? `Разблокировать ${userName}`
+              : `Заблокировать ${userName}`}
           </DialogTitle>
         </DialogHeader>
         {isBanned ? (
           <div className="space-y-4">
             <p className="text-sm text-gray-500">
-              This will unban the user and allow them to sign in again.
+              Пользователь будет разблокирован и снова сможет входить в систему.
             </p>
             <DialogFooter>
               <LoadingButton
@@ -118,7 +120,7 @@ export default function AdminBanUserDialog({
                 className="w-full"
                 loading={isPending}
               >
-                Unban User
+                Разблокировать
               </LoadingButton>
             </DialogFooter>
           </div>
@@ -134,10 +136,10 @@ export default function AdminBanUserDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-gray-400">
-                      Ban Reason (optional)
+                      Причина блокировки (необязательно)
                     </FormLabel>
                     <FormControl>
-                      <Input placeholder="Violation of terms..." {...field} />
+                      <Input placeholder="Нарушение условий…" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -149,7 +151,7 @@ export default function AdminBanUserDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-gray-400">
-                      Ban Duration (days, empty = permanent)
+                      Срок блокировки (дней, пусто = бессрочно)
                     </FormLabel>
                     <FormControl>
                       <Input type="number" min="1" placeholder="7" {...field} />
@@ -165,7 +167,7 @@ export default function AdminBanUserDialog({
                   className="w-full"
                   loading={isPending}
                 >
-                  Ban User
+                  Заблокировать
                 </LoadingButton>
               </DialogFooter>
             </form>

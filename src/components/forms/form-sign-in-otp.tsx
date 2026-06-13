@@ -34,12 +34,12 @@ import { toast } from "sonner"
 import { z } from "zod"
 
 const emailSchema = z.object({
-  email: z.email({ message: "Please enter a valid email" }),
+  email: z.email({ message: "Введите корректный email" }),
 })
 type EmailValues = z.infer<typeof emailSchema>
 
 const otpSchema = z.object({
-  otp: z.string().length(6, { message: "Enter the 6-digit code" }),
+  otp: z.string().length(6, { message: "Введите 6-значный код" }),
 })
 type OtpValues = z.infer<typeof otpSchema>
 
@@ -69,26 +69,26 @@ export function SignInOtpForm() {
       type: "sign-in",
     })
     if (error) {
-      const msg = error.message || "Failed to send code"
+      const msg = error.message || "Не удалось отправить код"
       setError(msg)
       toast.error(msg)
       return
     }
     setEmail(email)
     setStep("otp")
-    toast.success("Code sent. Check your email.")
+    toast.success("Код отправлен. Проверьте почту.")
   }
 
   async function onVerifyOtp({ otp }: OtpValues) {
     setError(null)
     const { error } = await authClient.signIn.emailOtp({ email, otp })
     if (error) {
-      const msg = error.message || "Invalid or expired code"
+      const msg = error.message || "Неверный или просроченный код"
       setError(msg)
       toast.error(msg)
       return
     }
-    toast.success("Signed in!")
+    toast.success("Вход выполнен!")
     router.push(redirect)
   }
 
@@ -99,20 +99,20 @@ export function SignInOtpForm() {
       type: "sign-in",
     })
     if (error) {
-      toast.error(error.message || "Failed to resend code")
+      toast.error(error.message || "Не удалось отправить код повторно")
       return
     }
-    toast.success("New code sent.")
+    toast.success("Новый код отправлен.")
   }
 
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-lg md:text-xl">Sign in with code</CardTitle>
+        <CardTitle className="text-lg md:text-xl">Вход по коду</CardTitle>
         <CardDescription className="text-xs md:text-sm">
           {step === "email"
-            ? "Enter your email and we'll send you a one-time code."
-            : `Enter the 6-digit code sent to ${email}.`}
+            ? "Введите email, и мы отправим вам одноразовый код."
+            : `Введите 6-значный код, отправленный на ${email}.`}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -152,7 +152,7 @@ export function SignInOtpForm() {
                 className="w-full"
                 loading={emailForm.formState.isSubmitting}
               >
-                Send code
+                Отправить код
               </LoadingButton>
             </form>
           </Form>
@@ -167,7 +167,7 @@ export function SignInOtpForm() {
                 name="otp"
                 render={({ field }) => (
                   <FormItem className="flex flex-col items-center">
-                    <FormLabel>Verification code</FormLabel>
+                    <FormLabel>Код подтверждения</FormLabel>
                     <FormControl>
                       <InputOTP
                         maxLength={6}
@@ -200,7 +200,7 @@ export function SignInOtpForm() {
                 className="w-full"
                 loading={otpForm.formState.isSubmitting}
               >
-                Verify and sign in
+                Подтвердить и войти
               </LoadingButton>
 
               <div className="flex items-center justify-between">
@@ -214,7 +214,7 @@ export function SignInOtpForm() {
                     otpForm.reset()
                   }}
                 >
-                  Change email
+                  Изменить email
                 </Button>
                 <Button
                   type="button"
@@ -222,7 +222,7 @@ export function SignInOtpForm() {
                   size="sm"
                   onClick={onResend}
                 >
-                  Resend code
+                  Отправить код повторно
                 </Button>
               </div>
             </form>
@@ -232,9 +232,9 @@ export function SignInOtpForm() {
       <CardFooter>
         <div className="flex w-full justify-center border-t pt-4">
           <p className="text-muted-foreground text-center text-xs">
-            Prefer password?{" "}
+            Предпочитаете пароль?{" "}
             <Link href="/sign-in" className="underline">
-              Sign in with password
+              Войти по паролю
             </Link>
           </p>
         </div>

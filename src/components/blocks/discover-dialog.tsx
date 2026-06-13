@@ -42,11 +42,27 @@ import type { ApplyDiscoveryResult } from "@/app/api/discovery/apply/route"
 type Phase = "idle" | "scanning" | "preview" | "applying"
 
 const PERIODS: { value: DiscoveryPeriod; label: string }[] = [
-  { value: "all", label: "All time" },
-  { value: "last_day", label: "Last day" },
-  { value: "last_week", label: "Last week" },
-  { value: "last_month", label: "Last month" },
+  { value: "all", label: "За всё время" },
+  { value: "last_day", label: "За день" },
+  { value: "last_week", label: "За неделю" },
+  { value: "last_month", label: "За месяц" },
 ]
+
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
+// UI labels for discovery's self-rated confidence levels.
+const CONFIDENCE_LABEL: Record<"high" | "medium" | "low", string> = {
+  high: "высокая",
+  medium: "средняя",
+  low: "низкая",
+}
 
 // Stable string encodings — used as map keys and to round-trip a selected
 // link back into its ContactRef / ClientRef pair on apply.
@@ -111,7 +127,7 @@ export function DiscoverDialog({
           body: JSON.stringify({ period: p, includeAlreadyScanned: includeScanned }),
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.error || "Failed to scan")
+        if (!res.ok) throw new Error(data.error || "Не удалось выполнить поиск")
         const dp = data as DiscoveryPreview
         setPreview(dp)
 
@@ -138,7 +154,9 @@ export function DiscoverDialog({
 
         setPhase("preview")
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to scan")
+        toast.error(
+          err instanceof Error ? err.message : "Не удалось выполнить поиск",
+        )
         setPhase("idle")
       }
     },
@@ -264,22 +282,22 @@ export function DiscoverDialog({
           }),
         })
         const data = await res.json()
-        if (!res.ok) throw new Error(data.error || "Failed to apply")
+        if (!res.ok) throw new Error(data.error || "Не удалось применить")
         const result = data as ApplyDiscoveryResult
         const revived = result.clientsRevived + result.contactsRevived
         toast.success(
-          `${result.clientsCreated} client${result.clientsCreated === 1 ? "" : "s"} · ` +
-            `${result.contactsCreated} contact${result.contactsCreated === 1 ? "" : "s"} · ` +
-            `${result.linksApplied} link${result.linksApplied === 1 ? "" : "s"}` +
-            (revived ? ` · ${revived} revived` : "") +
-            (result.clientsEnriched ? ` · ${result.clientsEnriched} enriched` : "") +
-            ` · ${result.scannedRowsStamped} reviewed`,
+          `Создано: ${result.clientsCreated} ${plural(result.clientsCreated, ["клиент", "клиента", "клиентов"])} · ` +
+            `${result.contactsCreated} ${plural(result.contactsCreated, ["контакт", "контакта", "контактов"])} · ` +
+            `${result.linksApplied} ${plural(result.linksApplied, ["связь", "связи", "связей"])}` +
+            (revived ? ` · восстановлено ${revived}` : "") +
+            (result.clientsEnriched ? ` · дополнено ${result.clientsEnriched}` : "") +
+            ` · просмотрено ${result.scannedRowsStamped}`,
         )
         onApplied()
         setOpen(false)
         reset()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to apply")
+        toast.error(err instanceof Error ? err.message : "Не удалось применить")
         setPhase("preview")
       }
     },
@@ -293,13 +311,13 @@ export function DiscoverDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
-            Discover from sources
+            Найти в источниках
           </DialogTitle>
           <DialogDescription>
-            One-shot scan across parsed source items in your active
-            organization. Selected entries land with status{" "}
-            <code className="text-xs bg-muted px-1 rounded">initial</code> for
-            review.
+            Разовый поиск по разобранным элементам источников в текущей
+            организации. Выбранные записи добавляются со статусом{" "}
+            <code className="text-xs bg-muted px-1 rounded">initial</code> для
+            проверки.
           </DialogDescription>
         </DialogHeader>
 
@@ -322,7 +340,7 @@ export function DiscoverDialog({
           <div className="flex-1 flex items-center justify-center py-12">
             <Loader className="h-6 w-6 animate-spin" />
             <span className="ml-2 text-sm text-muted-foreground">
-              Scanning source items…
+              Поиск по элементам источников…
             </span>
           </div>
         )}
@@ -331,7 +349,7 @@ export function DiscoverDialog({
           <div className="flex-1 flex items-center justify-center py-12">
             <Loader className="h-6 w-6 animate-spin" />
             <span className="ml-2 text-sm text-muted-foreground">
-              Applying…
+              Применение…
             </span>
           </div>
         )}
@@ -341,18 +359,37 @@ export function DiscoverDialog({
             {/* Summary bar */}
             <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-muted-foreground border-b pb-2">
               <span>
-                Scanned {preview.scannedRowCount} item
-                {preview.scannedRowCount === 1 ? "" : "s"} ·{" "}
-                {preview.clientCandidates.length} companies ·{" "}
-                {preview.contactCandidates.length} contacts ·{" "}
-                {preview.linkProposals.length} links
+                Просмотрено {preview.scannedRowCount}{" "}
+                {plural(preview.scannedRowCount, [
+                  "элемент",
+                  "элемента",
+                  "элементов",
+                ])}{" "}
+                · {preview.clientCandidates.length}{" "}
+                {plural(preview.clientCandidates.length, [
+                  "компания",
+                  "компании",
+                  "компаний",
+                ])}{" "}
+                · {preview.contactCandidates.length}{" "}
+                {plural(preview.contactCandidates.length, [
+                  "контакт",
+                  "контакта",
+                  "контактов",
+                ])}{" "}
+                · {preview.linkProposals.length}{" "}
+                {plural(preview.linkProposals.length, [
+                  "связь",
+                  "связи",
+                  "связей",
+                ])}
               </span>
               <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap">
                 <Checkbox
                   checked={includeAlreadyScanned}
                   onCheckedChange={(v) => onIncludeScannedChange(v === true)}
                 />
-                Re-scan already-reviewed items
+                Повторно сканировать уже проверенные элементы
               </label>
             </div>
 
@@ -360,7 +397,7 @@ export function DiscoverDialog({
               {/* Companies */}
               <Section
                 icon={<Building2 className="h-4 w-4" />}
-                title="Companies"
+                title="Компании"
                 count={selectedClientCount}
                 total={preview.clientCandidates.length}
                 filter={clientFilter}
@@ -373,7 +410,7 @@ export function DiscoverDialog({
                   })
                 }
                 empty={preview.clientCandidates.length === 0}
-                emptyLabel="No new companies found."
+                emptyLabel="Новые компании не найдены."
               >
                 {filteredClients.map((c) => (
                   <ClientRow
@@ -393,7 +430,7 @@ export function DiscoverDialog({
               {/* Contacts */}
               <Section
                 icon={<User className="h-4 w-4" />}
-                title="Contacts"
+                title="Контакты"
                 count={selectedContactCount}
                 total={preview.contactCandidates.length}
                 filter={contactFilter}
@@ -406,7 +443,7 @@ export function DiscoverDialog({
                   })
                 }
                 empty={preview.contactCandidates.length === 0}
-                emptyLabel="No new contacts found."
+                emptyLabel="Новые контакты не найдены."
               >
                 {filteredContacts.map((c) => (
                   <ContactRow
@@ -430,7 +467,7 @@ export function DiscoverDialog({
               {/* Links */}
               <Section
                 icon={<Link2 className="h-4 w-4" />}
-                title="Links"
+                title="Связи"
                 count={selectedLinkCount}
                 total={preview.linkProposals.length}
                 filter={linkFilter}
@@ -443,7 +480,7 @@ export function DiscoverDialog({
                   })
                 }
                 empty={preview.linkProposals.length === 0}
-                emptyLabel="No links to propose."
+                emptyLabel="Нет предложений по связям."
               >
                 {filteredLinks.map((l) => {
                   const k = linkKey(l)
@@ -463,13 +500,13 @@ export function DiscoverDialog({
 
             <DialogFooter className="gap-2">
               <Button variant="ghost" onClick={() => handleOpenChange(false)}>
-                Cancel
+                Отмена
               </Button>
               <Button variant="outline" onClick={() => apply(true)}>
-                Mark all reviewed
+                Отметить все проверенными
               </Button>
               <Button onClick={() => apply(false)} disabled={totalSelected === 0}>
-                Apply ({totalSelected})
+                Применить ({totalSelected})
               </Button>
             </DialogFooter>
           </>
@@ -526,7 +563,7 @@ function Section({
           <>
             <div className="flex items-center gap-2">
               <Input
-                placeholder="Filter…"
+                placeholder="Фильтр…"
                 value={filter}
                 onChange={(e) => onFilter(e.target.value)}
                 className="flex-1 h-8"
@@ -536,14 +573,14 @@ function Section({
                 variant="outline"
                 onClick={() => onToggleVisible(true)}
               >
-                Select visible
+                Выбрать видимые
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => onToggleVisible(false)}
               >
-                Clear visible
+                Снять видимые
               </Button>
             </div>
             <div className="rounded-md border divide-y">{children}</div>
@@ -561,14 +598,18 @@ function ConfidenceBadge({ level }: { level: "high" | "medium" | "low" }) {
   if (level === "high")
     return (
       <Badge variant="secondary" className="text-[10px] px-1 py-0">
-        high
+        {CONFIDENCE_LABEL.high}
       </Badge>
     )
   const cls =
     level === "medium"
       ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
       : "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30"
-  return <Badge className={`text-[10px] px-1 py-0 ${cls}`}>{level}</Badge>
+  return (
+    <Badge className={`text-[10px] px-1 py-0 ${cls}`}>
+      {CONFIDENCE_LABEL[level]}
+    </Badge>
+  )
 }
 
 function ClientRow({
@@ -593,17 +634,17 @@ function ClientRow({
           <ConfidenceBadge level={candidate.confidence} />
         </div>
         <div className="text-xs text-muted-foreground truncate">
-          mentioned in {candidate.occurrences} item
-          {candidate.occurrences === 1 ? "" : "s"}
+          упомянуто в {candidate.occurrences}{" "}
+          {plural(candidate.occurrences, ["элементе", "элементах", "элементах"])}
           {candidate.inferredWebUrl ? ` · ${candidate.inferredWebUrl}` : ""}
           {candidate.aliases.length > 0
-            ? ` · aka ${candidate.aliases.join(", ")}`
+            ? ` · также ${candidate.aliases.join(", ")}`
             : ""}
         </div>
         {candidate.possibleDuplicate && (
           <Badge className="text-[10px] px-1 py-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
-            Possible duplicate of {candidate.possibleDuplicate.name} — check to
-            create as a separate client
+            Возможный дубликат: {candidate.possibleDuplicate.name} — отметьте,
+            чтобы создать как отдельного клиента
           </Badge>
         )}
       </div>
@@ -637,7 +678,7 @@ function ContactRow({
         <Input
           value={value}
           onChange={(e) => onNameChange(e.target.value)}
-          placeholder="(unknown)"
+          placeholder="(неизвестно)"
           className="h-8 text-sm font-medium"
         />
         <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
@@ -645,13 +686,17 @@ function ContactRow({
           <span className="truncate">
             {candidate.email}
             {candidate.nativeName ? ` · ${candidate.nativeName}` : ""} ·
-            mentioned in {candidate.occurrences} item
-            {candidate.occurrences === 1 ? "" : "s"}
+            упомянуто в {candidate.occurrences}{" "}
+            {plural(candidate.occurrences, [
+              "элементе",
+              "элементах",
+              "элементах",
+            ])}
           </span>
         </div>
         {candidate.possibleDuplicate && (
           <Badge className="text-[10px] px-1 py-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
-            Possible duplicate of {candidate.possibleDuplicate.name}
+            Возможный дубликат: {candidate.possibleDuplicate.name}
           </Badge>
         )}
       </div>
@@ -681,7 +726,7 @@ function LinkRow({
           {proposal.contactName}
           {contactIsNew && (
             <Badge variant="secondary" className="text-[10px] px-1 py-0">
-              new
+              новый
             </Badge>
           )}
         </div>
@@ -695,18 +740,18 @@ function LinkRow({
           {proposal.clientName}
           {clientIsNew && (
             <Badge variant="secondary" className="text-[10px] px-1 py-0">
-              new
+              новая
             </Badge>
           )}
           {proposal.ambiguous && (
             <Badge className="text-[10px] px-1 py-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
-              ambiguous
+              неоднозначно
             </Badge>
           )}
           <ConfidenceBadge level={proposal.confidence} />
         </div>
         <div className="text-xs text-muted-foreground truncate">
-          matched on {proposal.matchedLabel}
+          совпадение по: {proposal.matchedLabel}
         </div>
       </div>
     </div>

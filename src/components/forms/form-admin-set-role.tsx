@@ -46,11 +46,15 @@ export default function AdminSetRoleDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to set role")
+        toast.error(error.message || "Не удалось установить роль")
         return
       }
 
-      toast.success(`Role updated to "${role}" for ${userName}`)
+      toast.success(
+        `Роль изменена на «${
+          role === "admin" ? "Администратор" : "Пользователь"
+        }» для ${userName}`,
+      )
       onSuccess?.()
       setOpen(false)
     })
@@ -60,23 +64,23 @@ export default function AdminSetRoleDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Role
+          Роль
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Set Role for {userName}</DialogTitle>
+          <DialogTitle>Назначить роль для {userName}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">Platform Role</label>
+            <label className="text-sm text-gray-400">Роль на платформе</label>
             <Select value={role} onValueChange={(val) => setRole(val as "user" | "admin")}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="user">User</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="user">Пользователь</SelectItem>
+                <SelectItem value="admin">Администратор</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -86,7 +90,7 @@ export default function AdminSetRoleDialog({
               className="w-full"
               loading={isPending}
             >
-              Save Role
+              Сохранить роль
             </LoadingButton>
           </DialogFooter>
         </div>

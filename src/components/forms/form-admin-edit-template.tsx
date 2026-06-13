@@ -37,13 +37,13 @@ import type { TemplateRow } from "@/server/templates"
 import type { SourceProvider, SourceStatus, SourceType } from "@/db/schema"
 
 const TYPES: { value: SourceType; label: string }[] = [
-  { value: "external", label: "external" },
-  { value: "internal", label: "internal" },
+  { value: "external", label: "Внешний" },
+  { value: "internal", label: "Внутренний" },
 ]
 
 const STATUSES: { value: SourceStatus; label: string }[] = [
-  { value: "active", label: "active" },
-  { value: "inactive", label: "inactive" },
+  { value: "active", label: "Активен" },
+  { value: "inactive", label: "Неактивен" },
 ]
 
 type FormValues = {
@@ -106,10 +106,15 @@ export function FormAdminEditTemplate({
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        toast.error(err.error || `Failed to ${isEdit ? "update" : "create"} template`)
+        toast.error(
+          err.error ||
+            (isEdit
+              ? "Не удалось обновить шаблон"
+              : "Не удалось создать шаблон"),
+        )
         return
       }
-      toast.success(`Template ${isEdit ? "updated" : "created"}`)
+      toast.success(isEdit ? "Шаблон обновлён" : "Шаблон создан")
       onSuccess?.()
       setOpen(false)
     })
@@ -119,20 +124,20 @@ export function FormAdminEditTemplate({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {isEdit ? (
-          <Button variant="ghost" size="icon" aria-label="Edit template">
+          <Button variant="ghost" size="icon" aria-label="Редактировать шаблон">
             <Pencil className="h-4 w-4" />
           </Button>
         ) : (
           <Button size="sm">
             <Plus className="h-4 w-4 mr-1" />
-            Add new
+            Добавить
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800 max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? `Edit Template: ${template!.name}` : "New Template"}
+            {isEdit ? `Редактировать шаблон: ${template!.name}` : "Новый шаблон"}
           </DialogTitle>
         </DialogHeader>
         <Form {...form}>
@@ -140,12 +145,12 @@ export function FormAdminEditTemplate({
             <FormField
               control={form.control}
               name="name"
-              rules={{ required: "Name is required" }}
+              rules={{ required: "Укажите название" }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name</FormLabel>
+                  <FormLabel className="text-gray-400">Название</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="e.g. Google Drive" />
+                    <Input {...field} placeholder="напр. Google Drive" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -157,12 +162,12 @@ export function FormAdminEditTemplate({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Description</FormLabel>
+                  <FormLabel className="text-gray-400">Описание</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       rows={2}
-                      placeholder="Short description shown in the org-owner Add Source picker"
+                      placeholder="Краткое описание, показываемое в выборе «Добавить источник» у владельца организации"
                     />
                   </FormControl>
                   <FormMessage />
@@ -176,7 +181,7 @@ export function FormAdminEditTemplate({
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Type</FormLabel>
+                    <FormLabel className="text-gray-400">Тип</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
@@ -200,7 +205,7 @@ export function FormAdminEditTemplate({
                 name="provider"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Provider</FormLabel>
+                    <FormLabel className="text-gray-400">Провайдер</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
@@ -225,7 +230,7 @@ export function FormAdminEditTemplate({
               name="status"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Status</FormLabel>
+                  <FormLabel className="text-gray-400">Статус</FormLabel>
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
                       <SelectTrigger>
@@ -249,7 +254,7 @@ export function FormAdminEditTemplate({
               name="isDefault"
               render={({ field }) => (
                 <FormItem className="flex flex-col gap-1">
-                  <FormLabel className="text-gray-400">Default</FormLabel>
+                  <FormLabel className="text-gray-400">По умолчанию</FormLabel>
                   <div className="flex items-center gap-2 h-9">
                     <FormControl>
                       <Checkbox
@@ -258,9 +263,8 @@ export function FormAdminEditTemplate({
                       />
                     </FormControl>
                     <span className="text-sm text-muted-foreground">
-                      Auto-instantiate this template into every newly-
-                      created organisation. The bootstrap hook reads this
-                      flag.
+                      Автоматически создавать этот шаблон в каждой новой
+                      организации. Этот флаг читает хук инициализации.
                     </span>
                   </div>
                 </FormItem>
@@ -272,7 +276,7 @@ export function FormAdminEditTemplate({
               name="isVisibleToOrgs"
               render={({ field }) => (
                 <FormItem className="flex flex-col gap-1">
-                  <FormLabel className="text-gray-400">Visible to orgs</FormLabel>
+                  <FormLabel className="text-gray-400">Видим организациям</FormLabel>
                   <div className="flex items-center gap-2 h-9">
                     <FormControl>
                       <Checkbox
@@ -281,8 +285,8 @@ export function FormAdminEditTemplate({
                       />
                     </FormControl>
                     <span className="text-sm text-muted-foreground">
-                      Show this template in the org-owner &quot;Add source&quot;
-                      picker.
+                      Показывать этот шаблон в выборе «Добавить источник» у
+                      владельца организации.
                     </span>
                   </div>
                 </FormItem>
@@ -295,7 +299,7 @@ export function FormAdminEditTemplate({
               render={({ field }) => (
                 <FormItem className="flex flex-col gap-1">
                   <FormLabel className="text-gray-400">
-                    Default Auto Parse
+                    Авторазбор по умолчанию
                   </FormLabel>
                   <div className="flex items-center gap-2 h-9">
                     <FormControl>
@@ -305,9 +309,9 @@ export function FormAdminEditTemplate({
                       />
                     </FormControl>
                     <span className="text-sm text-muted-foreground">
-                      Initial value of <code>automated_parsing_is_allowed</code>{" "}
-                      on instances created from this template. Each org
-                      can flip this independently afterwards.
+                      Начальное значение <code>automated_parsing_is_allowed</code>{" "}
+                      для экземпляров, созданных из этого шаблона. Каждая
+                      организация может изменить его независимо.
                     </span>
                   </div>
                 </FormItem>
@@ -320,7 +324,7 @@ export function FormAdminEditTemplate({
                 className="w-full"
                 loading={isPending}
               >
-                {isEdit ? "Save" : "Create"}
+                {isEdit ? "Сохранить" : "Создать"}
               </LoadingButton>
             </DialogFooter>
           </form>

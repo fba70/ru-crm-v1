@@ -60,11 +60,11 @@ export default function ResetPasswordForm() {
       })
 
       if (error) {
-        setError(error.message || "Something went wrong")
-        toast.error(error.message || "Something went wrong")
+        setError(error.message || "Что-то пошло не так")
+        toast.error(error.message || "Что-то пошло не так")
       } else {
-        setSuccess("Password has been reset successfully!")
-        toast.success("Password has been reset successfully!")
+        setSuccess("Пароль успешно изменён!")
+        toast.success("Пароль успешно изменён!")
         setTimeout(() => {
           router.push("/sign-in")
         }, 2000)
@@ -79,12 +79,12 @@ export default function ResetPasswordForm() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" className="mt-4">
-          Reset Password
+          Сменить пароль
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader className="mb-2">
-          <DialogTitle>Reset Password</DialogTitle>
+          <DialogTitle>Сменить пароль</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -93,11 +93,11 @@ export default function ResetPasswordForm() {
               name="newPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>New password</FormLabel>
+                  <FormLabel>Новый пароль</FormLabel>
                   <FormControl>
                     <PasswordInput
                       autoComplete="new-password"
-                      placeholder="Enter new password"
+                      placeholder="Введите новый пароль"
                       {...field}
                     />
                   </FormControl>
@@ -111,11 +111,11 @@ export default function ResetPasswordForm() {
               name="oldPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Current password</FormLabel>
+                  <FormLabel>Текущий пароль</FormLabel>
                   <FormControl>
                     <PasswordInput
                       autoComplete="current-password"
-                      placeholder="Enter current password"
+                      placeholder="Введите текущий пароль"
                       {...field}
                     />
                   </FormControl>
@@ -141,7 +141,7 @@ export default function ResetPasswordForm() {
                 className="w-full"
                 loading={isPending}
               >
-                Reset password
+                Сменить пароль
               </LoadingButton>
             </DialogFooter>
           </form>

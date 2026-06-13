@@ -43,25 +43,25 @@ const PRIORITIES: TaskPriority[] = ["low", "medium", "high"]
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "closed"]
 
 const TYPE_LABELS: Record<TaskType, string> = {
-  meet: "Meet",
-  call: "Call",
+  meet: "Встреча",
+  call: "Звонок",
   email: "Email",
-  offer: "Offer",
-  docs: "Docs",
-  other: "Other",
+  offer: "Предложение",
+  docs: "Документы",
+  other: "Другое",
 }
 
 const PRIORITY_LABELS: Record<TaskPriority, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
+  low: "Низкий",
+  medium: "Средний",
+  high: "Высокий",
 }
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-  closed: "Closed",
+  todo: "К выполнению",
+  in_progress: "В работе",
+  done: "Выполнено",
+  closed: "Закрыто",
 }
 
 const NO_CLIENT = "__none__"
@@ -196,20 +196,22 @@ export default function TaskEditDialog({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to save task")
+          toast.error(err.error || "Не удалось сохранить задачу")
           return
         }
-        toast.success(mode === "create" ? "Task created" : "Task updated")
+        toast.success(mode === "create" ? "Задача создана" : "Задача обновлена")
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to save task")
+        toast.error("Не удалось сохранить задачу")
       }
     })
   }
 
   const title =
-    mode === "create" ? "New task" : `Edit task: ${task?.name ?? ""}`
+    mode === "create"
+      ? "Новая задача"
+      : `Редактирование задачи: ${task?.name ?? ""}`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -223,12 +225,12 @@ export default function TaskEditDialog({
             <FormField
               control={form.control}
               name="name"
-              rules={{ required: "Name is required" }}
+              rules={{ required: "Укажите название" }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name *</FormLabel>
+                  <FormLabel className="text-gray-400">Название *</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Task name" />
+                    <Input {...field} placeholder="Название задачи" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -240,12 +242,12 @@ export default function TaskEditDialog({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Description</FormLabel>
+                  <FormLabel className="text-gray-400">Описание</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       rows={3}
-                      placeholder="Optional details…"
+                      placeholder="Необязательные детали…"
                     />
                   </FormControl>
                   <FormMessage />
@@ -259,7 +261,7 @@ export default function TaskEditDialog({
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Type</FormLabel>
+                    <FormLabel className="text-gray-400">Тип</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -286,7 +288,7 @@ export default function TaskEditDialog({
                 name="priority"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Priority</FormLabel>
+                    <FormLabel className="text-gray-400">Приоритет</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -313,7 +315,7 @@ export default function TaskEditDialog({
                 name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Status</FormLabel>
+                    <FormLabel className="text-gray-400">Статус</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -341,17 +343,17 @@ export default function TaskEditDialog({
               <FormField
                 control={form.control}
                 name="assigneeId"
-                rules={{ required: "Assignee is required" }}
+                rules={{ required: "Укажите исполнителя" }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Assignee</FormLabel>
+                    <FormLabel className="text-gray-400">Исполнитель</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select assignee" />
+                          <SelectValue placeholder="Выберите исполнителя" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -369,10 +371,10 @@ export default function TaskEditDialog({
               <FormField
                 control={form.control}
                 name="dueDate"
-                rules={{ required: "Due date is required" }}
+                rules={{ required: "Укажите срок" }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Due date</FormLabel>
+                    <FormLabel className="text-gray-400">Срок</FormLabel>
                     <FormControl>
                       <Input type="date" {...field} />
                     </FormControl>
@@ -388,7 +390,7 @@ export default function TaskEditDialog({
                 name="clientId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Client</FormLabel>
+                    <FormLabel className="text-gray-400">Клиент</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={(v) => {
@@ -398,11 +400,11 @@ export default function TaskEditDialog({
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="No client" />
+                          <SelectValue placeholder="Без клиента" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value={NO_CLIENT}>No client</SelectItem>
+                        <SelectItem value={NO_CLIENT}>Без клиента</SelectItem>
                         {clientOptions.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name}
@@ -419,18 +421,18 @@ export default function TaskEditDialog({
                 name="contactId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Contact</FormLabel>
+                    <FormLabel className="text-gray-400">Контакт</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="No contact" />
+                          <SelectValue placeholder="Без контакта" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value={NO_CONTACT}>No contact</SelectItem>
+                        <SelectItem value={NO_CONTACT}>Без контакта</SelectItem>
                         {contactOptions.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name}
@@ -450,10 +452,10 @@ export default function TaskEditDialog({
                 variant="outline"
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                Отмена
               </Button>
               <LoadingButton type="submit" loading={isPending}>
-                {mode === "create" ? "Create" : "Save"}
+                {mode === "create" ? "Создать" : "Сохранить"}
               </LoadingButton>
             </DialogFooter>
           </form>

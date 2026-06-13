@@ -60,6 +60,16 @@ import {
   isValidEmail,
 } from "@/lib/orders-format"
 
+// Russian plural picker: forms = [one, few, many] e.g. ["позиция","позиции",
+// "позиций"]. Handles the teen exception and the 1 / 2–4 / 0,5–20 rules.
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 // One product line being built client-side. `unitPrice` + `quantity` are
 // editable; position price (unit × qty) + the order total are derived.
 export type DraftLine = {
@@ -167,14 +177,14 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
       try {
         const res = await fetch(`/api/orders?id=${encodeURIComponent(id)}`)
         if (!res.ok) {
-          toast.error("Failed to load order")
+          toast.error("Не удалось загрузить заказ")
           setIsActive(false)
           return
         }
         const { order } = (await res.json()) as { order: OrderDetail }
         hydrate(order)
       } catch {
-        toast.error("Failed to load order")
+        toast.error("Не удалось загрузить заказ")
         setIsActive(false)
       } finally {
         setLoading(false)
@@ -219,14 +229,14 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
       // that would push the line over available stock.
       if (stockOnly) {
         if (stock === null || stock <= 0) {
-          toast.error(`${p.name} is out of stock`)
+          toast.error(`«${p.name}» — нет в наличии`)
           return
         }
         const existing =
           lines.find((l) => l.productId === p.id)?.quantity ?? 0
         if (existing + quantity > stock) {
           toast.error(
-            `Only ${stock} of ${p.name} in stock${existing ? ` (${existing} already on the order)` : ""}`,
+            `В наличии только ${stock} шт. «${p.name}»${existing ? ` (${existing} уже в заказе)` : ""}`,
           )
           return
         }
@@ -263,7 +273,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
           // left unconstrained).
           if (stockOnly && l.stock !== null && q > l.stock) {
             q = Math.max(1, l.stock)
-            toast.error(`Only ${l.stock} of ${l.productName} in stock`)
+            toast.error(`В наличии только ${l.stock} шт. «${l.productName}»`)
           }
           return { ...l, quantity: q }
         }),
@@ -293,7 +303,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   // transitions target the saved row.
   const persist = useCallback(async (): Promise<string | null> => {
     if (!clientId) {
-      toast.error("Select a client first")
+      toast.error("Сначала выберите клиента")
       return null
     }
     setSaving(true)
@@ -312,7 +322,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
         })
         if (!res.ok) {
           const e = await res.json().catch(() => ({}))
-          toast.error(e.error || "Failed to save order")
+          toast.error(e.error || "Не удалось сохранить заказ")
           return null
         }
         const data = await res.json()
@@ -327,12 +337,12 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
-        toast.error(e.error || "Failed to save order")
+        toast.error(e.error || "Не удалось сохранить заказ")
         return null
       }
       return orderId
     } catch {
-      toast.error("Failed to save order")
+      toast.error("Не удалось сохранить заказ")
       return null
     } finally {
       setSaving(false)
@@ -342,7 +352,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   const saveDraft = useCallback(async () => {
     const id = await persist()
     if (id) {
-      toast.success("Draft saved")
+      toast.success("Черновик сохранён")
       close()
       onSaved?.()
     }
@@ -353,7 +363,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   const saveChanges = useCallback(async () => {
     const id = await persist()
     if (id) {
-      toast.success("Changes saved")
+      toast.success("Изменения сохранены")
       await reload()
     }
   }, [persist, reload])
@@ -371,12 +381,12 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
         })
         if (!res.ok) {
           const e = await res.json().catch(() => ({}))
-          toast.error(e.error || "Action failed")
+          toast.error(e.error || "Не удалось выполнить действие")
           return false
         }
         return true
       } catch {
-        toast.error("Action failed")
+        toast.error("Не удалось выполнить действие")
         return false
       } finally {
         setSaving(false)
@@ -389,7 +399,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   // link) and re-open it editable.
   const pullBackToDraft = useCallback(async () => {
     if (await linkAction("pullback")) {
-      toast.success("Order is a draft again — the previous link no longer works")
+      toast.success("Заказ снова черновик — предыдущая ссылка больше не работает")
       await reload()
     }
   }, [linkAction, reload])
@@ -400,7 +410,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
       return
     }
     if (await linkAction("cancel")) {
-      toast.success("Order cancelled")
+      toast.success("Заказ отменён")
       close()
       onSaved?.()
     }
@@ -413,7 +423,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     const id = await persist()
     if (!id) return
     if (await linkAction("finalize")) {
-      toast.success("Order finalized")
+      toast.success("Заказ оформлен")
       close()
       onSaved?.()
     }
@@ -491,11 +501,11 @@ export function AddToOrderButton({
       <PopoverTrigger asChild>
         <Button size="sm" variant="outline" disabled={disabled}>
           <Plus className="h-3.5 w-3.5 mr-1" />
-          Add
+          Добавить
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-44 space-y-2" align="end">
-        <div className="text-xs font-medium text-muted-foreground">Quantity</div>
+        <div className="text-xs font-medium text-muted-foreground">Количество</div>
         <Input
           type="number"
           min={1}
@@ -510,7 +520,7 @@ export function AddToOrderButton({
           }}
         />
         <Button size="sm" className="w-full" onClick={commit}>
-          Add to order
+          Добавить в заказ
         </Button>
       </PopoverContent>
     </Popover>
@@ -538,14 +548,14 @@ function SendLinkDialog({
 
   const title =
     sendMode === "send"
-      ? "Send order to client"
+      ? "Отправить заказ клиенту"
       : sendMode === "resend"
-        ? "Re-send a new link"
-        : "Reopen order to client"
+        ? "Отправить новую ссылку"
+        : "Вернуть заказ клиенту"
 
   const submit = async () => {
     if (!isValidEmail(email)) {
-      toast.error("Enter a valid recipient email")
+      toast.error("Введите корректный email получателя")
       return
     }
     setSending(true)
@@ -557,13 +567,13 @@ function SendLinkDialog({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        toast.error(data.error || "Failed to create the link")
+        toast.error(data.error || "Не удалось создать ссылку")
         return
       }
       setLinkUrl(data.link.url)
       setExpiresAt(data.link.expiresAt)
     } catch {
-      toast.error("Failed to create the link")
+      toast.error("Не удалось создать ссылку")
     } finally {
       setSending(false)
     }
@@ -573,9 +583,9 @@ function SendLinkDialog({
     if (!linkUrl) return
     try {
       await navigator.clipboard.writeText(linkUrl)
-      toast.success("Link copied")
+      toast.success("Ссылка скопирована")
     } catch {
-      toast.error("Couldn't copy — select and copy manually")
+      toast.error("Не удалось скопировать — выделите и скопируйте вручную")
     }
   }
 
@@ -589,12 +599,12 @@ function SendLinkDialog({
         {linkUrl ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              The order is now awaiting client confirmation. Copy this link and
-              send it to the client — it won’t be shown again.
+              Заказ ожидает подтверждения клиента. Скопируйте эту ссылку и
+              отправьте её клиенту — повторно она не отобразится.
               {expiresAt && (
                 <>
                   {" "}
-                  It expires on{" "}
+                  Действует до{" "}
                   <span className="font-medium">
                     {formatOrderDate(expiresAt)}
                   </span>
@@ -609,14 +619,14 @@ function SendLinkDialog({
               </Button>
             </div>
             <DialogFooter>
-              <Button onClick={onSent}>Done</Button>
+              <Button onClick={onSent}>Готово</Button>
             </DialogFooter>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground">
-                Recipient email
+                Email получателя
               </span>
               <Input
                 type="email"
@@ -626,13 +636,13 @@ function SendLinkDialog({
                 autoFocus
               />
               <p className="text-xs text-muted-foreground">
-                Defaults to the client’s email. The order can’t be sent without a
-                valid address.
+                По умолчанию — email клиента. Заказ нельзя отправить без
+                корректного адреса.
               </p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose} disabled={sending}>
-                Cancel
+                Отмена
               </Button>
               <Button onClick={submit} disabled={sending}>
                 {sending ? (
@@ -640,7 +650,7 @@ function SendLinkDialog({
                 ) : (
                   <Send className="h-4 w-4 mr-1" />
                 )}
-                Create link
+                Создать ссылку
               </Button>
             </DialogFooter>
           </div>
@@ -657,15 +667,16 @@ function LinkMetaStrip({ link }: { link: OrderLinkMeta | null }) {
     <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
       <div className="flex items-center gap-2 font-medium">
         <Link2 className="h-4 w-4" />
-        Client link {link.status === "active" ? "active" : link.status}
+        Ссылка для клиента{" "}
+        {link.status === "active" ? "активна" : link.status}
       </div>
       <div className="text-muted-foreground text-xs space-y-0.5">
-        {link.recipientEmail && <div>Sent to {link.recipientEmail}</div>}
-        <div>Expires {formatOrderDate(link.expiresAt)}</div>
+        {link.recipientEmail && <div>Отправлено: {link.recipientEmail}</div>}
+        <div>Действует до {formatOrderDate(link.expiresAt)}</div>
         <div>
           {link.lastAccessedAt
-            ? `Client last opened ${formatOrderDate(link.lastAccessedAt)}`
-            : "Client hasn’t opened it yet"}
+            ? `Клиент открывал ${formatOrderDate(link.lastAccessedAt)}`
+            : "Клиент ещё не открывал"}
         </div>
       </div>
     </div>
@@ -700,14 +711,18 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
   } = builder
 
   const title =
-    mode === "create" ? "New order" : readOnly ? "Order" : "Edit order"
+    mode === "create"
+      ? "Новый заказ"
+      : readOnly
+        ? "Заказ"
+        : "Редактирование заказа"
 
   // Save (to get/keep an id), then open the send dialog. Persist first whenever
   // the panel is editable (draft → send; confirmed → reopen) so the client
   // receives the latest content; a read-only reopen (finalized) skips persist.
   const beginSend = async (sendMode: SendMode) => {
     if (sendMode === "send" && lines.length === 0) {
-      toast.error("Add at least one product first")
+      toast.error("Сначала добавьте хотя бы один товар")
       return
     }
     let id = builder.orderId
@@ -738,7 +753,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Close order"
+            aria-label="Закрыть заказ"
             onClick={builder.close}
           >
             <X className="h-4 w-4" />
@@ -757,14 +772,14 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
               {/* Core attributes. */}
               <div className="grid gap-3 sm:grid-cols-[minmax(0,18rem)_1fr]">
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground">Client *</span>
+                  <span className="text-xs text-muted-foreground">Клиент *</span>
                   <Select
                     value={clientId ?? ""}
                     onValueChange={(v) => builder.setClientId(v)}
                     disabled={readOnly}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select a client" />
+                      <SelectValue placeholder="Выберите клиента" />
                     </SelectTrigger>
                     <SelectContent>
                       {clientOptions.map((c) => (
@@ -777,12 +792,12 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                 </div>
                 <div className="space-y-1">
                   <span className="text-xs text-muted-foreground">
-                    Description
+                    Описание
                   </span>
                   <Textarea
                     rows={1}
                     className="min-h-9"
-                    placeholder="Optional note about this order"
+                    placeholder="Необязательная заметка к заказу"
                     value={description}
                     onChange={(e) => builder.setDescription(e.target.value)}
                     disabled={readOnly}
@@ -797,7 +812,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                     checked={stockOnly}
                     onCheckedChange={(v) => builder.setStockOnly(v === true)}
                   />
-                  Allow only products in stock
+                  Только товары в наличии
                 </label>
               )}
 
@@ -806,12 +821,12 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Product</TableHead>
+                      <TableHead>Товар</TableHead>
                       <TableHead className="w-32 text-right">
-                        Unit price
+                        Цена за ед.
                       </TableHead>
-                      <TableHead className="w-24 text-right">Qty</TableHead>
-                      <TableHead className="w-32 text-right">Position</TableHead>
+                      <TableHead className="w-24 text-right">Кол-во</TableHead>
+                      <TableHead className="w-32 text-right">Сумма</TableHead>
                       {!readOnly && <TableHead className="w-12" />}
                     </TableRow>
                   </TableHeader>
@@ -823,8 +838,8 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                           className="h-20 text-center text-muted-foreground text-sm"
                         >
                           {readOnly
-                            ? "No products on this order."
-                            : "No products yet — search the catalog below and click “Add to order”."}
+                            ? "В заказе нет товаров."
+                            : "Пока нет товаров — найдите их в каталоге ниже и нажмите «Добавить в заказ»."}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -880,7 +895,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                aria-label="Remove line"
+                                aria-label="Удалить позицию"
                                 onClick={() => builder.removeLine(l.productId)}
                               >
                                 <Trash2 className="h-4 w-4 text-muted-foreground" />
@@ -897,13 +912,14 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
               {/* Total + actions. */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm">
-                  <span className="text-muted-foreground">Total: </span>
+                  <span className="text-muted-foreground">Итого: </span>
                   <span className="font-semibold tabular-nums">
                     {formatOrderAmount(total, currency)}
                   </span>
                   <span className="text-muted-foreground">
                     {" "}
-                    · {lines.length} {lines.length === 1 ? "item" : "items"}
+                    · {lines.length}{" "}
+                    {plural(lines.length, ["позиция", "позиции", "позиций"])}
                   </span>
                 </div>
 
@@ -918,7 +934,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Ban className="h-4 w-4 mr-1" />
-                        {mode === "edit" ? "Cancel order" : "Discard"}
+                        {mode === "edit" ? "Отменить заказ" : "Отменить"}
                       </Button>
                       <Button
                         variant="outline"
@@ -927,7 +943,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Save className="h-4 w-4 mr-1" />
-                        {mode === "create" ? "Save draft" : "Save"}
+                        {mode === "create" ? "Сохранить черновик" : "Сохранить"}
                       </Button>
                       <Button
                         size="sm"
@@ -935,7 +951,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Send className="h-4 w-4 mr-1" />
-                        Send to client
+                        Отправить клиенту
                       </Button>
                     </>
                   )}
@@ -951,7 +967,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Ban className="h-4 w-4 mr-1" />
-                        Cancel order
+                        Отменить заказ
                       </Button>
                       <Button
                         variant="outline"
@@ -960,7 +976,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Send className="h-4 w-4 mr-1" />
-                        Reopen to client
+                        Вернуть клиенту
                       </Button>
                       <Button
                         variant="outline"
@@ -969,7 +985,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Save className="h-4 w-4 mr-1" />
-                        Save changes
+                        Сохранить изменения
                       </Button>
                       <Button
                         size="sm"
@@ -977,7 +993,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <PackageCheck className="h-4 w-4 mr-1" />
-                        Finalize the order
+                        Оформить заказ
                       </Button>
                     </>
                   )}
@@ -992,7 +1008,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Ban className="h-4 w-4 mr-1" />
-                        Cancel order
+                        Отменить заказ
                       </Button>
                       <Button
                         variant="outline"
@@ -1001,7 +1017,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <RotateCcw className="h-4 w-4 mr-1" />
-                        Pull back to draft
+                        Вернуть в черновик
                       </Button>
                       <Button
                         size="sm"
@@ -1009,7 +1025,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Send className="h-4 w-4 mr-1" />
-                        Re-send link
+                        Отправить ссылку повторно
                       </Button>
                     </>
                   )}
@@ -1024,10 +1040,10 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <Send className="h-4 w-4 mr-1" />
-                        Reopen to client
+                        Вернуть клиенту
                       </Button>
                       <Button variant="outline" size="sm" onClick={builder.close}>
-                        Close
+                        Закрыть
                       </Button>
                     </>
                   )}
@@ -1042,10 +1058,10 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                         disabled={saving}
                       >
                         <RotateCcw className="h-4 w-4 mr-1" />
-                        Reopen as draft
+                        Открыть как черновик
                       </Button>
                       <Button variant="outline" size="sm" onClick={builder.close}>
-                        Close
+                        Закрыть
                       </Button>
                     </>
                   )}

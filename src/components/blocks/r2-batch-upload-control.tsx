@@ -18,6 +18,15 @@ const COUNT_POLL_MS = 30_000
 
 const FAILURE_TOAST_CAP = 8
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 // Same scope keys the listing endpoints use — kept in sync so the
 // control's "Upload all (N)" matches what the user sees in the table.
 type Scope = "org" | "system"
@@ -112,7 +121,7 @@ export function R2BatchUploadControl({
         body: JSON.stringify({ sourceItemId: id }),
       })
       const data = await res.json()
-      if (!res.ok) return { ok: false, error: data.error || "Upload failed" }
+      if (!res.ok) return { ok: false, error: data.error || "Ошибка загрузки" }
       return { ok: true }
     } catch (err) {
       return {
@@ -136,17 +145,17 @@ export function R2BatchUploadControl({
       const res = await fetch(`/api/sources/r2/pending-ids?${qs}`)
       const data = await res.json()
       if (!res.ok)
-        throw new Error(data.error || "Failed to list pending uploads")
+        throw new Error(data.error || "Не удалось получить список для загрузки")
       ids = (data.ids ?? []) as string[]
       total = (data.total ?? ids.length) as number
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Unknown error")
+      toast.error(err instanceof Error ? err.message : "Неизвестная ошибка")
       setRunning(false)
       return
     }
 
     if (ids.length === 0) {
-      toast.message("Nothing to upload — all rows in scope are already in R2")
+      toast.message("Нечего загружать — все строки в этой области уже в R2")
       setRunning(false)
       return
     }
@@ -189,27 +198,29 @@ export function R2BatchUploadControl({
 
     if (cancelled) {
       toast.message(
-        `Cancelled — ${progress?.done ?? 0} of ${ids.length} processed`,
+        `Отменено — обработано ${progress?.done ?? 0} из ${ids.length}`,
       )
     } else if (failures.length === 0) {
       toast.success(
-        `Uploaded ${ids.length} ${ids.length === 1 ? "item" : "items"} to R2`,
+        `Загружено ${ids.length} ${plural(ids.length, ["элемент", "элемента", "элементов"])} в R2`,
       )
     } else {
-      toast.success(`Uploaded ${ok} item${ok === 1 ? "" : "s"} to R2`)
+      toast.success(
+        `Загружено ${ok} ${plural(ok, ["элемент", "элемента", "элементов"])} в R2`,
+      )
       for (const f of failures.slice(0, FAILURE_TOAST_CAP)) {
         toast.error(`${f.id.slice(0, 8)}…: ${f.error}`)
       }
       if (failures.length > FAILURE_TOAST_CAP) {
         toast.error(
-          `…and ${failures.length - FAILURE_TOAST_CAP} more failures (see Processed table)`,
+          `…и ещё ${failures.length - FAILURE_TOAST_CAP} ошибок (см. таблицу «Обработано»)`,
         )
       }
     }
 
     if (total > ids.length) {
       toast.message(
-        `${total - ids.length} more rows match — re-run "Upload all to R2" to process the next batch`,
+        `Ещё ${total - ids.length} строк подходят — запустите «Загрузить всё в хранилище» снова для следующей партии`,
       )
     }
 
@@ -238,10 +249,10 @@ export function R2BatchUploadControl({
           <div className="flex items-center gap-2 font-medium min-w-0">
             <Loader className="h-3.5 w-3.5 animate-spin shrink-0" />
             <span className="truncate">
-              Uploading to content storage — {progress.done} / {progress.total}
+              Загрузка в хранилище — {progress.done} / {progress.total}
               {progress.failed > 0 && (
                 <span className="text-destructive ml-2">
-                  · {progress.failed} failed
+                  · ошибок {progress.failed}
                 </span>
               )}
             </span>
@@ -254,7 +265,7 @@ export function R2BatchUploadControl({
             disabled={cancelRef.current}
           >
             <X className="h-3.5 w-3.5 mr-1" />
-            {cancelRef.current ? "Cancelling…" : "Cancel"}
+            {cancelRef.current ? "Отмена…" : "Отменить"}
           </Button>
         </div>
         <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -270,12 +281,13 @@ export function R2BatchUploadControl({
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2">
       <span className="text-sm text-muted-foreground">
-        {count} {count === 1 ? "row" : "rows"} ready for content storage upload
-        {count >= cap && ` (showing first ${cap} per click)`}
+        {count} {plural(count, ["строка", "строки", "строк"])} готово к загрузке
+        в хранилище
+        {count >= cap && ` (показаны первые ${cap} за раз)`}
       </span>
       <Button variant="default" size="sm" className="h-8" onClick={start}>
         <CloudUpload className="h-4 w-4 mr-2" />
-        Upload all to content storage ({count})
+        Загрузить всё в хранилище ({count})
       </Button>
     </div>
   )

@@ -24,6 +24,26 @@ import {
 
 const PAGE_SIZE = 10
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
+// Display labels (DB enum values stay English).
+const TRIGGER_LABEL: Record<string, string> = {
+  cron: "крон",
+  manual: "вручную",
+}
+const PHASE_LABEL: Record<string, string> = {
+  sync: "синхр.",
+  parse: "разбор",
+  upload: "загрузка",
+}
+
 // Shape mirrors `PipelineStats` returned by /api/admin/pipeline/stats —
 // kept inline so this file has no server-side import dependency.
 type PipelineStats = {
@@ -86,7 +106,7 @@ function dateInputToEndOfDay(d: string): string {
 }
 
 function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(iso).toLocaleString("ru-RU", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -96,11 +116,11 @@ function formatDateTime(iso: string): string {
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms < 0) return "—"
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+  if (ms < 1000) return `${ms} мс`
+  if (ms < 60_000) return `${Math.round(ms / 1000)} с`
   const m = Math.floor(ms / 60_000)
   const s = Math.round((ms % 60_000) / 1000)
-  return `${m}m ${s}s`
+  return `${m} м ${s} с`
 }
 
 // ── Component ────────────────────────────────────────────────────────
@@ -127,11 +147,11 @@ export function WorkflowStatistics() {
       })
       const res = await fetch(`/api/admin/pipeline/stats?${params.toString()}`)
       const body = await res.json()
-      if (!res.ok) throw new Error(body.error || "Failed to load stats")
+      if (!res.ok) throw new Error(body.error || "Не удалось загрузить статистику")
       setData(body as PipelineStats)
       setErrorPage(1)
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error")
+      setError(e instanceof Error ? e.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -158,14 +178,14 @@ export function WorkflowStatistics() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Workflow Statistics</CardTitle>
+        <CardTitle className="text-base">Статистика обработки</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Filter row */}
         <div className="flex flex-wrap gap-2 items-end">
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">
-              From (UTC)
+              С (UTC)
             </label>
             <Input
               type="date"
@@ -176,7 +196,7 @@ export function WorkflowStatistics() {
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">
-              To (UTC)
+              По (UTC)
             </label>
             <Input
               type="date"
@@ -191,7 +211,7 @@ export function WorkflowStatistics() {
             className="h-8"
             onClick={() => setRange(0, 0)}
           >
-            Today
+            Сегодня
           </Button>
           <Button
             variant="outline"
@@ -199,7 +219,7 @@ export function WorkflowStatistics() {
             className="h-8"
             onClick={() => setRange(-1, -1)}
           >
-            Yesterday
+            Вчера
           </Button>
           <Button
             variant="outline"
@@ -207,7 +227,7 @@ export function WorkflowStatistics() {
             className="h-8"
             onClick={() => setRange(-6, 0)}
           >
-            Last 7 days
+            За 7 дней
           </Button>
           <Button
             variant="outline"
@@ -215,7 +235,7 @@ export function WorkflowStatistics() {
             className="h-8"
             onClick={() => setRange(-29, 0)}
           >
-            Last 30 days
+            За 30 дней
           </Button>
         </div>
 
@@ -223,7 +243,7 @@ export function WorkflowStatistics() {
         {loading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
             <Loader className="h-4 w-4 animate-spin" />
-            Loading…
+            Загрузка…
           </div>
         )}
 
@@ -232,16 +252,16 @@ export function WorkflowStatistics() {
             {/* Metric tiles */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <MetricTile
-                label="Items newly fetched"
+                label="Новых элементов получено"
                 value={data.totals.itemsFetched}
               />
               <MetricTile
-                label="Items fully processed"
+                label="Полностью обработано"
                 value={data.totals.itemsProcessed}
                 tone="green"
               />
               <MetricTile
-                label="Items with errors"
+                label="С ошибками"
                 value={data.totals.itemsWithErrors}
                 tone={data.totals.itemsWithErrors > 0 ? "red" : "default"}
               />
@@ -252,13 +272,14 @@ export function WorkflowStatistics() {
               <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4">
                 {data.totals.itemsSkipped > 0 && (
                   <span>
-                    {data.totals.itemsSkipped} skipped (deleted at provider /
-                    unsupported / oversize)
+                    {data.totals.itemsSkipped} пропущено (удалены у провайдера /
+                    не поддерживаются / слишком большие)
                   </span>
                 )}
                 {data.totals.parseCapped > 0 && (
                   <span>
-                    {data.totals.parseCapped} deferred to next run (cap reached)
+                    {data.totals.parseCapped} отложено до следующего запуска
+                    (достигнут лимит)
                   </span>
                 )}
               </div>
@@ -268,16 +289,21 @@ export function WorkflowStatistics() {
             <div className="border-t pt-3 space-y-2">
               {data.runs.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  No pipeline runs in this range.
+                  Нет запусков конвейера за этот период.
                 </p>
               ) : (
                 <>
                   <div className="text-xs text-muted-foreground">
-                    {data.runs.length} run
-                    {data.runs.length !== 1 ? "s" : ""} in this range
+                    {data.runs.length}{" "}
+                    {plural(data.runs.length, [
+                      "запуск",
+                      "запуска",
+                      "запусков",
+                    ])}{" "}
+                    за период
                     {mostRecentRun && (
                       <>
-                        {" — most recent: "}
+                        {" — последний: "}
                         {formatDateTime(mostRecentRun.startedAt)}
                       </>
                     )}
@@ -286,11 +312,11 @@ export function WorkflowStatistics() {
                     <Table className="table-fixed w-full">
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-32">Started</TableHead>
-                          <TableHead className="w-20">Trigger</TableHead>
-                          <TableHead className="w-24">Status</TableHead>
-                          <TableHead className="w-24">Duration</TableHead>
-                          <TableHead>Counts</TableHead>
+                          <TableHead className="w-32">Начало</TableHead>
+                          <TableHead className="w-20">Триггер</TableHead>
+                          <TableHead className="w-24">Статус</TableHead>
+                          <TableHead className="w-24">Длительность</TableHead>
+                          <TableHead>Показатели</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -300,7 +326,7 @@ export function WorkflowStatistics() {
                               {formatDateTime(r.startedAt)}
                             </TableCell>
                             <TableCell className="text-xs">
-                              {r.trigger}
+                              {TRIGGER_LABEL[r.trigger] ?? r.trigger}
                             </TableCell>
                             <TableCell>
                               <RunStatusBadge status={r.status} />
@@ -309,16 +335,16 @@ export function WorkflowStatistics() {
                               {formatDuration(r.durationMs)}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
-                              {r.syncItemsInserted} fetched ·{" "}
-                              {r.uploadSucceeded} processed
+                              получено {r.syncItemsInserted} ·{" "}
+                              обработано {r.uploadSucceeded}
                               {r.parseFailed + r.uploadFailed > 0 && (
                                 <span className="text-red-700 dark:text-red-300">
                                   {" "}
-                                  · {r.parseFailed + r.uploadFailed} errors
+                                  · ошибок {r.parseFailed + r.uploadFailed}
                                 </span>
                               )}
                               {r.parseCapped > 0 && (
-                                <span> · {r.parseCapped} deferred</span>
+                                <span> · отложено {r.parseCapped}</span>
                               )}
                             </TableCell>
                           </TableRow>
@@ -333,17 +359,17 @@ export function WorkflowStatistics() {
             {/* Errors table */}
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground">
-                Errors {data.errors.length > 0 && `(${data.errors.length})`}
+                Ошибки {data.errors.length > 0 && `(${data.errors.length})`}
               </div>
               <div className="rounded-md border overflow-hidden">
                 <Table className="table-fixed w-full">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-32">When</TableHead>
-                      <TableHead className="w-20">Trigger</TableHead>
-                      <TableHead className="w-20">Phase</TableHead>
-                      <TableHead className="w-80">Source / Item</TableHead>
-                      <TableHead>Message</TableHead>
+                      <TableHead className="w-32">Когда</TableHead>
+                      <TableHead className="w-20">Триггер</TableHead>
+                      <TableHead className="w-20">Этап</TableHead>
+                      <TableHead className="w-80">Источник / Элемент</TableHead>
+                      <TableHead>Сообщение</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -353,7 +379,7 @@ export function WorkflowStatistics() {
                           colSpan={5}
                           className="text-center text-sm text-muted-foreground py-6"
                         >
-                          No errors recorded in this range.
+                          Ошибок за этот период не зафиксировано.
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -363,9 +389,11 @@ export function WorkflowStatistics() {
                             {formatDateTime(e.runStartedAt)}
                           </TableCell>
                           <TableCell className="text-xs">
-                            {e.runTrigger}
+                            {TRIGGER_LABEL[e.runTrigger] ?? e.runTrigger}
                           </TableCell>
-                          <TableCell className="text-xs">{e.phase}</TableCell>
+                          <TableCell className="text-xs">
+                            {PHASE_LABEL[e.phase] ?? e.phase}
+                          </TableCell>
                           <TableCell className="text-xs font-mono">
                             {e.sourceItemId ?? e.sourceId ? (
                               <div className="flex items-center gap-1.5 min-w-0">
@@ -399,7 +427,7 @@ export function WorkflowStatistics() {
               {data.errors.length > PAGE_SIZE && (
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">
-                    Page {errorPage} of {errorPages}
+                    Страница {errorPage} из {errorPages}
                   </span>
                   <div className="flex items-center gap-1">
                     <Button
@@ -469,8 +497,8 @@ function CopyIdButton({ id }: { id: string }) {
         setTimeout(() => setCopied(false), 1200)
       }}
       className="opacity-50 hover:opacity-100 transition-opacity shrink-0"
-      title="Copy ID"
-      aria-label="Copy ID"
+      title="Скопировать ID"
+      aria-label="Скопировать ID"
     >
       {copied ? (
         <Check className="h-3 w-3 text-emerald-600" />
@@ -490,7 +518,7 @@ function RunStatusBadge({
     return (
       <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
         <CheckCircle2 className="h-3.5 w-3.5" />
-        success
+        успешно
       </span>
     )
   }
@@ -498,14 +526,14 @@ function RunStatusBadge({
     return (
       <span className="inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-300">
         <XCircle className="h-3.5 w-3.5" />
-        failed
+        ошибка
       </span>
     )
   }
   return (
     <span className="inline-flex items-center gap-1 text-xs text-blue-700 dark:text-blue-300">
       <Loader className="h-3.5 w-3.5 animate-spin" />
-      running
+      выполняется
     </span>
   )
 }

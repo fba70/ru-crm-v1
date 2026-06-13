@@ -22,7 +22,7 @@ export function ModeSwitcher({ className }: { className?: string }) {
     >
       <SunIcon className="block dark:hidden mr-1" />
       <MoonIcon className="hidden dark:block mr-1" />
-      <span className="text-sm ml-2">Theme</span>
+      <span className="text-sm ml-2">Тема</span>
     </Button>
   )
 }

@@ -21,6 +21,21 @@ import { FormSourceProviderConfig } from "@/components/forms/form-source-provide
 import { FormSourceIdentity } from "@/components/forms/form-source-identity"
 import { AddSourceDialog } from "@/components/blocks/add-source-dialog"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
+// Display labels for the source status badge (DB enum stays English).
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активен",
+  inactive: "Неактивен",
+}
+
 function ProviderCell({ provider }: { provider: SourceProvider | string }) {
   const meta = getProvider(provider)
   const Icon = meta.icon
@@ -59,7 +74,7 @@ function CredentialsCell({
         variant={row.credentialsConfigured ? "default" : "outline"}
         className="text-xs"
       >
-        {row.credentialsConfigured ? "Configured" : "Not configured"}
+        {row.credentialsConfigured ? "Настроено" : "Не настроено"}
       </Badge>
       <Button
         variant="outline"
@@ -68,7 +83,7 @@ function CredentialsCell({
         onClick={() => onConfigure(row)}
       >
         <KeyRound className="h-3.5 w-3.5 mr-1" />
-        {row.credentialsConfigured ? "Replace" : "Configure"}
+        {row.credentialsConfigured ? "Заменить" : "Настроить"}
       </Button>
     </div>
   )
@@ -106,7 +121,7 @@ function ConfigCell({
       onClick={() => onEdit(row)}
     >
       <Settings className="h-3.5 w-3.5 mr-1" />
-      Edit
+      Изменить
     </Button>
   )
 }
@@ -167,10 +182,10 @@ export function TableOrgSources() {
     try {
       const res = await fetch("/api/sources/org")
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Failed to load sources")
+      if (!res.ok) throw new Error(data.error || "Не удалось загрузить источники")
       setRows(data.sources ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -189,15 +204,15 @@ export function TableOrgSources() {
         body: JSON.stringify({ sourceId: id, ...patch }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Update failed")
+      if (!res.ok) throw new Error(data.error || "Не удалось обновить")
       // Optimistic update: replace just the matching row in place so the
       // toggle doesn't visibly bounce while the GET re-runs.
       setRows((prev) =>
         prev.map((r) => (r.id === id ? { ...r, ...patch } : r)),
       )
-      toast.success("Updated")
+      toast.success("Обновлено")
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error"
+      const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
       toast.error(msg)
       // Re-fetch on failure so the UI reflects server truth instead of
       // the optimistic guess.
@@ -216,8 +231,8 @@ export function TableOrgSources() {
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
           {loading
-            ? "Loading…"
-            : `${rows.length} source${rows.length === 1 ? "" : "s"}`}
+            ? "Загрузка…"
+            : `${rows.length} ${plural(rows.length, ["источник", "источника", "источников"])}`}
         </span>
         <div className="flex items-center gap-2">
           <Button
@@ -227,11 +242,11 @@ export function TableOrgSources() {
             disabled={loading}
           >
             <RefreshCcw className="h-3.5 w-3.5 mr-1" />
-            Refresh
+            Обновить
           </Button>
           <Button size="sm" onClick={() => setAddOpen(true)}>
             <Plus className="h-3.5 w-3.5 mr-1" />
-            Add source
+            Добавить источник
           </Button>
         </div>
       </div>
@@ -300,14 +315,14 @@ export function TableOrgSources() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Provider</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Auto Parse</TableHead>
-              <TableHead>Credentials</TableHead>
-              <TableHead>Config</TableHead>
-              <TableHead>Last Synced</TableHead>
-              <TableHead className="w-12">Edit</TableHead>
+              <TableHead>Провайдер</TableHead>
+              <TableHead>Название</TableHead>
+              <TableHead>Статус</TableHead>
+              <TableHead>Авторазбор</TableHead>
+              <TableHead>Учётные данные</TableHead>
+              <TableHead>Настройки</TableHead>
+              <TableHead>Синхронизация</TableHead>
+              <TableHead className="w-12">Изм.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -316,14 +331,14 @@ export function TableOrgSources() {
                 <TableCell colSpan={8}>
                   <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
                     <Loader className="h-4 w-4 animate-spin mr-2" />
-                    Loading sources…
+                    Загрузка источников…
                   </div>
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-6">
-                  No sources for your organization yet.
+                  Для вашей организации ещё нет источников.
                 </TableCell>
               </TableRow>
             ) : (
@@ -343,14 +358,14 @@ export function TableOrgSources() {
                             status: v ? "active" : "inactive",
                           })
                         }
-                        aria-label="Toggle source active"
+                        aria-label="Переключить активность источника"
                         className={NEUTRAL_SWITCH}
                       />
                       <Badge
                         variant={s.status === "active" ? "default" : "outline"}
-                        className="text-xs capitalize"
+                        className="text-xs"
                       >
-                        {s.status}
+                        {STATUS_LABEL[s.status] ?? s.status}
                       </Badge>
                     </div>
                   </TableCell>
@@ -362,7 +377,7 @@ export function TableOrgSources() {
                         onCheckedChange={(v) =>
                           patchSource(s.id, { automatedParsingIsAllowed: v })
                         }
-                        aria-label="Toggle automated parsing"
+                        aria-label="Переключить авторазбор"
                         className={NEUTRAL_SWITCH}
                       />
                       <Badge
@@ -371,7 +386,7 @@ export function TableOrgSources() {
                         }
                         className="text-xs"
                       >
-                        {s.automatedParsingIsAllowed ? "On" : "Off"}
+                        {s.automatedParsingIsAllowed ? "Вкл" : "Выкл"}
                       </Badge>
                     </div>
                   </TableCell>
@@ -383,7 +398,7 @@ export function TableOrgSources() {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {s.lastSyncedAt
-                      ? new Date(s.lastSyncedAt).toLocaleString()
+                      ? new Date(s.lastSyncedAt).toLocaleString("ru-RU")
                       : "—"}
                   </TableCell>
                   <TableCell>
@@ -392,7 +407,7 @@ export function TableOrgSources() {
                       size="icon"
                       className="h-7 w-7"
                       onClick={() => setIdentityForRow(s)}
-                      aria-label="Edit identity"
+                      aria-label="Изменить название и описание"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>

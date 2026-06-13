@@ -71,6 +71,15 @@ type SourceItemRow = {
 const PAGE_SIZE = 5
 const ALL_SOURCES = "__all__"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 // The Processed table can grow without bound — every parsed item ever
 // stays there. Both the LIMIT/OFFSET select AND the COUNT(*) total
 // would scan the whole table without a date filter, so we always pin a
@@ -93,7 +102,7 @@ function daysBackToInputDate(days: number): string {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—"
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(iso).toLocaleString("ru-RU", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -110,7 +119,7 @@ function itemTitle(row: SourceItemRow): string {
   const m = row.metadataJson
   if (row.externalType === "email") {
     const subject = typeof m.subject === "string" ? m.subject : ""
-    return subject || "(no subject)"
+    return subject || "(без темы)"
   }
   if (row.externalType === "chat_message") {
     const text = typeof m.text === "string" ? m.text : ""
@@ -120,13 +129,13 @@ function itemTitle(row: SourceItemRow): string {
       const preview = previewFromRawText(rawText)
       if (preview) return preview
     }
-    return "(empty message)"
+    return "(пустое сообщение)"
   }
   if (row.externalType === "drive_file") {
-    return row.filename ?? "(unnamed file)"
+    return row.filename ?? "(файл без имени)"
   }
   if (row.externalType === "dropoff_file") {
-    return row.filename ?? "(uploaded file)"
+    return row.filename ?? "(загруженный файл)"
   }
   return row.filename ?? row.externalId
 }
@@ -181,25 +190,25 @@ function attachmentCount(row: SourceItemRow): number {
 function StatusBadge({ row }: { row: SourceItemRow }) {
   const { parseStatus: ps, r2UploadStatus: rs } = row
   if (ps === "failed") {
-    return <Badge tone="red">Parse failed</Badge>
+    return <Badge tone="red">Ошибка разбора</Badge>
   }
   if (ps === "processing") {
-    return <Badge tone="blue">Parsing…</Badge>
+    return <Badge tone="blue">Разбор…</Badge>
   }
   if (ps === "skipped") {
-    return <Badge tone="gray">Skipped</Badge>
+    return <Badge tone="gray">Пропущено</Badge>
   }
   if (ps !== "complete") {
-    return <Badge tone="amber">Needs parse</Badge>
+    return <Badge tone="amber">Нужен разбор</Badge>
   }
   // ps === complete → look at upload
   if (rs === "failed") {
-    return <Badge tone="red">Upload failed</Badge>
+    return <Badge tone="red">Ошибка загрузки</Badge>
   }
   if (rs !== "complete") {
-    return <Badge tone="amber">Needs upload</Badge>
+    return <Badge tone="amber">Нужна загрузка</Badge>
   }
-  return <Badge tone="green">Done</Badge>
+  return <Badge tone="green">Готово</Badge>
 }
 
 function Badge({
@@ -311,12 +320,12 @@ export function TableSourceItems({
       }
       const res = await fetch(`/api/sources/items?${params.toString()}`)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Failed to load items")
+      if (!res.ok) throw new Error(data.error || "Не удалось загрузить элементы")
       const result = data as SourceItemListResponse
       setRows(result.rows)
       setTotal(result.total)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -348,13 +357,14 @@ export function TableSourceItems({
       }
       const res = await fetch(url, init)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || `${label} failed`)
+      if (!res.ok) throw new Error(data.error || `${label}: ошибка`)
       // parseSourceItem returns HTTP 200 with `parentStatus: 'failed'`
       // on parser errors (see ParseResult). Treat that as a failure
       // toast — otherwise a silent LLM failure looks like success.
       if (action === "parse" && data?.parentStatus === "failed") {
         throw new Error(
-          data?.parentParseError || "Parse failed; see row error message",
+          data?.parentParseError ||
+            "Ошибка разбора; см. сообщение об ошибке в строке",
         )
       }
       // 'skipped' parents (filtered email, deleted at provider, etc.)
@@ -362,10 +372,10 @@ export function TableSourceItems({
       // the reason so the user knows the row didn't produce content.
       if (action === "parse" && data?.parentStatus === "skipped") {
         toast.message(
-          `${label} skipped: ${data?.parentParseError ?? "unknown reason"}`,
+          `${label} пропущен: ${data?.parentParseError ?? "причина неизвестна"}`,
         )
       } else {
-        toast.success(`${label} succeeded`)
+        toast.success(`${label}: успешно`)
       }
       // Bump both this table AND the sibling Pending↔Processed table —
       // a parse moves rows across the boundary, so the parent's
@@ -373,7 +383,7 @@ export function TableSourceItems({
       setLocalBump((n) => n + 1)
       onActionComplete?.()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error"
+      const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
       toast.error(`${label}: ${msg}`)
     } finally {
       setActionInFlight((m) => {
@@ -467,14 +477,14 @@ export function TableSourceItems({
       <div className="flex flex-wrap gap-2 items-end">
         <div className="min-w-44">
           <label className="text-xs text-muted-foreground mb-1 block">
-            Source
+            Источник
           </label>
           <Select value={sourceFilter} onValueChange={setSourceFilter}>
             <SelectTrigger className="h-8 w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_SOURCES}>All sources</SelectItem>
+              <SelectItem value={ALL_SOURCES}>Все источники</SelectItem>
               {sources.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
@@ -485,10 +495,10 @@ export function TableSourceItems({
         </div>
         <div className="flex-1 min-w-48">
           <label className="text-xs text-muted-foreground mb-1 block">
-            Search
+            Поиск
           </label>
           <Input
-            placeholder="Subject / sender / filename…"
+            placeholder="Тема / отправитель / имя файла…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             className="h-8 text-sm"
@@ -496,7 +506,7 @@ export function TableSourceItems({
         </div>
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">
-            From
+            С
           </label>
           <Input
             type="date"
@@ -506,7 +516,7 @@ export function TableSourceItems({
           />
         </div>
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">To</label>
+          <label className="text-xs text-muted-foreground mb-1 block">По</label>
           <Input
             type="date"
             value={dateTo}
@@ -522,7 +532,7 @@ export function TableSourceItems({
               className="h-8"
               onClick={() => setProcessedRange(0)}
             >
-              Last day
+              За день
             </Button>
             <Button
               variant="outline"
@@ -530,7 +540,7 @@ export function TableSourceItems({
               className="h-8"
               onClick={() => setProcessedRange(6)}
             >
-              Last week
+              За неделю
             </Button>
             <Button
               variant="outline"
@@ -538,14 +548,14 @@ export function TableSourceItems({
               className="h-8"
               onClick={() => setProcessedRange(29)}
             >
-              Last month
+              За месяц
             </Button>
             <label className="flex items-center gap-2 h-8 text-xs text-muted-foreground select-none cursor-pointer">
               <Checkbox
                 checked={onlyNeedsUpload}
                 onCheckedChange={(v) => setOnlyNeedsUpload(v === true)}
               />
-              Need upload only
+              Только требующие загрузки
             </label>
           </>
         )}
@@ -556,30 +566,30 @@ export function TableSourceItems({
           disabled={!filtersActive}
           onClick={clearFilters}
         >
-          Clear filters
+          Сбросить фильтры
         </Button>
       </div>
 
       <div className="text-xs text-muted-foreground">
         {loading
-          ? "Loading…"
-          : `${total} ${total === 1 ? "item" : "items"}${filtersActive ? " (filtered)" : ""}`}
+          ? "Загрузка…"
+          : `${total} ${plural(total, ["элемент", "элемента", "элементов"])}${filtersActive ? " (отфильтровано)" : ""}`}
       </div>
 
       <div className="rounded-md border overflow-hidden">
         <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-40">Date</TableHead>
-              <TableHead className="w-32">Source</TableHead>
-              <TableHead className="w-36">Author</TableHead>
-              <TableHead>Item</TableHead>
-              <TableHead className="w-28">Status</TableHead>
+              <TableHead className="w-40">Дата</TableHead>
+              <TableHead className="w-32">Источник</TableHead>
+              <TableHead className="w-36">Автор</TableHead>
+              <TableHead>Элемент</TableHead>
+              <TableHead className="w-28">Статус</TableHead>
               {showProcessedColumns && (
-                <TableHead className="w-36">Parsed at</TableHead>
+                <TableHead className="w-36">Разобрано</TableHead>
               )}
               <TableHead className={status === "pending" ? "w-32" : "w-40"}>
-                Actions
+                Действия
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -589,7 +599,7 @@ export function TableSourceItems({
                 <TableCell colSpan={showProcessedColumns ? 7 : 6}>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
                     <Loader className="h-4 w-4 animate-spin" />
-                    Loading items…
+                    Загрузка элементов…
                   </div>
                 </TableCell>
               </TableRow>
@@ -606,8 +616,8 @@ export function TableSourceItems({
                 <TableCell colSpan={showProcessedColumns ? 7 : 6}>
                   <p className="text-sm text-muted-foreground py-6 text-center">
                     {status === "pending"
-                      ? "No pending items. Click a Sync button above to fetch new ones."
-                      : "No processed items yet."}
+                      ? "Нет элементов в очереди. Нажмите «Синхронизировать» выше, чтобы получить новые."
+                      : "Пока нет обработанных элементов."}
                   </p>
                 </TableCell>
               </TableRow>
@@ -650,7 +660,7 @@ export function TableSourceItems({
                         status === "pending" &&
                         attachmentCount(row) > 0 && (
                           <span className="text-xs text-muted-foreground ml-2">
-                            ({attachmentCount(row)} att.)
+                            ({attachmentCount(row)} вл.)
                           </span>
                         )}
                     </TableCell>
@@ -667,10 +677,10 @@ export function TableSourceItems({
                         row={row}
                         status={status}
                         inFlight={inFlight}
-                        onParse={() => runAction(row.id, "parse", "Parse")}
-                        onUpload={() => runAction(row.id, "upload", "Upload")}
+                        onParse={() => runAction(row.id, "parse", "Разбор")}
+                        onUpload={() => runAction(row.id, "upload", "Загрузка")}
                         onReparse={() =>
-                          runAction(row.id, "reparse", "Re-parse")
+                          runAction(row.id, "reparse", "Повторный разбор")
                         }
                         onShow={() => openShow(row)}
                       />
@@ -695,7 +705,7 @@ export function TableSourceItems({
       {/* Pager */}
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-muted-foreground">
-          Page {page} of {totalPages}
+          Страница {page} из {totalPages}
         </span>
         <div className="flex items-center gap-1">
           <Button
@@ -761,7 +771,7 @@ function RowActions({
       return (
         <span className="inline-flex items-center text-xs text-muted-foreground">
           <Loader className="h-3.5 w-3.5 mr-1 animate-spin" />
-          parsing
+          разбор
         </span>
       )
     }
@@ -779,7 +789,7 @@ function RowActions({
         ) : (
           <Sparkles className="h-3.5 w-3.5 mr-1" />
         )}
-        {ps === "failed" ? "Re-parse" : "Parse"}
+        {ps === "failed" ? "Повторить" : "Разобрать"}
       </Button>
     )
   }
@@ -808,7 +818,7 @@ function RowActions({
           ) : (
             <CloudUpload className="h-3.5 w-3.5 mr-1" />
           )}
-          {rs === "failed" ? "Retry" : "Upload"}
+          {rs === "failed" ? "Повторить" : "Загрузить"}
         </Button>
       )}
       <Button
@@ -816,7 +826,7 @@ function RowActions({
         size="sm"
         className="h-7 w-7 p-0"
         onClick={onShow}
-        title="Show parsed markdown"
+        title="Показать разобранный текст"
       >
         <Eye className="h-3.5 w-3.5" />
       </Button>
@@ -827,7 +837,7 @@ function RowActions({
           className="h-7 w-7 p-0"
           disabled={inFlight === "reparse"}
           onClick={onReparse}
-          title="Re-parse (deletes children + R2 row, restarts from Pending)"
+          title="Повторный разбор (удаляет дочерние элементы и строку R2, заново из очереди)"
         >
           {inFlight === "reparse" ? (
             <Loader className="h-3.5 w-3.5 animate-spin" />

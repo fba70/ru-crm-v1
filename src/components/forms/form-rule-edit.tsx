@@ -33,6 +33,12 @@ type RuleFormData = {
   content: string
 }
 
+// Adjective form of the rule type for the "New … rule" title.
+const RULE_TYPE_ADJ: Record<RuleType, string> = {
+  System: "системное",
+  Custom: "пользовательское",
+}
+
 type Props = {
   mode: "create" | "edit"
   ruleType: RuleType
@@ -89,24 +95,24 @@ export default function RuleEditDialog({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to save rule")
+          toast.error(err.error || "Не удалось сохранить правило")
           return
         }
-        toast.success(mode === "create" ? "Rule created" : "Rule updated")
+        toast.success(mode === "create" ? "Правило создано" : "Правило обновлено")
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to save rule")
+        toast.error("Не удалось сохранить правило")
       }
     })
   }
 
   const title =
     mode === "create"
-      ? `New ${ruleType} rule`
+      ? `Новое ${RULE_TYPE_ADJ[ruleType]} правило`
       : canEdit
-        ? `Edit rule: ${rule?.name ?? ""}`
-        : `View rule: ${rule?.name ?? ""}`
+        ? `Редактирование правила: ${rule?.name ?? ""}`
+        : `Просмотр правила: ${rule?.name ?? ""}`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -123,15 +129,15 @@ export default function RuleEditDialog({
             <FormField
               control={form.control}
               name="name"
-              rules={{ required: "Name is required" }}
+              rules={{ required: "Укажите название" }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name</FormLabel>
+                  <FormLabel className="text-gray-400">Название</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
                       disabled={!canEdit}
-                      placeholder="Rule name"
+                      placeholder="Название правила"
                     />
                   </FormControl>
                   <FormMessage />
@@ -144,14 +150,14 @@ export default function RuleEditDialog({
               name="content"
               render={({ field }) => (
                 <FormItem className="flex-1 min-h-0 flex flex-col">
-                  <FormLabel className="text-gray-400">Content</FormLabel>
+                  <FormLabel className="text-gray-400">Содержание</FormLabel>
                   <Tabs
                     defaultValue="edit"
                     className="flex-1 min-h-0 flex flex-col"
                   >
                     <TabsList>
-                      <TabsTrigger value="edit">Edit</TabsTrigger>
-                      <TabsTrigger value="preview">Preview</TabsTrigger>
+                      <TabsTrigger value="edit">Редактирование</TabsTrigger>
+                      <TabsTrigger value="preview">Просмотр</TabsTrigger>
                     </TabsList>
                     <TabsContent
                       value="edit"
@@ -161,7 +167,7 @@ export default function RuleEditDialog({
                         <Textarea
                           {...field}
                           disabled={!canEdit}
-                          placeholder="Write markdown content..."
+                          placeholder="Введите содержание в формате Markdown..."
                           className="font-mono text-sm h-64 resize-none"
                         />
                       </FormControl>
@@ -176,7 +182,7 @@ export default function RuleEditDialog({
                         </div>
                       ) : (
                         <p className="text-sm text-muted-foreground italic">
-                          Nothing to preview.
+                          Нет содержимого для просмотра.
                         </p>
                       )}
                     </TabsContent>
@@ -192,11 +198,11 @@ export default function RuleEditDialog({
                 variant="outline"
                 onClick={() => setOpen(false)}
               >
-                {canEdit ? "Cancel" : "Close"}
+                {canEdit ? "Отмена" : "Закрыть"}
               </Button>
               {canEdit && (
                 <LoadingButton type="submit" loading={isPending}>
-                  {mode === "create" ? "Create" : "Save"}
+                  {mode === "create" ? "Создать" : "Сохранить"}
                 </LoadingButton>
               )}
             </DialogFooter>

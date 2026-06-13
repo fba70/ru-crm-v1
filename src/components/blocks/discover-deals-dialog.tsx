@@ -54,6 +54,15 @@ function resolveRange(
   return { from: specificFrom, to: specificTo }
 }
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 export function DiscoverDealsDialog({
   trigger,
   onDealsGenerated,
@@ -126,7 +135,7 @@ export function DiscoverDealsDialog({
           setRuleId(loadedRules[0].id)
         }
       } catch {
-        toast.error("Could not load sources or rules")
+        toast.error("Не удалось загрузить источники или правила")
       } finally {
         if (!cancelled) setLoadingOptions(false)
       }
@@ -181,15 +190,15 @@ export function DiscoverDealsDialog({
 
   const handleSubmit = async () => {
     if (!ruleId) {
-      toast.error("Pick a rule first")
+      toast.error("Сначала выберите правило")
       return
     }
     if (!allSources && selectedSourceIds.size === 0) {
-      toast.error("Pick at least one source or switch to All sources")
+      toast.error("Выберите хотя бы один источник или переключитесь на «Все источники»")
       return
     }
     if (period === "specific" && (!specificFrom || !specificTo)) {
-      toast.error("Pick both From and To dates")
+      toast.error("Укажите обе даты — «С» и «По»")
       return
     }
 
@@ -211,7 +220,7 @@ export function DiscoverDealsDialog({
       })
       const data = await res.json()
       if (!res.ok) {
-        toast.error(data.error || "Deal discovery failed")
+        toast.error(data.error || "Не удалось выполнить поиск сделок")
         return
       }
       const r = data.result as GenerateDealsResult
@@ -231,28 +240,32 @@ export function DiscoverDealsDialog({
       // the board.
       if (r.dryRun) {
         setDryRunResult(r)
-        const verb = `${r.dealsCreated} would-create · ${r.stageUpdates} would-move`
-        toast.success(`Dry run · ${verb} · ${r.scanned} scanned`)
+        const verb = `создано бы ${r.dealsCreated} · перемещено бы ${r.stageUpdates}`
+        toast.success(`Пробный запуск · ${verb} · просмотрено ${r.scanned}`)
         return
       }
 
       const summary =
-        `${r.dealsCreated} created · ${r.stageUpdates} stage update` +
-        `${r.stageUpdates === 1 ? "" : "s"} · ${r.scanned} scanned · ` +
-        `${skippedTotal} skipped`
+        `Создано ${r.dealsCreated} · обновлений этапа ${r.stageUpdates} · ` +
+        `просмотрено ${r.scanned} · пропущено ${skippedTotal}`
       if (r.capped > 0) {
-        toast.success(`${summary} (capped — ${r.capped} extra not analyzed)`, {
-          duration: 8000,
-        })
+        toast.success(
+          `${summary} (достигнут предел — ${r.capped} не проанализировано)`,
+          {
+            duration: 8000,
+          },
+        )
       } else if (r.failed > 0) {
-        toast.warning(`${summary} · ${r.failed} failed`, { duration: 8000 })
+        toast.warning(`${summary} · ошибок: ${r.failed}`, { duration: 8000 })
       } else {
         toast.success(summary)
       }
       onDealsGenerated()
       setOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Deal discovery failed")
+      toast.error(
+        e instanceof Error ? e.message : "Не удалось выполнить поиск сделок",
+      )
     } finally {
       setRunning(false)
     }
@@ -263,26 +276,27 @@ export function DiscoverDealsDialog({
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Discover deals from sources</DialogTitle>
+          <DialogTitle>Найти сделки в источниках</DialogTitle>
           <DialogDescription>
-            Run the chosen rule against source items in the selected window.
-            The model can create new deals or move existing open deals to a
-            different funnel stage. Hard cap of {previewCap} items per click.
+            Запустите выбранное правило по элементам источников за указанный
+            период. Модель может создавать новые сделки или переводить открытые
+            сделки на другой этап воронки. Не более {previewCap} элементов за
+            один запуск.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 py-2">
           <section className="space-y-2">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-              Time period
+              Период
             </Label>
             <div className="flex flex-wrap gap-2">
               {(
                 [
-                  { key: "last_day", label: "Last day" },
-                  { key: "last_3_days", label: "Last 3 days" },
-                  { key: "last_week", label: "Last week" },
-                  { key: "specific", label: "Specific dates" },
+                  { key: "last_day", label: "За день" },
+                  { key: "last_3_days", label: "За 3 дня" },
+                  { key: "last_week", label: "За неделю" },
+                  { key: "specific", label: "Указать даты" },
                 ] as const
               ).map((p) => (
                 <Button
@@ -300,7 +314,7 @@ export function DiscoverDealsDialog({
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <div className="flex items-center gap-2">
                   <Label htmlFor="discover-deals-from" className="text-xs">
-                    From
+                    С
                   </Label>
                   <Input
                     id="discover-deals-from"
@@ -312,7 +326,7 @@ export function DiscoverDealsDialog({
                 </div>
                 <div className="flex items-center gap-2">
                   <Label htmlFor="discover-deals-to" className="text-xs">
-                    To
+                    По
                   </Label>
                   <Input
                     id="discover-deals-to"
@@ -328,7 +342,7 @@ export function DiscoverDealsDialog({
 
           <section className="space-y-2">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-              Sources
+              Источники
             </Label>
             <div className="flex items-center gap-2">
               <Checkbox
@@ -340,7 +354,7 @@ export function DiscoverDealsDialog({
                 htmlFor="discover-deals-all-sources"
                 className="text-sm cursor-pointer"
               >
-                All org sources
+                Все источники организации
               </Label>
             </div>
             {!allSources && (
@@ -348,11 +362,11 @@ export function DiscoverDealsDialog({
                 {loadingOptions ? (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Loader className="h-3.5 w-3.5 animate-spin" />
-                    Loading sources…
+                    Загрузка источников…
                   </div>
                 ) : sources.length === 0 ? (
                   <div className="text-xs text-muted-foreground italic">
-                    No sources configured for this org.
+                    Для организации не настроены источники.
                   </div>
                 ) : (
                   sources.map((s) => (
@@ -383,17 +397,17 @@ export function DiscoverDealsDialog({
               htmlFor="discover-deals-rule"
               className="text-xs uppercase tracking-wide text-muted-foreground"
             >
-              Rule
+              Правило
             </Label>
             <Select value={ruleId} onValueChange={setRuleId}>
               <SelectTrigger id="discover-deals-rule" className="w-full">
                 <SelectValue
                   placeholder={
                     loadingOptions
-                      ? "Loading rules…"
+                      ? "Загрузка правил…"
                       : rules.length === 0
-                        ? "No org rules configured"
-                        : "Pick a rule"
+                        ? "Нет настроенных правил"
+                        : "Выберите правило"
                   }
                 />
               </SelectTrigger>
@@ -407,12 +421,12 @@ export function DiscoverDealsDialog({
             </Select>
             {rules.length === 0 && !loadingOptions && (
               <p className="text-xs rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-                This organization has no Custom deal-extraction rules. Create
-                one on the{" "}
+                В организации нет пользовательских правил извлечения сделок.
+                Сначала создайте его на странице{" "}
                 <a href="/rules" className="underline font-medium">
-                  Rules page
-                </a>{" "}
-                first.
+                  «Правила»
+                </a>
+                .
               </p>
             )}
           </section>
@@ -422,7 +436,7 @@ export function DiscoverDealsDialog({
               htmlFor="discover-deals-model"
               className="text-xs uppercase tracking-wide text-muted-foreground"
             >
-              Model
+              Модель
             </Label>
             <Select value={modelKey} onValueChange={setModelKey}>
               <SelectTrigger id="discover-deals-model" className="w-full">
@@ -452,10 +466,10 @@ export function DiscoverDealsDialog({
                 htmlFor="discover-deals-include-already"
                 className="text-sm cursor-pointer leading-snug"
               >
-                Re-analyze items already processed by a previous run
+                Повторно проанализировать элементы, уже обработанные ранее
                 <span className="block text-xs text-muted-foreground font-normal mt-0.5">
-                  By default, items the deal pipeline has already considered
-                  are skipped. Tick this for ad-hoc re-runs.
+                  По умолчанию уже обработанные элементы пропускаются. Отметьте
+                  для повторного запуска вручную.
                 </span>
               </Label>
             </div>
@@ -470,11 +484,11 @@ export function DiscoverDealsDialog({
                 htmlFor="discover-deals-dry-run"
                 className="text-sm cursor-pointer leading-snug"
               >
-                Dry run (preview only — write nothing)
+                Пробный запуск (только предпросмотр — ничего не записывается)
                 <span className="block text-xs text-muted-foreground font-normal mt-0.5">
-                  Runs the rule and shows what it would create / move without
-                  touching any deals or marking items as analyzed. Use it to
-                  iterate on rule wording before committing.
+                  Запускает правило и показывает, что будет создано / перемещено,
+                  не затрагивая сделки и не помечая элементы. Используйте для
+                  доработки формулировок правила перед применением.
                 </span>
               </Label>
             </div>
@@ -484,29 +498,29 @@ export function DiscoverDealsDialog({
             <section className="rounded-md border border-dashed border-amber-400/60 bg-amber-50/50 dark:bg-amber-950/20 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">
-                  Dry-run preview — nothing was written
+                  Предпросмотр пробного запуска — ничего не записано
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {dryRunResult.scanned} scanned
+                  просмотрено {dryRunResult.scanned}
                 </span>
               </div>
               <div className="text-xs text-muted-foreground">
-                {dryRunResult.dealsCreated} would-create ·{" "}
-                {dryRunResult.stageUpdates} would-move ·{" "}
-                {dryRunResult.skippedDuplicate} duplicate ·{" "}
-                {dryRunResult.skippedNotRelevant} not-relevant ·{" "}
+                создано бы {dryRunResult.dealsCreated} ·{" "}
+                перемещено бы {dryRunResult.stageUpdates} ·{" "}
+                дубликатов {dryRunResult.skippedDuplicate} ·{" "}
+                нерелевантно {dryRunResult.skippedNotRelevant} ·{" "}
+                не сопоставлено{" "}
                 {dryRunResult.skippedUnknownClient +
                   dryRunResult.skippedUnknownStage +
-                  dryRunResult.skippedUnknownDeal}{" "}
-                unmatched
+                  dryRunResult.skippedUnknownDeal}
                 {dryRunResult.failed > 0
-                  ? ` · ${dryRunResult.failed} failed`
+                  ? ` · ошибок ${dryRunResult.failed}`
                   : ""}
               </div>
               {dryRunResult.plannedActions.length === 0 ? (
                 <div className="text-xs text-muted-foreground italic">
-                  No create / move actions — the rule skipped everything in
-                  this window.
+                  Нет действий создания / перемещения — правило пропустило всё
+                  за этот период.
                 </div>
               ) : (
                 <ul className="max-h-52 overflow-y-auto space-y-1.5 text-xs">
@@ -524,7 +538,7 @@ export function DiscoverDealsDialog({
                                 : "bg-blue-500/15 text-blue-600 dark:text-blue-300"
                             }`}
                           >
-                            {a.action === "CREATE" ? "CREATE" : "MOVE"}
+                            {a.action === "CREATE" ? "СОЗДАТЬ" : "ПЕРЕМЕСТИТЬ"}
                           </span>
                           <span className="font-medium truncate">
                             {a.dealName}
@@ -551,7 +565,7 @@ export function DiscoverDealsDialog({
                 </ul>
               )}
               <p className="text-xs text-muted-foreground">
-                Untick &ldquo;Dry run&rdquo; and run again to commit these.
+                Снимите «Пробный запуск» и запустите снова, чтобы применить.
               </p>
             </section>
           )}
@@ -561,21 +575,27 @@ export function DiscoverDealsDialog({
               <Sparkles className="h-4 w-4 text-amber-500" />
               {previewLoading ? (
                 <span className="text-muted-foreground">
-                  Counting eligible items…
+                  Подсчёт подходящих элементов…
                 </span>
               ) : previewCount === null ? (
                 <span className="text-muted-foreground">
-                  Pick a window to see how many items will be analyzed.
+                  Выберите период, чтобы увидеть, сколько элементов будет
+                  проанализировано.
                 </span>
               ) : (
                 <span>
-                  <strong>{Math.min(previewCount, previewCap)}</strong> item
-                  {previewCount === 1 ? "" : "s"} will be analyzed
+                  Будет проанализировано{" "}
+                  <strong>{Math.min(previewCount, previewCap)}</strong>{" "}
+                  {plural(Math.min(previewCount, previewCap), [
+                    "элемент",
+                    "элемента",
+                    "элементов",
+                  ])}
                   {previewCount > previewCap && (
                     <>
                       {" "}
                       <span className="text-muted-foreground">
-                        ({previewCount - previewCap} more outside the cap)
+                        (ещё {previewCount - previewCap} сверх предела)
                       </span>
                     </>
                   )}
@@ -584,9 +604,9 @@ export function DiscoverDealsDialog({
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Only items that have been parsed and uploaded to R2 are eligible.
-              Items older than the bootstrap cutoff (May 5 2026) were
-              pre-stamped and won&apos;t appear here unless re-parsed.
+              Подходят только элементы, которые разобраны и загружены в R2.
+              Элементы старше контрольной даты (5 мая 2026) были помечены
+              заранее и не появятся здесь без повторного разбора.
             </p>
           </section>
         </div>
@@ -597,7 +617,7 @@ export function DiscoverDealsDialog({
             onClick={() => setOpen(false)}
             disabled={running}
           >
-            Cancel
+            Отмена
           </Button>
           <Button
             onClick={handleSubmit}
@@ -611,12 +631,12 @@ export function DiscoverDealsDialog({
             {running ? (
               <>
                 <Loader className="h-4 w-4 mr-1 animate-spin" />
-                Analyzing…
+                Анализ…
               </>
             ) : (
               <>
                 <Sparkles className="h-4 w-4 mr-1" />
-                {dryRun ? "Preview (dry run)" : "Run discovery"}
+                {dryRun ? "Предпросмотр (пробный запуск)" : "Запустить поиск"}
               </>
             )}
           </Button>

@@ -3,7 +3,7 @@ import { Suspense } from "react"
 import { SignInOtpForm } from "@/components/forms/form-sign-in-otp"
 
 export const metadata: Metadata = {
-  title: "Sign in with code",
+  title: "Вход по коду",
 }
 
 export default function SignInOtp() {

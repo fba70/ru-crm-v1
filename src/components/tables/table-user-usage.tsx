@@ -33,8 +33,8 @@ const usage: SimplifiedUsage[] = [
     amountTokens: 100,
     amountCurrency: 3.5,
     currency: "EUR",
-    usageType: "Usage",
-    usageName: "Content generation",
+    usageType: "Использование",
+    usageName: "Генерация контента",
   },
   {
     id: "2",
@@ -42,8 +42,8 @@ const usage: SimplifiedUsage[] = [
     amountTokens: 50,
     amountCurrency: 1.5,
     currency: "EUR",
-    usageType: "Usage",
-    usageName: "External sources calls",
+    usageType: "Использование",
+    usageName: "Обращения к внешним источникам",
   },
   {
     id: "3",
@@ -51,8 +51,8 @@ const usage: SimplifiedUsage[] = [
     amountTokens: 0,
     amountCurrency: 100.0,
     currency: "EUR",
-    usageType: "Subscription",
-    usageName: "Monthly subscription",
+    usageType: "Подписка",
+    usageName: "Месячная подписка",
   },
 ]
 
@@ -93,20 +93,20 @@ export function TableUserUsage() {
       <div className="flex flex-row items-center justify-between mb-4">
         <div className="flex gap-2">
           <Input
-            placeholder="Search usage type"
+            placeholder="Поиск по типу"
             value={searchType}
             onChange={(e) => setSearchType(e.target.value)}
             className="max-w-xs"
           />
           <Input
-            placeholder="Search usage name"
+            placeholder="Поиск по названию"
             type="text"
             value={searchName}
             onChange={(e) => setSearchName(e.target.value)}
             className="max-w-xs"
           />
           <Button variant="outline" onClick={() => setSortAsc(!sortAsc)}>
-            Sort by Date {sortAsc ? "↑" : "↓"}
+            По дате {sortAsc ? "↑" : "↓"}
           </Button>
         </div>
 
@@ -118,19 +118,19 @@ export function TableUserUsage() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Usage date</TableHead>
-            <TableHead>Usage type</TableHead>
-            <TableHead>Usage name</TableHead>
-            <TableHead>Amount tokens</TableHead>
-            <TableHead>Amount currentcy</TableHead>
-            <TableHead>Currency</TableHead>
+            <TableHead>Дата</TableHead>
+            <TableHead>Тип</TableHead>
+            <TableHead>Название</TableHead>
+            <TableHead>Кол-во токенов</TableHead>
+            <TableHead>Сумма</TableHead>
+            <TableHead>Валюта</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {paginatedUsage.map((usage) => (
             <TableRow key={usage.id}>
               <TableCell>
-                {new Date(usage.createdAt).toLocaleString()}
+                {new Date(usage.createdAt).toLocaleString("ru-RU")}
               </TableCell>
               <TableCell>{usage.usageType}</TableCell>
               <TableCell>{usage.usageName}</TableCell>
@@ -143,7 +143,7 @@ export function TableUserUsage() {
       </Table>
       <div className="flex items-center justify-end gap-4 mt-4">
         <span className="text-sm text-gray-400">
-          page {page} of {totalPages}
+          стр. {page} из {totalPages}
         </span>
         <div className="flex gap-2">
           <Button
@@ -151,14 +151,14 @@ export function TableUserUsage() {
             disabled={page === 1}
             onClick={() => setPage(page - 1)}
           >
-            previous
+            Назад
           </Button>
           <Button
             variant="outline"
             disabled={page === totalPages || totalPages === 0}
             onClick={() => setPage(page + 1)}
           >
-            next
+            Вперёд
           </Button>
         </div>
       </div>

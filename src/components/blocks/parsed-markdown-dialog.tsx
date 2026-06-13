@@ -46,14 +46,14 @@ export function ParsedMarkdownDialog({
         const data = await res.json()
         if (cancelled) return
         if (!res.ok) {
-          setError(data.error || "Failed to load markdown")
+          setError(data.error || "Не удалось загрузить документ")
         } else {
           setMarkdown(data.markdown)
         }
       })
       .catch((err) => {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : "Unknown error")
+        setError(err instanceof Error ? err.message : "Неизвестная ошибка")
       })
     return () => {
       cancelled = true
@@ -80,7 +80,7 @@ export function ParsedMarkdownDialog({
         {loading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
             <Loader className="h-4 w-4 animate-spin" />
-            Loading…
+            Загрузка…
           </div>
         )}
         {error && <p className="text-sm text-destructive py-4">{error}</p>}

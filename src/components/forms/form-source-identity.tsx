@@ -45,7 +45,7 @@ export function FormSourceIdentity({
 
   async function handleSave() {
     if (!name.trim()) {
-      toast.error("Name is required")
+      toast.error("Укажите название")
       return
     }
     setBusy(true)
@@ -60,12 +60,12 @@ export function FormSourceIdentity({
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Update failed")
-      toast.success("Identity saved")
+      if (!res.ok) throw new Error(data.error || "Не удалось обновить")
+      toast.success("Сохранено")
       onSaved()
       onOpenChange(false)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Unknown error")
+      toast.error(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setBusy(false)
     }
@@ -75,16 +75,16 @@ export function FormSourceIdentity({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit source identity</DialogTitle>
+          <DialogTitle>Название и описание источника</DialogTitle>
           <DialogDescription>
-            Rename this source or update its description. Provider type
-            and other structural fields remain admin-only.
+            Переименуйте источник или измените его описание. Тип провайдера и
+            другие структурные поля доступны только администратору.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="source-identity-name">Name</Label>
+            <Label htmlFor="source-identity-name">Название</Label>
             <Input
               id="source-identity-name"
               value={name}
@@ -93,13 +93,13 @@ export function FormSourceIdentity({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="source-identity-description">Description</Label>
+            <Label htmlFor="source-identity-description">Описание</Label>
             <Textarea
               id="source-identity-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              placeholder="Short description for your team"
+              placeholder="Краткое описание для вашей команды"
             />
           </div>
         </div>
@@ -111,10 +111,10 @@ export function FormSourceIdentity({
             onClick={() => onOpenChange(false)}
             disabled={busy}
           >
-            Cancel
+            Отмена
           </Button>
           <Button type="button" onClick={handleSave} disabled={busy}>
-            {busy ? "Saving…" : "Save"}
+            {busy ? "Сохранение…" : "Сохранить"}
           </Button>
         </DialogFooter>
       </DialogContent>

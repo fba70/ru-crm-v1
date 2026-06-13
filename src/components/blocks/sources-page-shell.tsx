@@ -55,15 +55,17 @@ export function SourcesPageShell({
   return (
     <Tabs defaultValue="org" className="space-y-6">
       <TabsList>
-        <TabsTrigger value="org">Organization sources</TabsTrigger>
+        <TabsTrigger value="org">Источники организации</TabsTrigger>
         {showStored && (
-          <TabsTrigger value="stored">Stored content</TabsTrigger>
+          <TabsTrigger value="stored">Сохранённые материалы</TabsTrigger>
         )}
         {showStats && (
-          <TabsTrigger value="stats">Processing statistics</TabsTrigger>
+          <TabsTrigger value="stats">Статистика обработки</TabsTrigger>
         )}
         {isOrgOwner && (
-          <TabsTrigger value="manage">Manage organization sources</TabsTrigger>
+          <TabsTrigger value="manage">
+            Управление источниками организации
+          </TabsTrigger>
         )}
       </TabsList>
 
@@ -79,7 +81,7 @@ export function SourcesPageShell({
         ) : (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No active organization on this session.
+              В текущей сессии нет активной организации.
             </CardContent>
           </Card>
         )}
@@ -89,7 +91,7 @@ export function SourcesPageShell({
         <TabsContent value="stored" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Stored content</CardTitle>
+              <CardTitle className="text-base">Сохранённые материалы</CardTitle>
             </CardHeader>
             <CardContent>
               <TableStoredContent sources={orgSources} />
@@ -108,7 +110,7 @@ export function SourcesPageShell({
         <TabsContent value="manage" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Organization sources</CardTitle>
+              <CardTitle className="text-base">Источники организации</CardTitle>
             </CardHeader>
             <CardContent>
               <TableOrgSources />
@@ -152,7 +154,7 @@ function SourcesScope({
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          No sources configured for this organization yet.
+          Для этой организации ещё не настроены источники.
         </CardContent>
       </Card>
     )
@@ -169,7 +171,7 @@ function SourcesScope({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Pending</CardTitle>
+          <CardTitle className="text-base">В очереди</CardTitle>
         </CardHeader>
         <CardContent>
           <TableSourceItems
@@ -184,7 +186,7 @@ function SourcesScope({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Processed</CardTitle>
+          <CardTitle className="text-base">Обработано</CardTitle>
         </CardHeader>
         <CardContent>
           <TableSourceItems

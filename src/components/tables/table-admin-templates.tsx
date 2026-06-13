@@ -22,6 +22,25 @@ import type { SourceProvider } from "@/db/schema"
 
 const ITEMS_PER_PAGE = 10
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
+// Display labels — DB enum keys stay English.
+const TYPE_LABEL: Record<string, string> = {
+  external: "Внешний",
+  internal: "Внутренний",
+}
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активен",
+  inactive: "Неактивен",
+}
+
 function ProviderCell({ provider }: { provider: SourceProvider | string }) {
   const meta = getProvider(provider)
   const Icon = meta.icon
@@ -57,10 +76,10 @@ export function TableAdminTemplates() {
       if (showInactive) params.set("showInactive", "1")
       const res = await fetch(`/api/admin/templates?${params.toString()}`)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Failed to load templates")
+      if (!res.ok) throw new Error(data.error || "Не удалось загрузить шаблоны")
       setRows(data.templates ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -95,7 +114,7 @@ export function TableAdminTemplates() {
     <>
       <div className="flex flex-row flex-wrap items-center gap-2 mb-4">
         <Input
-          placeholder="Search by name"
+          placeholder="Поиск по названию"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-48"
@@ -105,13 +124,13 @@ export function TableAdminTemplates() {
             checked={showInactive}
             onCheckedChange={(v) => setShowInactive(v === true)}
           />
-          Show inactive
+          Показывать неактивные
         </label>
         <Button variant="outline" onClick={fetchRows}>
           <RefreshCcw className="h-4 w-4" />
         </Button>
         <span className="ml-auto text-sm text-gray-400">
-          {filtered.length} template{filtered.length !== 1 && "s"}
+          {filtered.length} {plural(filtered.length, ["шаблон", "шаблона", "шаблонов"])}
         </span>
         <FormAdminEditTemplate onSuccess={fetchRows} />
       </div>
@@ -125,21 +144,21 @@ export function TableAdminTemplates() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Provider</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Default</TableHead>
-                <TableHead>Visible to orgs</TableHead>
-                <TableHead>Auto Parse</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-12">Actions</TableHead>
+                <TableHead>Провайдер</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Название</TableHead>
+                <TableHead>По умолчанию</TableHead>
+                <TableHead>Видим организациям</TableHead>
+                <TableHead>Авторазбор</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead className="w-12">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pageRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-gray-500 py-6">
-                    No templates found.
+                    Шаблоны не найдены.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -148,14 +167,16 @@ export function TableAdminTemplates() {
                     <TableCell className="text-sm">
                       <ProviderCell provider={t.provider} />
                     </TableCell>
-                    <TableCell className="text-sm capitalize">{t.type}</TableCell>
+                    <TableCell className="text-sm">
+                      {TYPE_LABEL[t.type] ?? t.type}
+                    </TableCell>
                     <TableCell className="font-medium">{t.name}</TableCell>
                     <TableCell>
                       <Badge
                         variant={t.isDefault ? "default" : "outline"}
                         className="text-xs"
                       >
-                        {t.isDefault ? "Yes" : "No"}
+                        {t.isDefault ? "Да" : "Нет"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -163,7 +184,7 @@ export function TableAdminTemplates() {
                         variant={t.isVisibleToOrgs ? "default" : "outline"}
                         className="text-xs"
                       >
-                        {t.isVisibleToOrgs ? "Yes" : "No"}
+                        {t.isVisibleToOrgs ? "Да" : "Нет"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -173,15 +194,15 @@ export function TableAdminTemplates() {
                         }
                         className="text-xs"
                       >
-                        {t.defaultAutomatedParsingIsAllowed ? "On" : "Off"}
+                        {t.defaultAutomatedParsingIsAllowed ? "Вкл" : "Выкл"}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge
                         variant={t.status === "active" ? "default" : "outline"}
-                        className="text-xs capitalize"
+                        className="text-xs"
                       >
-                        {t.status}
+                        {STATUS_LABEL[t.status] ?? t.status}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -195,7 +216,7 @@ export function TableAdminTemplates() {
 
           <div className="flex items-center justify-end gap-4 mt-4">
             <span className="text-sm text-gray-400">
-              page {page} of {totalPages}
+              стр. {page} из {totalPages}
             </span>
             <div className="flex gap-2">
               <Button
@@ -203,14 +224,14 @@ export function TableAdminTemplates() {
                 disabled={page === 1}
                 onClick={() => setPage(page - 1)}
               >
-                previous
+                Назад
               </Button>
               <Button
                 variant="outline"
                 disabled={page >= totalPages}
                 onClick={() => setPage(page + 1)}
               >
-                next
+                Вперёд
               </Button>
             </div>
           </div>
@@ -222,8 +243,8 @@ export function TableAdminTemplates() {
       )}
       {error === null && rows.length === 0 && !loading && (
         <p className="text-xs text-muted-foreground mt-4">
-          No templates yet. Run <code>pnpm tsx scripts/seed-templates.ts --apply</code>{" "}
-          to seed the canonical 7, or click &quot;Add new&quot; above.
+          Шаблонов пока нет. Выполните <code>pnpm tsx scripts/seed-templates.ts --apply</code>,{" "}
+          чтобы создать 7 стандартных, или нажмите «Добавить» выше.
         </p>
       )}
 

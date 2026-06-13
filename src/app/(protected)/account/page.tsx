@@ -89,17 +89,17 @@ export default function AccountPage() {
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">ACCOUNT</h1>
+      <h1 className="text-2xl font-medium mt-2">ЭККАУНТ</h1>
 
       <div className="flex flex-row gap-6 items-stretch justify-center w-full max-w-5xl">
         {user && (
           <Card className="w-1/2 flex flex-col">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
-              <CardTitle className="text-xl font-medium">User:</CardTitle>
+              <CardTitle className="text-xl font-medium">Пользователь:</CardTitle>
               <Avatar>
                 <AvatarImage
                   src={user.image ?? undefined}
-                  alt={user.name ?? "User"}
+                  alt={user.name ?? "Пользователь"}
                 />
                 <AvatarFallback>
                   {user.name
@@ -116,11 +116,11 @@ export default function AccountPage() {
             <CardContent className="space-y-2 flex flex-1 flex-col">
               <div className="grid grid-cols-2 grid-rows-3 gap-2">
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  User Email:
+                  Email:
                 </span>
                 <span>{user.email}</span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Email Verified:
+                  Email подтверждён:
                 </span>
                 <span>
                   {user.emailVerified ? (
@@ -130,12 +130,12 @@ export default function AccountPage() {
                   )}
                 </span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  User Created At:
+                  Дата регистрации:
                 </span>
                 <span>
                   {user.createdAt
-                    ? new Date(user.createdAt).toLocaleString()
-                    : "N/A"}
+                    ? new Date(user.createdAt).toLocaleString("ru-RU")
+                    : "—"}
                 </span>
               </div>
 
@@ -151,12 +151,12 @@ export default function AccountPage() {
           <Card className="w-1/2 flex flex-col">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
-                Organization:
+                Организация:
               </CardTitle>
               <Avatar>
                 <AvatarImage
                   src={organization.logo ?? undefined}
-                  alt={organization.name ?? "Organization"}
+                  alt={organization.name ?? "Организация"}
                 />
                 <AvatarFallback>
                   {organization.name
@@ -175,15 +175,15 @@ export default function AccountPage() {
             <CardContent className="space-y-2 flex flex-1 flex-col">
               <div className="grid grid-cols-2 gap-2">
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Organization Name:
+                  Название организации:
                 </span>
                 <span>{organization.name}</span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Organization Slug:
+                  Идентификатор (slug):
                 </span>
                 <span className="truncate">{organization.slug}</span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Tax ID:
+                  ИНН:
                 </span>
                 <span>
                   {(() => {
@@ -192,14 +192,14 @@ export default function AccountPage() {
                         typeof organization.metadata === "string"
                           ? JSON.parse(organization.metadata)
                           : organization.metadata
-                      return parsed?.taxId || "N/A"
+                      return parsed?.taxId || "—"
                     } catch {
-                      return "N/A"
+                      return "—"
                     }
                   })()}
                 </span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Website:
+                  Веб-сайт:
                 </span>
                 <span className="truncate">
                   {organization.webUrl ? (
@@ -212,21 +212,21 @@ export default function AccountPage() {
                       {organization.webUrl}
                     </a>
                   ) : (
-                    "N/A"
+                    "—"
                   )}
                 </span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Address:
+                  Адрес:
                 </span>
-                <span>{organization.address || "N/A"}</span>
+                <span>{organization.address || "—"}</span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Contact Email:
+                  Контактный email:
                 </span>
-                <span className="truncate">{organization.email || "N/A"}</span>
+                <span className="truncate">{organization.email || "—"}</span>
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Contact Phone:
+                  Контактный телефон:
                 </span>
-                <span>{organization.phone || "N/A"}</span>
+                <span>{organization.phone || "—"}</span>
               </div>
 
               {memberRole === "owner" && (
@@ -247,7 +247,7 @@ export default function AccountPage() {
           <Card className="w-full max-w-5xl">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
-                Organization Members
+                Участники организации
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -261,7 +261,7 @@ export default function AccountPage() {
           <Card className="w-full max-w-5xl">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
-                API keys management - PREVIEW ONLY
+                Управление API-ключами — ТОЛЬКО ПРЕДПРОСМОТР
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -272,47 +272,47 @@ export default function AccountPage() {
           <Card className="w-full max-w-5xl">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
-                Account balance - PREVIEW ONLY
+                Баланс счёта — ТОЛЬКО ПРЕДПРОСМОТР
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex flex-row gap-4 items-center justify-start mb-6">
                 <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Current balance (EUR):
+                  Текущий баланс (EUR):
                 </span>
                 <span className="text-xl font-bold border border-gray-500 px-2 rounded-md">
                   12.30
                 </span>
                 <span className="font-medium dark:text-gray-400 text-gray-500 ml-8">
-                  Current balance (Tokens):
+                  Текущий баланс (токены):
                 </span>
                 <span className="text-xl font-bold border border-gray-500 px-2 rounded-md">
                   1,230
                 </span>
               </div>
               <Separator />
-              <div>Purchase credits</div>
+              <div>Купить кредиты</div>
               <div className="flex flex-row items-center justify-between">
                 <div className="border-2 border-gray-200 dark:border-gray-700 rounded-md py-4 px-6">
                   <div className="grid grid-cols-2 grid-rows-4 gap-x-6 gap-y-2">
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Product:
+                      Продукт:
                     </span>
                     <span className="font-bold text-lime-600 border border-gray-500 px-2 rounded-md text-center">
                       STARTER
                     </span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Price (EUR):
+                      Цена (EUR):
                     </span>
                     <span>20.00</span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Coins:
+                      Монеты:
                     </span>
                     <span>2,000</span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Purchase type:
+                      Тип покупки:
                     </span>
-                    <span>One-off</span>
+                    <span>Разовая</span>
                   </div>
                   <div className="flex flex-row gap-4 items-center justify-center mt-6">
                     <Link
@@ -320,30 +320,30 @@ export default function AccountPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Button>Purchase</Button>
+                      <Button>Купить</Button>
                     </Link>
                   </div>
                 </div>
                 <div className="border-2 border-gray-200 dark:border-gray-700 rounded-md py-4 px-6">
                   <div className="grid grid-cols-2 grid-rows-4 gap-x-6 gap-y-2">
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Product:
+                      Продукт:
                     </span>
                     <span className="font-bold text-blue-500 border border-gray-500 px-2 rounded-md text-center">
                       PRO
                     </span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Price (EUR):
+                      Цена (EUR):
                     </span>
                     <span>100.00</span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Coins:
+                      Монеты:
                     </span>
                     <span>10,000</span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Purchase type:
+                      Тип покупки:
                     </span>
-                    <span>One-off</span>
+                    <span>Разовая</span>
                   </div>
                   <div className="flex flex-row gap-4 items-center justify-center mt-6">
                     <Link
@@ -351,30 +351,30 @@ export default function AccountPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Button>Purchase</Button>
+                      <Button>Купить</Button>
                     </Link>
                   </div>
                 </div>
                 <div className="border-2 border-gray-200 dark:border-gray-700 rounded-md py-4 px-6">
                   <div className="grid grid-cols-2 grid-rows-4 gap-x-6 gap-y-2">
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Product:
+                      Продукт:
                     </span>
                     <span className="font-bold text-pink-500 border border-gray-500 px-2 rounded-md text-center">
                       ULTIMATE
                     </span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Price (EUR):
+                      Цена (EUR):
                     </span>
                     <span>500.00</span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Coins:
+                      Монеты:
                     </span>
                     <span>50,000</span>
                     <span className="font-medium dark:text-gray-400 text-gray-500">
-                      Purchase type:
+                      Тип покупки:
                     </span>
-                    <span>One-off</span>
+                    <span>Разовая</span>
                   </div>
                   <div className="flex flex-row gap-4 items-center justify-center mt-6">
                     <Link
@@ -382,7 +382,7 @@ export default function AccountPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Button>Purchase</Button>
+                      <Button>Купить</Button>
                     </Link>
                   </div>
                 </div>
@@ -393,7 +393,7 @@ export default function AccountPage() {
           <Card className="w-full max-w-5xl">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
-                Purchases history - PREVIEW ONLY
+                История покупок — ТОЛЬКО ПРЕДПРОСМОТР
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -404,7 +404,7 @@ export default function AccountPage() {
           <Card className="w-full max-w-5xl">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
-                Usage history - PREVIEW ONLY
+                История использования — ТОЛЬКО ПРЕДПРОСМОТР
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">

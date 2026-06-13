@@ -25,25 +25,25 @@ import type { TaskType, TaskPriority, TaskStatus } from "@/db/schema"
 import TaskEditDialog from "@/components/forms/form-task-edit"
 
 const TYPE_LABELS: Record<TaskType, string> = {
-  meet: "Meet",
-  call: "Call",
+  meet: "Встреча",
+  call: "Звонок",
   email: "Email",
-  offer: "Offer",
-  docs: "Docs",
-  other: "Other",
+  offer: "Предложение",
+  docs: "Документы",
+  other: "Другое",
 }
 
 const PRIORITY_LABELS: Record<TaskPriority, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
+  low: "Низкий",
+  medium: "Средний",
+  high: "Высокий",
 }
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-  closed: "Closed",
+  todo: "К выполнению",
+  in_progress: "В работе",
+  done: "Выполнено",
+  closed: "Закрыто",
 }
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "closed"]
@@ -65,7 +65,7 @@ const PRIORITY_COLOR: Record<TaskPriority, string> = {
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString("ru-RU", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -96,13 +96,13 @@ export function TaskCard({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to update status")
+          toast.error(err.error || "Не удалось обновить статус")
           return
         }
-        toast.success(`Moved to ${STATUS_LABELS[next]}`)
+        toast.success(`Перемещено: ${STATUS_LABELS[next]}`)
         onChanged()
       } catch {
-        toast.error("Failed to update status")
+        toast.error("Не удалось обновить статус")
       }
     })
   }
@@ -129,7 +129,7 @@ export function TaskCard({
           task={task}
           onSuccess={onChanged}
           trigger={
-            <Button variant="ghost" size="icon" aria-label="Edit task">
+            <Button variant="ghost" size="icon" aria-label="Редактировать задачу">
               <Pencil className="h-4 w-4" />
             </Button>
           }
@@ -145,11 +145,13 @@ export function TaskCard({
         <div className="space-y-1 text-muted-foreground">
           <div className="flex items-center gap-2 truncate">
             <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">Due {formatDate(task.dueDate)}</span>
+            <span className="truncate">Срок {formatDate(task.dueDate)}</span>
           </div>
           <div className="flex items-center gap-2 truncate">
             <UserIcon className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{task.assigneeName ?? "Unassigned"}</span>
+            <span className="truncate">
+              {task.assigneeName ?? "Без исполнителя"}
+            </span>
           </div>
           {task.clientName && (
             <div className="flex items-center gap-2 truncate">
@@ -183,7 +185,7 @@ export function TaskCard({
             <SelectContent>
               {STATUSES.map((s) => (
                 <SelectItem key={s} value={s}>
-                  Move to {STATUS_LABELS[s]}
+                  Перенести: {STATUS_LABELS[s]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -192,7 +194,7 @@ export function TaskCard({
 
         {task.userName && (
           <div className="text-xs text-muted-foreground pt-1">
-            Created by {task.userName}
+            Создал {task.userName}
           </div>
         )}
       </CardContent>

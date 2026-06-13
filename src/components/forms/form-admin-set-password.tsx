@@ -50,12 +50,12 @@ export default function AdminSetPasswordDialog({
 
   const onSubmit = (data: SetPasswordFormData) => {
     if (data.newPassword !== data.confirmPassword) {
-      toast.error("Passwords do not match")
+      toast.error("Пароли не совпадают")
       return
     }
 
     if (data.newPassword.length < 8) {
-      toast.error("Password must be at least 8 characters")
+      toast.error("Пароль должен содержать не менее 8 символов")
       return
     }
 
@@ -66,11 +66,11 @@ export default function AdminSetPasswordDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to set password")
+        toast.error(error.message || "Не удалось установить пароль")
         return
       }
 
-      toast.success(`Password updated for ${userName}`)
+      toast.success(`Пароль обновлён для ${userName}`)
       form.reset()
       onSuccess?.()
       setOpen(false)
@@ -81,12 +81,12 @@ export default function AdminSetPasswordDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Password
+          Пароль
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Set Password for {userName}</DialogTitle>
+          <DialogTitle>Установить пароль для {userName}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -95,7 +95,7 @@ export default function AdminSetPasswordDialog({
               name="newPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">New Password</FormLabel>
+                  <FormLabel className="text-gray-400">Новый пароль</FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
                   </FormControl>
@@ -109,7 +109,7 @@ export default function AdminSetPasswordDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-gray-400">
-                    Confirm Password
+                    Подтвердите пароль
                   </FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
@@ -120,7 +120,7 @@ export default function AdminSetPasswordDialog({
             />
             <DialogFooter>
               <LoadingButton type="submit" className="w-full" loading={isPending}>
-                Set Password
+                Установить пароль
               </LoadingButton>
             </DialogFooter>
           </form>

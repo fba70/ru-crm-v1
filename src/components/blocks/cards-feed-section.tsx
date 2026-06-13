@@ -54,15 +54,21 @@ const CATEGORIES = [
 ] as const
 
 const CATEGORY_LABEL: Record<(typeof CATEGORIES)[number], string> = {
-  client_activity: "Client activity",
-  colleagues_activity: "Colleagues activity",
-  business_info: "Business info",
-  action_required: "Action required",
-  ambiguity: "Ambiguity",
-  data_intelligence: "Data intelligence",
-  momentum: "Momentum",
-  log_only: "Log only",
-  new_order: "New order",
+  client_activity: "Активность клиента",
+  colleagues_activity: "Активность коллег",
+  business_info: "Бизнес-информация",
+  action_required: "Требуется действие",
+  ambiguity: "Неоднозначность",
+  data_intelligence: "Аналитика данных",
+  momentum: "Динамика",
+  log_only: "Только запись",
+  new_order: "Новый заказ",
+}
+
+// UI display labels for card priority (DB enum values stay English).
+const PRIORITY_LABEL: Record<(typeof PRIORITIES)[number], string> = {
+  normal: "Обычный",
+  high: "Высокий",
 }
 
 function usePaged<T>(items: T[]) {
@@ -228,14 +234,14 @@ export function CardsFeedSection() {
     <Card className="w-full">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle className="text-xl tracking-wide">
-          Good Morning Cards
+          Утренние карточки
         </CardTitle>
         <ExploreSourcesDialog
           onCardsGenerated={load}
           trigger={
             <Button size="sm">
               <Sparkles className="h-4 w-4 mr-1" />
-              Explore sources
+              Исследовать источники
             </Button>
           }
         />
@@ -243,30 +249,30 @@ export function CardsFeedSection() {
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Input
-            placeholder="Search in messages…"
+            placeholder="Поиск в сообщениях…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="flex-1 min-w-50"
           />
           <Select value={priority} onValueChange={setPriority}>
             <SelectTrigger className="w-fit">
-              <SelectValue placeholder="Priority" />
+              <SelectValue placeholder="Приоритет" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All priorities</SelectItem>
+              <SelectItem value={ALL}>Все приоритеты</SelectItem>
               {PRIORITIES.map((p) => (
                 <SelectItem key={p} value={p}>
-                  {p}
+                  {PRIORITY_LABEL[p]}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="w-fit">
-              <SelectValue placeholder="Category" />
+              <SelectValue placeholder="Категория" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All categories</SelectItem>
+              <SelectItem value={ALL}>Все категории</SelectItem>
               {CATEGORIES.map((c) => (
                 <SelectItem key={c} value={c}>
                   {CATEGORY_LABEL[c]}
@@ -282,7 +288,7 @@ export function CardsFeedSection() {
               htmlFor="cards-from"
               className="text-xs text-muted-foreground"
             >
-              From
+              С
             </Label>
             <Input
               id="cards-from"
@@ -294,7 +300,7 @@ export function CardsFeedSection() {
           </div>
           <div className="flex items-center gap-2">
             <Label htmlFor="cards-to" className="text-xs text-muted-foreground">
-              To
+              По
             </Label>
             <Input
               id="cards-to"
@@ -315,7 +321,7 @@ export function CardsFeedSection() {
                 setTo(todayIso())
               }}
             >
-              Last day
+              За день
             </Button>
             <Button
               type="button"
@@ -327,7 +333,7 @@ export function CardsFeedSection() {
                 setTo(todayIso())
               }}
             >
-              Last week
+              За неделю
             </Button>
           </div>
           <div className="flex items-center gap-2">
@@ -340,12 +346,12 @@ export function CardsFeedSection() {
               htmlFor="cards-include-rejected"
               className="text-xs cursor-pointer"
             >
-              Include rejected ({rejectedCount})
+              Показать отклонённые ({rejectedCount})
             </Label>
           </div>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-xs text-muted-foreground">
-              {filtered.length} of {cards.length} cards
+              {filtered.length} из {cards.length} карточек
             </span>
             <Button
               variant="ghost"
@@ -354,7 +360,7 @@ export function CardsFeedSection() {
               disabled={!hasFilters}
             >
               <X className="h-4 w-4 mr-1" />
-              Clear filters
+              Сбросить фильтры
             </Button>
           </div>
         </div>
@@ -364,9 +370,9 @@ export function CardsFeedSection() {
             <Loader className="animate-spin h-6 w-6" />
           </div>
         ) : cards.length === 0 ? (
-          <EmptyState label="No cards yet." />
+          <EmptyState label="Пока нет карточек." />
         ) : filtered.length === 0 ? (
-          <EmptyState label="No cards match the filters." />
+          <EmptyState label="Нет карточек по заданным фильтрам." />
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

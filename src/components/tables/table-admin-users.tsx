@@ -29,6 +29,15 @@ import AdminSetOrgRoleDialog from "@/components/forms/form-admin-set-org-role"
 import AdminEditUserOrgsDialog from "@/components/forms/form-admin-edit-user-orgs"
 import type { UserOrgInfo } from "@/app/api/admin/user-organizations/route"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 type AdminUser = {
   id: string
   name: string
@@ -100,14 +109,14 @@ export function TableAdminUsers() {
         await authClient.admin.listUsers({ query })
 
       if (fetchError) {
-        setError(fetchError.message || "Failed to fetch users")
+        setError(fetchError.message || "Не удалось загрузить пользователей")
         return
       }
 
       setUsers((data?.users as unknown as AdminUser[]) ?? [])
       setTotal(data?.total ?? 0)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -144,7 +153,7 @@ export function TableAdminUsers() {
   if (error) {
     return (
       <div className="text-red-500 text-lg">
-        Error loading users: {error}
+        Ошибка загрузки пользователей: {error}
       </div>
     )
   }
@@ -153,7 +162,7 @@ export function TableAdminUsers() {
     <>
       <div className="flex flex-row flex-wrap items-center gap-2 mb-4">
         <Input
-          placeholder="Search by name"
+          placeholder="Поиск по имени"
           value={searchName}
           onChange={(e) => {
             setSearchName(e.target.value)
@@ -163,7 +172,7 @@ export function TableAdminUsers() {
           className="max-w-48"
         />
         <Input
-          placeholder="Search by email"
+          placeholder="Поиск по email"
           value={searchEmail}
           onChange={(e) => {
             setSearchEmail(e.target.value)
@@ -173,7 +182,7 @@ export function TableAdminUsers() {
           className="max-w-48"
         />
         <Input
-          placeholder="Search by organization"
+          placeholder="Поиск по организации"
           value={searchOrg}
           onChange={(e) => {
             setSearchOrg(e.target.value)
@@ -189,19 +198,19 @@ export function TableAdminUsers() {
           }}
         >
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="Filter role" />
+            <SelectValue placeholder="Роль" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All roles</SelectItem>
-            <SelectItem value="user">User</SelectItem>
-            <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="all">Все роли</SelectItem>
+            <SelectItem value="user">Пользователь</SelectItem>
+            <SelectItem value="admin">Администратор</SelectItem>
           </SelectContent>
         </Select>
         <Button variant="outline" onClick={refresh}>
           <RefreshCcw className="h-4 w-4" />
         </Button>
         <span className="ml-auto text-sm text-gray-400">
-          {total} user{total !== 1 && "s"} total
+          {total} {plural(total, ["пользователь", "пользователя", "пользователей"])} всего
         </span>
       </div>
 
@@ -214,13 +223,13 @@ export function TableAdminUsers() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
+                <TableHead>Имя</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Banned</TableHead>
-                <TableHead>Organization</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>Роль</TableHead>
+                <TableHead>Блокировка</TableHead>
+                <TableHead>Организация</TableHead>
+                <TableHead>Создан</TableHead>
+                <TableHead>Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -235,7 +244,7 @@ export function TableAdminUsers() {
                 return filteredUsers.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-gray-500">
-                    No users found
+                    Пользователи не найдены
                   </TableCell>
                 </TableRow>
               ) : (
@@ -249,12 +258,14 @@ export function TableAdminUsers() {
                           user.role === "admin" ? "default" : "secondary"
                         }
                       >
-                        {user.role || "user"}
+                        {user.role === "admin"
+                          ? "Администратор"
+                          : "Пользователь"}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       {user.banned ? (
-                        <Badge variant="destructive">Banned</Badge>
+                        <Badge variant="destructive">Заблокирован</Badge>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
@@ -265,7 +276,7 @@ export function TableAdminUsers() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {new Date(user.createdAt).toLocaleDateString()}
+                      {new Date(user.createdAt).toLocaleDateString("ru-RU")}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -316,7 +327,7 @@ export function TableAdminUsers() {
 
           <div className="flex items-center justify-end gap-4 mt-4">
             <span className="text-sm text-gray-400">
-              page {page} of {totalPages || 1}
+              стр. {page} из {totalPages || 1}
             </span>
             <div className="flex gap-2">
               <Button
@@ -324,14 +335,14 @@ export function TableAdminUsers() {
                 disabled={page === 1}
                 onClick={() => setPage(page - 1)}
               >
-                previous
+                Назад
               </Button>
               <Button
                 variant="outline"
                 disabled={page >= totalPages}
                 onClick={() => setPage(page + 1)}
               >
-                next
+                Вперёд
               </Button>
             </div>
           </div>

@@ -60,7 +60,6 @@ import {
   PromptInputSubmit,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
-import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
 import { SpeechInput } from "@/components/ai-elements/speech-input"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import {
@@ -116,13 +115,6 @@ import { MODELS } from "@/lib/llm-models"
 // Model list lives in src/lib/llm-models.ts so the chat picker, the
 // Explore-sources dialog, and the /api/chat route share one source of truth.
 
-const SUGGESTIONS = [
-  "What can you help me with?",
-  "Summarize a document for me",
-  "Help me write an email",
-  "Explain a concept",
-]
-
 const ACCEPTED_FILE_TYPES = [
   "image/png",
   "image/jpeg",
@@ -151,7 +143,7 @@ function validateFiles(files: FileUIPart[]): FileUIPart[] {
   for (const file of files) {
     if (!isFileTypeSupported(file.mediaType)) {
       toast.error(
-        `Unsupported file type: ${file.mediaType}. Supported: images, .txt, .md, .csv, .json`,
+        `Неподдерживаемый тип файла: ${file.mediaType}. Поддерживаются: изображения, .txt, .md, .csv, .json`,
       )
       continue
     }
@@ -211,13 +203,6 @@ export function AIChat({ className }: { className?: string }) {
         text: message.text,
         files: validFiles,
       })
-    },
-    [sendMessage],
-  )
-
-  const handleSuggestionClick = useCallback(
-    (suggestion: string) => {
-      sendMessage({ text: suggestion })
     },
     [sendMessage],
   )
@@ -286,7 +271,7 @@ export function AIChat({ className }: { className?: string }) {
             <span className="bg-linear-to-r from-orange-500 via-pink-500 to-blue-400 bg-clip-text text-transparent">
               business OS
             </span>{" "}
-            chat
+            чат
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -304,7 +289,8 @@ export function AIChat({ className }: { className?: string }) {
               </TooltipTrigger>
               <TooltipContent>
                 <p>
-                  {enableSources ? "Disable" : "Enable"} internal sources search
+                  {enableSources ? "Выключить" : "Включить"} поиск по внутренним
+                  источникам
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -324,7 +310,7 @@ export function AIChat({ className }: { className?: string }) {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{enableSearch ? "Disable" : "Enable"} web search</p>
+                  <p>{enableSearch ? "Выключить" : "Включить"} веб-поиск</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -345,9 +331,9 @@ export function AIChat({ className }: { className?: string }) {
               </Button>
             </ModelSelectorTrigger>
             <ModelSelectorContent>
-              <ModelSelectorInput placeholder="Search models..." />
+              <ModelSelectorInput placeholder="Поиск моделей..." />
               <ModelSelectorList>
-                <ModelSelectorGroup heading="Available Models">
+                <ModelSelectorGroup heading="Доступные модели">
                   {MODELS.map((model) => (
                     <ModelSelectorItem
                       key={model.key}
@@ -390,7 +376,7 @@ export function AIChat({ className }: { className?: string }) {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Clear conversation</p>
+                  <p>Очистить переписку</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -413,7 +399,7 @@ export function AIChat({ className }: { className?: string }) {
                   className="gap-1"
                 >
                   <Save className="size-4" />
-                  Save Chat
+                  Сохранить чат
                 </Button>
               }
             />
@@ -426,8 +412,8 @@ export function AIChat({ className }: { className?: string }) {
         <ConversationContent>
           {messages.length === 0 ? (
             <ConversationEmptyState
-              title="Talk to business OS assistant!"
-              description="Ask anything — I can answer questions, provide data analysis, and more."
+              title="Поговорите с ассистентом business OS!"
+              description="Спрашивайте о чём угодно — я отвечу на вопросы, помогу с анализом данных и не только."
               icon={
                 <Image
                   src="/logo.png"
@@ -455,22 +441,6 @@ export function AIChat({ className }: { className?: string }) {
 
       {/* Input area */}
       <div className="border-t p-4">
-        {/* Suggestions when empty */}
-        {messages.length === 0 && (
-          <div className="mb-3">
-            <Suggestions>
-              {SUGGESTIONS.map((s) => (
-                <Suggestion
-                  key={s}
-                  suggestion={s}
-                  onClick={handleSuggestionClick}
-                  disabled={isLoading}
-                />
-              ))}
-            </Suggestions>
-          </div>
-        )}
-
         <PromptInputProvider>
           <PromptInput
             onSubmit={handleSubmit}
@@ -478,7 +448,7 @@ export function AIChat({ className }: { className?: string }) {
             maxFileSize={MAX_FILE_SIZE}
             onError={(err) => toast.error(err.message)}
           >
-            <PromptInputTextarea placeholder="Type a message..." />
+            <PromptInputTextarea placeholder="Введите сообщение..." />
             <PromptInputTools className="pr-3 flex flex-row gap-2">
               <PromptInputActionMenu>
                 <PromptInputActionMenuTrigger />
@@ -497,11 +467,10 @@ export function AIChat({ className }: { className?: string }) {
         </PromptInputProvider>
 
         <p className="mt-3 px-6 text-xs leading-snug text-muted-foreground text-center">
-          truffalo.ai AI-chat uses large language models for agentic search and
-          reasoning purposes. These models can make mistakes or give incorrect
-          recommendations. <br /> When the information you want to use is
-          important for your business processes or decisions, we recommend to
-          double-check with other sources.
+          AI-чат business OS использует большие языковые модели для агентного
+          поиска и рассуждений. Эти модели могут ошибаться или давать неверные
+          рекомендации. <br /> Если информация важна для ваших бизнес-процессов
+          или решений, рекомендуем перепроверять её по другим источникам.
         </p>
       </div>
     </div>
@@ -555,7 +524,7 @@ function ChatMessage({
       <MessageContent className={hasSpec ? "w-full max-w-full" : undefined}>
         {showThinking && (
           <Shimmer duration={1} className="text-sm">
-            Thinking...
+            Думаю...
           </Shimmer>
         )}
         {message.parts.map((part, index) => {
@@ -737,16 +706,16 @@ function ChatMessage({
               openPanel({
                 spec,
                 messageId: message.id,
-                title: "Detail view",
+                title: "Подробности",
               })
             }
           >
             <div className="flex items-center justify-between px-3 py-2 border-b">
               <span className="text-xs font-medium text-muted-foreground">
-                Interactive view
+                Интерактивный вид
               </span>
               <span className="text-xs text-muted-foreground">
-                Click to expand ↗
+                Нажмите, чтобы развернуть ↗
               </span>
             </div>
             <InlinePreview spec={spec} loading={isLastAssistant} />
@@ -844,7 +813,7 @@ class RendererErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <p className="text-xs text-muted-foreground italic py-2">
-          Could not render structured content.
+          Не удалось отобразить структурированный контент.
         </p>
       )
     }
@@ -869,7 +838,7 @@ function CopyButton({ text }: { text: string }) {
   }, [text])
 
   return (
-    <MessageAction tooltip="Copy" onClick={handleCopy}>
+    <MessageAction tooltip="Копировать" onClick={handleCopy}>
       {copied ? (
         <CheckIcon className="size-3.5" />
       ) : (

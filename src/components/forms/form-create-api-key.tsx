@@ -40,9 +40,9 @@ type ApiKey = {
 }
 
 const expirationOptions = [
-  { label: "1 month (default)", value: 60 * 60 * 24 * 30 },
-  { label: "1 year", value: 60 * 60 * 24 * 365 },
-  { label: "Never", value: 60 * 60 * 24 * 7300 },
+  { label: "1 месяц (по умолчанию)", value: 60 * 60 * 24 * 30 },
+  { label: "1 год", value: 60 * 60 * 24 * 365 },
+  { label: "Никогда", value: 60 * 60 * 24 * 7300 },
 ]
 
 export default function CreateApiKeyDialog({
@@ -59,7 +59,7 @@ export default function CreateApiKeyDialog({
 
   const form = useForm<ApiKey>({
     defaultValues: {
-      name: "My API key",
+      name: "Мой API-ключ",
       expiresIn: 60 * 60 * 24 * 30, // 30 days
       prefix: "PROJECT_",
       // description: "",
@@ -81,14 +81,14 @@ export default function CreateApiKeyDialog({
       })
 
       if (error) {
-        setError(error.message || "Something went wrong")
-        toast.error(error.message || "Something went wrong")
+        setError(error.message || "Что-то пошло не так")
+        toast.error(error.message || "Что-то пошло не так")
       } else {
         setApiKey(data?.key || null)
         console.log("Created API key:", data)
         if (onSuccess) onSuccess()
-        setSuccess("User data has been updated successfully!")
-        toast.success("User data has been updated successfully!")
+        setSuccess("API-ключ успешно создан!")
+        toast.success("API-ключ успешно создан!")
       }
 
       // form.reset()
@@ -100,7 +100,7 @@ export default function CreateApiKeyDialog({
     if (apiKey) {
       await navigator.clipboard.writeText(apiKey)
       setCopied(true)
-      toast.success("API key copied to clipboard!")
+      toast.success("API-ключ скопирован в буфер обмена!")
       setTimeout(() => setCopied(false), 2000)
     }
   }
@@ -109,12 +109,12 @@ export default function CreateApiKeyDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="default" className="">
-          Add New API Key
+          Добавить API-ключ
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader className="mb-2">
-          <DialogTitle>Add New API Key</DialogTitle>
+          <DialogTitle>Добавить API-ключ</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
@@ -124,7 +124,7 @@ export default function CreateApiKeyDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">API key name</FormLabel>
+                  <FormLabel className="text-gray-400">Название API-ключа</FormLabel>
                   <FormControl>
                     <Input id="name" {...field} />
                   </FormControl>
@@ -137,7 +137,7 @@ export default function CreateApiKeyDialog({
               name="expiresIn"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Expiration</FormLabel>
+                  <FormLabel className="text-gray-400">Срок действия</FormLabel>
                   <Select
                     onValueChange={(value) =>
                       setValue("expiresIn", parseInt(value))
@@ -146,7 +146,7 @@ export default function CreateApiKeyDialog({
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select expiration" />
+                        <SelectValue placeholder="Выберите срок" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -182,7 +182,7 @@ export default function CreateApiKeyDialog({
                 className="w-full"
                 loading={isPending}
               >
-                Generate
+                Сгенерировать
               </LoadingButton>
             </DialogFooter>
           </form>
@@ -191,8 +191,9 @@ export default function CreateApiKeyDialog({
         {apiKey && (
           <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-md">
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-              <strong>Important:</strong> This API key will only be shown once.
-              Make sure to copy it now as it cannot be retrieved later.
+              <strong>Важно:</strong> Этот API-ключ показывается только один
+              раз. Обязательно скопируйте его сейчас — позже получить его будет
+              нельзя.
             </p>
             <div className="flex items-center gap-2">
               <Input
@@ -222,7 +223,7 @@ export default function CreateApiKeyDialog({
             }}
             className="w-full mt-4"
           >
-            Close
+            Закрыть
           </Button>
         )}
       </DialogContent>

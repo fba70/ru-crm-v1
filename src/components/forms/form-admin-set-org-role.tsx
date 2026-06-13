@@ -21,6 +21,13 @@ import {
 import { toast } from "sonner"
 import type { UserOrgInfo } from "@/app/api/admin/user-organizations/route"
 
+// Display labels — DB enum keys stay English.
+const ORG_ROLE_LABEL: Record<string, string> = {
+  owner: "Владелец",
+  admin: "Администратор",
+  member: "Участник",
+}
+
 export default function AdminSetOrgRoleDialog({
   userName,
   orgDetails,
@@ -69,16 +76,16 @@ export default function AdminSetOrgRoleDialog({
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
-          toast.error(data.error || "Failed to update org role")
+          toast.error(data.error || "Не удалось изменить роль в организации")
           return
         }
         toast.success(
-          `Org role updated to "${role}" for ${userName} in ${selectedOrg?.organizationName}`,
+          `Роль в организации изменена на «${ORG_ROLE_LABEL[role] ?? role}» для ${userName} в ${selectedOrg?.organizationName}`,
         )
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to update org role")
+        toast.error("Не удалось изменить роль в организации")
       }
     })
   }
@@ -87,17 +94,17 @@ export default function AdminSetOrgRoleDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Org Role
+          Роль в орг.
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Set Org Role for {userName}</DialogTitle>
+          <DialogTitle>Роль в организации для {userName}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           {orgDetails.length > 1 && (
             <div className="space-y-2">
-              <label className="text-sm text-gray-400">Organization</label>
+              <label className="text-sm text-gray-400">Организация</label>
               <Select
                 value={selectedMemberId}
                 onValueChange={handleOrgChange}
@@ -108,7 +115,7 @@ export default function AdminSetOrgRoleDialog({
                 <SelectContent>
                   {orgDetails.map((org) => (
                     <SelectItem key={org.memberId} value={org.memberId}>
-                      {org.organizationName} ({org.orgRole})
+                      {org.organizationName} ({ORG_ROLE_LABEL[org.orgRole] ?? org.orgRole})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -118,13 +125,13 @@ export default function AdminSetOrgRoleDialog({
 
           {orgDetails.length === 1 && (
             <p className="text-sm text-gray-400">
-              Organization: <span className="text-foreground">{orgDetails[0].organizationName}</span>{" "}
-              (current role: <span className="text-foreground">{orgDetails[0].orgRole}</span>)
+              Организация: <span className="text-foreground">{orgDetails[0].organizationName}</span>{" "}
+              (текущая роль: <span className="text-foreground">{ORG_ROLE_LABEL[orgDetails[0].orgRole] ?? orgDetails[0].orgRole}</span>)
             </p>
           )}
 
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">New Role</label>
+            <label className="text-sm text-gray-400">Новая роль</label>
             <Select
               value={role}
               onValueChange={(val) =>
@@ -135,9 +142,9 @@ export default function AdminSetOrgRoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="owner">Owner</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="owner">Владелец</SelectItem>
+                <SelectItem value="admin">Администратор</SelectItem>
+                <SelectItem value="member">Участник</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -148,7 +155,7 @@ export default function AdminSetOrgRoleDialog({
               className="w-full"
               loading={isPending}
             >
-              Save Org Role
+              Сохранить роль
             </LoadingButton>
           </DialogFooter>
         </div>

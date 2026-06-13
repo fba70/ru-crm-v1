@@ -71,8 +71,8 @@ export function AcceptInvitationContent({
       invitationId: invitation.id,
     })
     if (error) {
-      setAcceptError(error.message || "Failed to accept invitation")
-      toast.error(error.message || "Failed to accept invitation")
+      setAcceptError(error.message || "Не удалось принять приглашение")
+      toast.error(error.message || "Не удалось принять приглашение")
       setAcceptState("error")
       return
     }
@@ -83,7 +83,7 @@ export function AcceptInvitationContent({
       })
     }
     setAcceptState("success")
-    toast.success("Invitation accepted!")
+    toast.success("Приглашение принято!")
     setTimeout(() => router.push("/dashboard"), 1200)
   }
 
@@ -98,7 +98,7 @@ export function AcceptInvitationContent({
           <CardContent className="flex flex-col items-center gap-4 pt-6">
             <Loader className="h-6 w-6 animate-spin" />
             <p className="text-sm text-muted-foreground">
-              Loading invitation…
+              Загрузка приглашения…
             </p>
           </CardContent>
         </Card>
@@ -112,12 +112,12 @@ export function AcceptInvitationContent({
         <Card className="w-full max-w-md">
           <CardContent className="flex flex-col items-center gap-4 pt-6">
             <XCircle className="h-12 w-12 text-red-500" />
-            <p className="text-lg font-medium">Invalid invitation</p>
+            <p className="text-lg font-medium">Недействительное приглашение</p>
             <p className="text-sm text-muted-foreground text-center">
-              {invitationError ?? "This invitation link is no longer valid."}
+              {invitationError ?? "Эта ссылка-приглашение больше недействительна."}
             </p>
             <Button onClick={() => router.push("/sign-in")} className="w-full">
-              Go to Sign in
+              Перейти ко входу
             </Button>
           </CardContent>
         </Card>
@@ -131,9 +131,9 @@ export function AcceptInvitationContent({
         <Card className="w-full max-w-md">
           <CardContent className="flex flex-col items-center gap-4 pt-6">
             <CheckCircle className="h-12 w-12 text-green-500" />
-            <p className="text-lg font-medium">Invitation accepted!</p>
+            <p className="text-lg font-medium">Приглашение принято!</p>
             <p className="text-sm text-muted-foreground">
-              Taking you to the dashboard…
+              Перенаправляем на панель…
             </p>
           </CardContent>
         </Card>
@@ -152,22 +152,23 @@ export function AcceptInvitationContent({
           <Card className="w-full max-w-md">
             <CardHeader>
               <CardTitle className="text-lg text-center">
-                Wrong account
+                Не тот аккаунт
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4">
               <AlertTriangle className="h-10 w-10 text-amber-500" />
               <p className="text-sm text-center text-muted-foreground">
-                This invitation was sent to{" "}
+                Это приглашение было отправлено на{" "}
                 <strong className="text-foreground">{invitation.email}</strong>
-                , but you are signed in as{" "}
+                , но вы вошли как{" "}
                 <strong className="text-foreground">
                   {session.user.email}
                 </strong>
                 .
               </p>
               <p className="text-sm text-center text-muted-foreground">
-                Sign out first, then open this invitation link again.
+                Сначала выйдите из аккаунта, затем снова откройте эту
+                ссылку-приглашение.
               </p>
               <Button
                 variant="outline"
@@ -178,7 +179,7 @@ export function AcceptInvitationContent({
                   router.refresh()
                 }}
               >
-                Sign out
+                Выйти
               </Button>
             </CardContent>
           </Card>
@@ -192,17 +193,17 @@ export function AcceptInvitationContent({
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="text-lg text-center">
-              You&apos;ve been invited
+              Вас пригласили
             </CardTitle>
             {invitation.organizationName && (
               <CardDescription className="text-center">
-                Join <strong>{invitation.organizationName}</strong>
+                Присоединиться к <strong>{invitation.organizationName}</strong>
               </CardDescription>
             )}
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <p className="text-sm text-center text-muted-foreground">
-              Signed in as{" "}
+              Вы вошли как{" "}
               <strong className="text-foreground">{session.user.email}</strong>
               .
             </p>
@@ -214,7 +215,7 @@ export function AcceptInvitationContent({
               loading={acceptState === "accepting"}
               onClick={acceptNow}
             >
-              Accept invitation
+              Принять приглашение
             </LoadingButton>
           </CardContent>
         </Card>
@@ -247,16 +248,16 @@ function resolveInvitation(initial: PublicInvitation | null): {
   if (!initial) {
     return {
       invitation: null,
-      invitationError: "Invitation not found or has expired",
+      invitationError: "Приглашение не найдено или его срок истёк",
     }
   }
   if (initial.expired) {
-    return { invitation: null, invitationError: "This invitation has expired." }
+    return { invitation: null, invitationError: "Срок действия этого приглашения истёк." }
   }
   if (initial.status !== "pending") {
     return {
       invitation: null,
-      invitationError: `This invitation is no longer active (status: ${initial.status}).`,
+      invitationError: `Это приглашение больше не активно (статус: ${initial.status}).`,
     }
   }
   return {
@@ -278,14 +279,14 @@ function resolveInvitation(initial: PublicInvitation | null): {
 
 const signupSchema = z
   .object({
-    name: z.string().min(1, { message: "Name is required" }),
+    name: z.string().min(1, { message: "Введите имя" }),
     password: passwordSchema,
     passwordConfirmation: z
       .string()
-      .min(1, { message: "Please confirm password" }),
+      .min(1, { message: "Подтвердите пароль" }),
   })
   .refine((d) => d.password === d.passwordConfirmation, {
-    message: "Passwords do not match",
+    message: "Пароли не совпадают",
     path: ["passwordConfirmation"],
   })
 
@@ -321,11 +322,11 @@ function SignUpForInvitation({
       if (error) {
         if (error.status === 422) {
           const msg =
-            "An account with this email already exists — sign in instead."
+            "Аккаунт с этим email уже существует — войдите вместо регистрации."
           setFormError(msg)
           toast.error(msg)
         } else {
-          const msg = error.message || "Failed to create account"
+          const msg = error.message || "Не удалось создать аккаунт"
           setFormError(msg)
           toast.error(msg)
         }
@@ -338,18 +339,18 @@ function SignUpForInvitation({
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-lg">You&apos;ve been invited</CardTitle>
+        <CardTitle className="text-lg">Вас пригласили</CardTitle>
         <CardDescription>
           {invitation.organizationName ? (
             <>
-              Join <strong>{invitation.organizationName}</strong>. Create an
-              account for{" "}
+              Присоединиться к <strong>{invitation.organizationName}</strong>.
+              Создайте аккаунт для{" "}
               <strong className="text-foreground">{invitation.email}</strong>
               .
             </>
           ) : (
             <>
-              Create an account for{" "}
+              Создайте аккаунт для{" "}
               <strong className="text-foreground">{invitation.email}</strong>
               .
             </>
@@ -365,7 +366,7 @@ function SignUpForInvitation({
                 <Input value={invitation.email} disabled />
               </FormControl>
               <p className="text-xs text-muted-foreground">
-                Locked to the invited address.
+                Привязан к приглашённому адресу.
               </p>
             </FormItem>
 
@@ -374,9 +375,9 @@ function SignUpForInvitation({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Name</FormLabel>
+                  <FormLabel>Имя</FormLabel>
                   <FormControl>
-                    <Input placeholder="Your name" {...field} />
+                    <Input placeholder="Ваше имя" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -388,11 +389,11 @@ function SignUpForInvitation({
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Password</FormLabel>
+                  <FormLabel>Пароль</FormLabel>
                   <FormControl>
                     <PasswordInput
                       autoComplete="new-password"
-                      placeholder="Password"
+                      placeholder="Пароль"
                       {...field}
                     />
                   </FormControl>
@@ -406,11 +407,11 @@ function SignUpForInvitation({
               name="passwordConfirmation"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Confirm password</FormLabel>
+                  <FormLabel>Подтвердите пароль</FormLabel>
                   <FormControl>
                     <PasswordInput
                       autoComplete="new-password"
-                      placeholder="Confirm password"
+                      placeholder="Подтвердите пароль"
                       {...field}
                     />
                   </FormControl>
@@ -426,20 +427,20 @@ function SignUpForInvitation({
             )}
 
             <LoadingButton type="submit" loading={isPending} className="w-full">
-              Create account & accept invitation
+              Создать аккаунт и принять приглашение
             </LoadingButton>
           </form>
         </Form>
 
         <div className="mt-4 pt-4 border-t text-center text-xs text-muted-foreground">
-          Already have an account with <strong>{invitation.email}</strong>?{" "}
+          Уже есть аккаунт с <strong>{invitation.email}</strong>?{" "}
           <Link
             href={`/sign-in?callbackURL=/accept-invitation/${invitation.id}`}
             className="underline"
           >
-            Sign in
+            Войдите
           </Link>{" "}
-          and you&apos;ll be brought back to accept.
+          — и вы вернётесь сюда, чтобы принять приглашение.
         </div>
       </CardContent>
     </Card>

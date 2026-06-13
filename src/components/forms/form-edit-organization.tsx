@@ -92,13 +92,13 @@ export default function UpdateOrganizationDialog({
           })
 
         if (slugError) {
-          setError(slugError.message || "Error checking slug availability")
-          toast.error(slugError.message || "Error checking slug availability")
+          setError(slugError.message || "Ошибка проверки доступности идентификатора")
+          toast.error(slugError.message || "Ошибка проверки доступности идентификатора")
           return
         }
 
         if (!slugAvailable) {
-          setError("Slug is already taken by another organization")
+          setError("Этот идентификатор уже занят другой организацией")
           return
         }
       }
@@ -119,11 +119,11 @@ export default function UpdateOrganizationDialog({
       })
 
       if (error) {
-        setError(error.message || "Something went wrong")
+        setError(error.message || "Что-то пошло не так")
       } else {
         if (onSuccess) onSuccess()
-        setSuccess("Organization data has been updated successfully!")
-        toast.success("Organization data has been updated successfully!")
+        setSuccess("Данные организации успешно обновлены!")
+        toast.success("Данные организации успешно обновлены!")
       }
 
       form.reset()
@@ -135,11 +135,11 @@ export default function UpdateOrganizationDialog({
     const file = e.target.files?.[0]
     if (!file) return
     if (!["image/png", "image/jpeg"].includes(file.type)) {
-      alert("Only PNG or JPEG allowed")
+      alert("Допустимы только PNG или JPEG")
       return
     }
     if (file.size > 300 * 1024) {
-      alert("File must be less than 300kb")
+      alert("Файл должен быть меньше 300 КБ")
       return
     }
     const reader = new FileReader()
@@ -155,12 +155,12 @@ export default function UpdateOrganizationDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="default" className="mt-4">
-          Edit Organization Profile
+          Редактировать организацию
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader className="mb-2">
-          <DialogTitle>Edit Organization Profile</DialogTitle>
+          <DialogTitle>Редактировать организацию</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -169,7 +169,7 @@ export default function UpdateOrganizationDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name</FormLabel>
+                  <FormLabel className="text-gray-400">Название</FormLabel>
                   <FormControl>
                     <Input id="name" {...field} />
                   </FormControl>
@@ -182,7 +182,7 @@ export default function UpdateOrganizationDialog({
               name="slug"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Slug</FormLabel>
+                  <FormLabel className="text-gray-400">Идентификатор (slug)</FormLabel>
                   <FormControl>
                     <Input id="slug" {...field} />
                   </FormControl>
@@ -195,7 +195,7 @@ export default function UpdateOrganizationDialog({
               name="taxId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Tax ID</FormLabel>
+                  <FormLabel className="text-gray-400">ИНН</FormLabel>
                   <FormControl>
                     <Input id="taxId" {...field} />
                   </FormControl>
@@ -208,7 +208,7 @@ export default function UpdateOrganizationDialog({
               name="webUrl"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Website</FormLabel>
+                  <FormLabel className="text-gray-400">Веб-сайт</FormLabel>
                   <FormControl>
                     <Input
                       id="webUrl"
@@ -225,11 +225,11 @@ export default function UpdateOrganizationDialog({
               name="address"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Address</FormLabel>
+                  <FormLabel className="text-gray-400">Адрес</FormLabel>
                   <FormControl>
                     <Input
                       id="address"
-                      placeholder="Street, city, country"
+                      placeholder="Улица, город, страна"
                       {...field}
                     />
                   </FormControl>
@@ -243,7 +243,7 @@ export default function UpdateOrganizationDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-gray-400">
-                    Contact email
+                    Контактный email
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -263,7 +263,7 @@ export default function UpdateOrganizationDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-gray-400">
-                    Contact phone
+                    Контактный телефон
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -282,7 +282,7 @@ export default function UpdateOrganizationDialog({
               name="logo"
               render={() => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Profile Image</FormLabel>
+                  <FormLabel className="text-gray-400">Логотип</FormLabel>
                   <FormControl>
                     <Input
                       id="image"
@@ -294,7 +294,7 @@ export default function UpdateOrganizationDialog({
                   {imagePreview && (
                     <Image
                       src={imagePreview}
-                      alt="Preview"
+                      alt="Предпросмотр"
                       width={64}
                       height={64}
                       unoptimized
@@ -323,7 +323,7 @@ export default function UpdateOrganizationDialog({
                 className="w-full"
                 loading={isPending}
               >
-                Save
+                Сохранить
               </LoadingButton>
             </DialogFooter>
           </form>

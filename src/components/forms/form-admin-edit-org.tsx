@@ -95,15 +95,15 @@ export default function AdminEditOrgDialog({
 
         if (!res.ok) {
           const err = await res.json()
-          toast.error(err.error || "Failed to update organization")
+          toast.error(err.error || "Не удалось обновить организацию")
           return
         }
 
-        toast.success("Organization updated successfully")
+        toast.success("Организация обновлена")
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to update organization")
+        toast.error("Не удалось обновить организацию")
       }
     })
   }
@@ -112,11 +112,11 @@ export default function AdminEditOrgDialog({
     const file = e.target.files?.[0]
     if (!file) return
     if (!["image/png", "image/jpeg"].includes(file.type)) {
-      toast.error("Only PNG or JPEG allowed")
+      toast.error("Допустимы только PNG или JPEG")
       return
     }
     if (file.size > 300 * 1024) {
-      toast.error("File must be less than 300kb")
+      toast.error("Файл должен быть меньше 300 КБ")
       return
     }
     const reader = new FileReader()
@@ -132,12 +132,12 @@ export default function AdminEditOrgDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Edit
+          Изменить
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Edit Organization: {org.name}</DialogTitle>
+          <DialogTitle>Редактировать организацию: {org.name}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -146,7 +146,7 @@ export default function AdminEditOrgDialog({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name</FormLabel>
+                  <FormLabel className="text-gray-400">Название</FormLabel>
                   <FormControl>
                     <Input {...field} />
                   </FormControl>
@@ -159,7 +159,7 @@ export default function AdminEditOrgDialog({
               name="slug"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Slug</FormLabel>
+                  <FormLabel className="text-gray-400">Идентификатор (slug)</FormLabel>
                   <FormControl>
                     <Input {...field} />
                   </FormControl>
@@ -172,7 +172,7 @@ export default function AdminEditOrgDialog({
               name="taxId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Tax ID</FormLabel>
+                  <FormLabel className="text-gray-400">ИНН</FormLabel>
                   <FormControl>
                     <Input {...field} />
                   </FormControl>
@@ -185,7 +185,7 @@ export default function AdminEditOrgDialog({
               name="webUrl"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Website</FormLabel>
+                  <FormLabel className="text-gray-400">Веб-сайт</FormLabel>
                   <FormControl>
                     <Input placeholder="https://example.com" {...field} />
                   </FormControl>
@@ -198,9 +198,9 @@ export default function AdminEditOrgDialog({
               name="address"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Address</FormLabel>
+                  <FormLabel className="text-gray-400">Адрес</FormLabel>
                   <FormControl>
-                    <Input placeholder="Street, city, country" {...field} />
+                    <Input placeholder="Улица, город, страна" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -211,7 +211,7 @@ export default function AdminEditOrgDialog({
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Contact email</FormLabel>
+                  <FormLabel className="text-gray-400">Контактный email</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
@@ -228,7 +228,7 @@ export default function AdminEditOrgDialog({
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Contact phone</FormLabel>
+                  <FormLabel className="text-gray-400">Контактный телефон</FormLabel>
                   <FormControl>
                     <Input
                       type="tel"
@@ -245,7 +245,7 @@ export default function AdminEditOrgDialog({
               name="logo"
               render={() => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Logo</FormLabel>
+                  <FormLabel className="text-gray-400">Логотип</FormLabel>
                   <FormControl>
                     <Input
                       type="file"
@@ -256,7 +256,7 @@ export default function AdminEditOrgDialog({
                   {imagePreview && (
                     <Image
                       src={imagePreview}
-                      alt="Preview"
+                      alt="Предпросмотр"
                       width={64}
                       height={64}
                       unoptimized
@@ -269,7 +269,7 @@ export default function AdminEditOrgDialog({
             />
             <DialogFooter>
               <LoadingButton type="submit" className="w-full" loading={isPending}>
-                Save
+                Сохранить
               </LoadingButton>
             </DialogFooter>
           </form>

@@ -31,7 +31,7 @@ export function NotificationsDrawer({ compact }: NotificationsDrawerProps) {
             e.currentTarget.blur()
           }}
         >
-          <Bell /> {!compact && <span className="text-sm">Notifications</span>}
+          <Bell /> {!compact && <span className="text-sm">Уведомления</span>}
         </Button>
       </DrawerTrigger>
       <DrawerContent className="mx-auto w-full max-w-4xl">

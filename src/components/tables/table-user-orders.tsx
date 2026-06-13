@@ -72,7 +72,7 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
         setOrders(simplifiedOrders)
       } catch (e) {
         console.error("Failed to fetch Polar user orders:", e)
-        toast.error("Failed to load orders")
+        toast.error("Не удалось загрузить покупки")
       } finally {
         setOrdersLoading(false)
       }
@@ -110,18 +110,18 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
     try {
       const res = await fetch(`/api/auth/polar/invoices?id=${invoiceId}`)
       if (!res.ok) {
-        throw new Error("Failed to fetch invoice")
+        throw new Error("Не удалось получить счёт")
       }
       const data = await res.json()
       if (data.url) {
         window.open(data.url, "_blank")
-        toast.success("Invoice opened in new tab")
+        toast.success("Счёт открыт в новой вкладке")
       } else {
-        toast.error("Invoice URL not available")
+        toast.error("Ссылка на счёт недоступна")
       }
     } catch (err) {
       console.log("Error opening invoice:", err)
-      toast.error("Failed to open invoice")
+      toast.error("Не удалось открыть счёт")
     }
   }
 
@@ -136,20 +136,20 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
       <div className="flex flex-row items-center justify-between mb-4">
         <div className="flex gap-2">
           <Input
-            placeholder="Search invoice number"
+            placeholder="Поиск по номеру счёта"
             value={searchInvoice}
             onChange={(e) => setSearchInvoice(e.target.value)}
             className="max-w-xs"
           />
           <Input
-            placeholder="Search total amount"
+            placeholder="Поиск по сумме"
             type="number"
             value={searchTotal}
             onChange={(e) => setSearchTotal(e.target.value)}
             className="max-w-xs"
           />
           <Button variant="outline" onClick={() => setSortAsc(!sortAsc)}>
-            Sort by Date {sortAsc ? "↑" : "↓"}
+            По дате {sortAsc ? "↑" : "↓"}
           </Button>
         </div>
 
@@ -161,14 +161,14 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Invoice</TableHead>
-            <TableHead>Purchase date</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Net</TableHead>
-            <TableHead>Tax</TableHead>
-            <TableHead>Total</TableHead>
-            <TableHead>Currency</TableHead>
-            <TableHead>Product name</TableHead>
+            <TableHead>Счёт</TableHead>
+            <TableHead>Дата покупки</TableHead>
+            <TableHead>Оплачен</TableHead>
+            <TableHead>Без налога</TableHead>
+            <TableHead>Налог</TableHead>
+            <TableHead>Итого</TableHead>
+            <TableHead>Валюта</TableHead>
+            <TableHead>Название продукта</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -186,7 +186,7 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
                 </div>
               </TableCell>
               <TableCell>
-                {new Date(order.createdAt).toLocaleString()}
+                {new Date(order.createdAt).toLocaleString("ru-RU")}
               </TableCell>
               <TableCell>
                 <span
@@ -196,7 +196,7 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
                       : "text-orange-500 font-semibold"
                   }
                 >
-                  {order.paid ? "Yes" : "No"}
+                  {order.paid ? "Да" : "Нет"}
                 </span>
               </TableCell>
               <TableCell>{order.netAmount}</TableCell>
@@ -210,7 +210,7 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
       </Table>
       <div className="flex items-center justify-end gap-4 mt-4">
         <span className="text-sm text-gray-400">
-          page {page} of {totalPages}
+          стр. {page} из {totalPages}
         </span>
         <div className="flex gap-2">
           <Button
@@ -218,14 +218,14 @@ export function TableUserOrders({ userId }: TableUserOrdersProps) {
             disabled={page === 1}
             onClick={() => setPage(page - 1)}
           >
-            previous
+            Назад
           </Button>
           <Button
             variant="outline"
             disabled={page === totalPages || totalPages === 0}
             onClick={() => setPage(page + 1)}
           >
-            next
+            Вперёд
           </Button>
         </div>
       </div>

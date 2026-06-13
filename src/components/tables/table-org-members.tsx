@@ -18,6 +18,22 @@ import SetOrgRoleDialog from "@/components/forms/form-set-org-role"
 import RemoveMemberDialog from "@/components/forms/form-remove-member"
 import InviteMemberDialog from "@/components/forms/form-invite-member"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
+// Display labels — DB enum keys stay English.
+const ORG_ROLE_LABEL: Record<string, string> = {
+  owner: "Владелец",
+  admin: "Администратор",
+  member: "Участник",
+}
+
 type OrgMember = {
   id: string
   userId: string
@@ -55,13 +71,13 @@ export function TableOrgMembers({
         })
 
       if (fetchError) {
-        setError(fetchError.message || "Failed to fetch members")
+        setError(fetchError.message || "Не удалось загрузить участников")
         return
       }
 
       setMembers((data?.members as unknown as OrgMember[]) ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -83,7 +99,7 @@ export function TableOrgMembers({
 
   if (error) {
     return (
-      <div className="text-red-500 text-lg">Error loading members: {error}</div>
+      <div className="text-red-500 text-lg">Ошибка загрузки участников: {error}</div>
     )
   }
 
@@ -91,13 +107,13 @@ export function TableOrgMembers({
     <>
       <div className="flex flex-row flex-wrap items-center gap-2 mb-4">
         <Input
-          placeholder="Search by name"
+          placeholder="Поиск по имени"
           value={searchName}
           onChange={(e) => setSearchName(e.target.value)}
           className="max-w-48"
         />
         <Input
-          placeholder="Search by email"
+          placeholder="Поиск по email"
           value={searchEmail}
           onChange={(e) => setSearchEmail(e.target.value)}
           className="max-w-48"
@@ -106,7 +122,7 @@ export function TableOrgMembers({
           <RefreshCcw className="h-4 w-4" />
         </Button>
         <span className="ml-auto text-sm text-gray-400 mr-4">
-          {members.length} member{members.length !== 1 && "s"}
+          {members.length} {plural(members.length, ["участник", "участника", "участников"])}
         </span>
         <InviteMemberDialog
           organizationId={organizationId}
@@ -122,18 +138,18 @@ export function TableOrgMembers({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
+              <TableHead>Имя</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Joined</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>Роль</TableHead>
+              <TableHead>Присоединился</TableHead>
+              <TableHead>Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredMembers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-gray-500">
-                  No members found
+                  Участники не найдены
                 </TableCell>
               </TableRow>
             ) : (
@@ -153,11 +169,11 @@ export function TableOrgMembers({
                             : "outline"
                       }
                     >
-                      {member.role}
+                      {ORG_ROLE_LABEL[member.role] ?? member.role}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {new Date(member.createdAt).toLocaleDateString()}
+                    {new Date(member.createdAt).toLocaleDateString("ru-RU")}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">

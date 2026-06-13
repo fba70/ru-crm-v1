@@ -45,10 +45,25 @@ const PHASE_COLOR: Record<string, string> = {
   retention: "bg-purple-500/15 text-purple-600 dark:text-purple-300",
 }
 
+// UI display labels (DB enum values stay English).
+const PHASE_LABEL: Record<string, string> = {
+  awareness: "Осведомлённость",
+  interest: "Интерес",
+  decision: "Решение",
+  action: "Действие",
+  retention: "Удержание",
+}
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активный",
+  initial: "Новый",
+  suspended: "Приостановлен",
+  deleted: "Удалён",
+}
+
 const CONTACTS_PAGE_SIZE = 5
 
 function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(iso).toLocaleString("ru-RU", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -120,7 +135,7 @@ export function ClientDetailShell({
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link href="/clients">
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to clients
+            Назад к клиентам
           </Link>
         </Button>
       </div>
@@ -135,11 +150,11 @@ export function ClientDetailShell({
                 className={PHASE_COLOR[detail.funnelPhase] ?? ""}
                 variant="secondary"
               >
-                {detail.funnelPhase}
+                {PHASE_LABEL[detail.funnelPhase] ?? detail.funnelPhase}
               </Badge>
               {detail.status !== "active" && (
                 <Badge variant="outline" className="text-muted-foreground">
-                  {detail.status}
+                  {STATUS_LABEL[detail.status] ?? detail.status}
                 </Badge>
               )}
             </div>
@@ -151,7 +166,7 @@ export function ClientDetailShell({
               trigger={
                 <Button variant="outline" size="sm">
                   <Globe className="h-4 w-4 mr-1" />
-                  Lookup on web
+                  Поиск в интернете
                 </Button>
               }
             />
@@ -162,7 +177,7 @@ export function ClientDetailShell({
               trigger={
                 <Button variant="outline" size="sm">
                   <Pencil className="h-4 w-4 mr-1" />
-                  Edit
+                  Редактировать
                 </Button>
               }
             />
@@ -183,10 +198,10 @@ export function ClientDetailShell({
           <div className="flex items-center gap-2 sm:col-span-2 text-xs">
             <User className="h-3.5 w-3.5" />
             <span>
-              Created by {detail.userName ?? "—"} on{" "}
+              Создал {detail.userName ?? "—"},{" "}
               {formatDateTime(detail.createdAt)}
               {detail.updatedAt !== detail.createdAt && (
-                <> · Updated {formatDateTime(detail.updatedAt)}</>
+                <> · Обновлено {formatDateTime(detail.updatedAt)}</>
               )}
             </span>
           </div>
@@ -197,7 +212,7 @@ export function ClientDetailShell({
       <Card className="dark:border-gray-600">
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle className="text-base">
-            Contacts ({detail.contacts.length})
+            Контакты ({detail.contacts.length})
           </CardTitle>
           <ContactEditDialog
             mode="create"
@@ -205,7 +220,7 @@ export function ClientDetailShell({
             trigger={
               <Button size="sm">
                 <Plus className="h-4 w-4 mr-1" />
-                New contact
+                Новый контакт
               </Button>
             }
           />
@@ -213,7 +228,7 @@ export function ClientDetailShell({
         <CardContent className="space-y-3">
           {detail.contacts.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
-              No contacts linked to this client yet.
+              К этому клиенту ещё не привязаны контакты.
             </p>
           ) : (
             <>
@@ -221,13 +236,13 @@ export function ClientDetailShell({
                 <Table className="table-fixed w-full">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Native name</TableHead>
+                      <TableHead>Имя</TableHead>
+                      <TableHead>Имя на родном языке</TableHead>
                       <TableHead className="w-56">Email</TableHead>
-                      <TableHead className="w-36">Phone</TableHead>
-                      <TableHead className="w-40">Position</TableHead>
-                      <TableHead className="w-24">Status</TableHead>
-                      <TableHead className="w-12">Edit</TableHead>
+                      <TableHead className="w-36">Телефон</TableHead>
+                      <TableHead className="w-40">Должность</TableHead>
+                      <TableHead className="w-24">Статус</TableHead>
+                      <TableHead className="w-12">Изм.</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -254,14 +269,14 @@ export function ClientDetailShell({
                               variant="secondary"
                               className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                             >
-                              active
+                              активный
                             </Badge>
                           ) : (
                             <Badge
                               variant="outline"
                               className="text-muted-foreground"
                             >
-                              {c.status}
+                              {STATUS_LABEL[c.status] ?? c.status}
                             </Badge>
                           )}
                         </TableCell>
@@ -275,7 +290,7 @@ export function ClientDetailShell({
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 w-7 p-0"
-                                aria-label="Edit contact"
+                                aria-label="Редактировать контакт"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -291,7 +306,7 @@ export function ClientDetailShell({
               {totalContactPages > 1 && (
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">
-                    Page {effectiveContactPage} of {totalContactPages}
+                    Страница {effectiveContactPage} из {totalContactPages}
                   </span>
                   <div className="flex items-center gap-1">
                     <Button
@@ -301,7 +316,7 @@ export function ClientDetailShell({
                       disabled={effectiveContactPage <= 1}
                       onClick={() => setContactPage((p) => Math.max(1, p - 1))}
                     >
-                      Prev
+                      Назад
                     </Button>
                     <Button
                       variant="outline"
@@ -314,7 +329,7 @@ export function ClientDetailShell({
                         )
                       }
                     >
-                      Next
+                      Далее
                     </Button>
                   </div>
                 </div>
@@ -327,11 +342,12 @@ export function ClientDetailShell({
       {/* Client Content table */}
       <Card className="dark:border-gray-600">
         <CardHeader>
-          <CardTitle className="text-base">Client Content</CardTitle>
+          <CardTitle className="text-base">Материалы клиента</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Parsed source items relevant to this client (matched on name,
-            address, website, and contact names/emails). Only R2-uploaded
-            content is shown — full markdown body search will come later.
+            Разобранные элементы источников, относящиеся к этому клиенту
+            (сопоставление по названию, адресу, сайту, а также именам/email
+            контактов). Показаны только материалы, загруженные в R2 — полный
+            поиск по тексту появится позже.
           </p>
         </CardHeader>
         <CardContent>

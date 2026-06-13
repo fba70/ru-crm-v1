@@ -115,7 +115,7 @@ export function OrdersTable({
       {/* Top row: search + status + clear. Richer filters come later. */}
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          placeholder="Search orders…"
+          placeholder="Поиск заказов…"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           className="flex-1 min-w-60"
@@ -128,10 +128,10 @@ export function OrdersTable({
           }}
         >
           <SelectTrigger className="w-48">
-            <SelectValue placeholder="All statuses" />
+            <SelectValue placeholder="Все статусы" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All statuses</SelectItem>
+            <SelectItem value="__all__">Все статусы</SelectItem>
             {ORDER_STATUSES.map((s) => (
               <SelectItem key={s} value={s}>
                 {ORDER_STATUS_LABEL[s]}
@@ -146,25 +146,25 @@ export function OrdersTable({
           disabled={!filtersActive}
         >
           <X className="h-4 w-4 mr-1" />
-          Clear
+          Очистить
         </Button>
       </div>
 
       <div className="text-xs text-muted-foreground">
         {total === 0
-          ? "No orders"
-          : `${rangeStart}–${rangeEnd} of ${total.toLocaleString()} orders`}
+          ? "Нет заказов"
+          : `${rangeStart}–${rangeEnd} из ${total.toLocaleString()} заказов`}
       </div>
 
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-32">Date</TableHead>
-              <TableHead>Client</TableHead>
-              <TableHead className="text-right w-36">Total</TableHead>
-              <TableHead className="w-40">Status</TableHead>
-              <TableHead className="w-20 text-center">Open</TableHead>
+              <TableHead className="w-32">Дата</TableHead>
+              <TableHead>Клиент</TableHead>
+              <TableHead className="text-right w-36">Итого</TableHead>
+              <TableHead className="w-40">Статус</TableHead>
+              <TableHead className="w-20 text-center">Открыть</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -181,8 +181,8 @@ export function OrdersTable({
                   className="h-40 text-center text-muted-foreground"
                 >
                   {filtersActive
-                    ? "No orders match the filters."
-                    : "No orders yet."}
+                    ? "Нет заказов по заданным фильтрам."
+                    : "Пока нет заказов."}
                 </TableCell>
               </TableRow>
             ) : (
@@ -215,7 +215,7 @@ export function OrdersTable({
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Open order"
+                      aria-label="Открыть заказ"
                       onClick={(e) => {
                         e.stopPropagation()
                         onEditOrder?.(o.id)
@@ -234,7 +234,7 @@ export function OrdersTable({
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Rows per page</span>
+          <span className="text-sm text-muted-foreground">Строк на странице</span>
           <Select
             value={String(pageSize)}
             onValueChange={(v) => {
@@ -274,7 +274,7 @@ export function OrdersTable({
               </PaginationItem>
               <PaginationItem>
                 <span className="flex h-9 items-center px-3 text-sm text-muted-foreground">
-                  Page {page} of {totalPages}
+                  Страница {page} из {totalPages}
                 </span>
               </PaginationItem>
               <PaginationItem>

@@ -20,6 +20,15 @@ import type { SaveChatSessionResult } from "@/app/api/sources/aichat/save/route"
 
 type Phase = "idle" | "saving"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 // What we send to the server: a flat per-message text + a list of files
 // extracted from the in-memory data URLs. Tool calls / reasoning /
 // json-render specs are intentionally dropped here per the design (Q4
@@ -52,7 +61,7 @@ export function SaveChatDialog({
     const firstUser = extracted.messages.find(
       (m) => m.role === "user" && m.text.trim().length > 0,
     )
-    if (!firstUser) return "AI Chat session"
+    if (!firstUser) return "Сеанс AI-чата"
     const cleaned = firstUser.text.replace(/\s+/g, " ").trim()
     return cleaned.length > 60 ? cleaned.slice(0, 57) + "…" : cleaned
   }, [extracted])
@@ -73,7 +82,7 @@ export function SaveChatDialog({
   const save = useCallback(async () => {
     const trimmedTitle = title.trim()
     if (!trimmedTitle) {
-      toast.error("Title is required")
+      toast.error("Укажите название")
       return
     }
     setPhase("saving")
@@ -101,22 +110,22 @@ export function SaveChatDialog({
         body: form,
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Save failed")
+      if (!res.ok) throw new Error(data.error || "Не удалось сохранить")
       const result = data as SaveChatSessionResult
 
       const childSummary =
         result.childInserted > 0 || result.childSkipped > 0 || result.childFailed > 0
-          ? ` · ${result.childInserted} file${result.childInserted === 1 ? "" : "s"} attached` +
-            (result.childSkipped > 0 ? `, ${result.childSkipped} skipped` : "") +
-            (result.childFailed > 0 ? `, ${result.childFailed} failed` : "")
+          ? ` · вложено ${result.childInserted} ${plural(result.childInserted, ["файл", "файла", "файлов"])}` +
+            (result.childSkipped > 0 ? `, пропущено ${result.childSkipped}` : "") +
+            (result.childFailed > 0 ? `, с ошибкой ${result.childFailed}` : "")
           : ""
-      toast.success(`Chat saved to sources${childSummary}`)
+      toast.success(`Чат сохранён в источники${childSummary}`)
       onSaved(result)
       setOpen(false)
       setTitle("")
       setPhase("idle")
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed")
+      toast.error(err instanceof Error ? err.message : "Не удалось сохранить")
       setPhase("idle")
     }
   }, [title, extracted, onSaved])
@@ -133,25 +142,25 @@ export function SaveChatDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Save className="h-4 w-4" />
-            Save chat to sources
+            Сохранить чат в источники
           </DialogTitle>
           <DialogDescription>
-            Saves the current conversation as a new source item. Analysis
-            (summary / mentions / companies / products) is extracted on
-            save. Attached files become child source items.
+            Сохраняет текущую переписку как новый элемент источника. При
+            сохранении извлекается анализ (резюме / упоминания / компании /
+            товары). Вложенные файлы становятся дочерними элементами.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="save-chat-title" className="text-xs text-muted-foreground">
-              Title
+              Название
             </Label>
             <Input
               id="save-chat-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="AI Chat session"
+              placeholder="Сеанс AI-чата"
               disabled={phase === "saving"}
               autoFocus
             />
@@ -159,10 +168,14 @@ export function SaveChatDialog({
 
           <div className="text-xs text-muted-foreground space-y-1">
             <div>
-              Will save <strong>{extracted.messages.length}</strong> message
-              {extracted.messages.length === 1 ? "" : "s"}
+              Будет сохранено <strong>{extracted.messages.length}</strong>{" "}
+              {plural(extracted.messages.length, [
+                "сообщение",
+                "сообщения",
+                "сообщений",
+              ])}
               {extracted.files.length > 0
-                ? ` and ${extracted.files.length} file${extracted.files.length === 1 ? "" : "s"}`
+                ? ` и ${extracted.files.length} ${plural(extracted.files.length, ["файл", "файла", "файлов"])}`
                 : ""}
               .
             </div>
@@ -170,9 +183,14 @@ export function SaveChatDialog({
               <div className="flex items-start gap-1.5 text-amber-600 dark:text-amber-400">
                 <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
                 <span>
-                  {droppedFileCount} attachment
-                  {droppedFileCount === 1 ? "" : "s"} from earlier in the
-                  session can no longer be recovered (browser-memory only).
+                  {droppedFileCount}{" "}
+                  {plural(droppedFileCount, [
+                    "вложение",
+                    "вложения",
+                    "вложений",
+                  ])}{" "}
+                  из ранней части сеанса нельзя восстановить (хранились только в
+                  памяти браузера).
                 </span>
               </div>
             )}
@@ -185,7 +203,7 @@ export function SaveChatDialog({
             onClick={() => handleOpenChange(false)}
             disabled={phase === "saving"}
           >
-            Cancel
+            Отмена
           </Button>
           <Button
             onClick={save}
@@ -194,10 +212,10 @@ export function SaveChatDialog({
             {phase === "saving" ? (
               <>
                 <Loader className="h-4 w-4 mr-1 animate-spin" />
-                Saving…
+                Сохранение…
               </>
             ) : (
-              "Save"
+              "Сохранить"
             )}
           </Button>
         </DialogFooter>

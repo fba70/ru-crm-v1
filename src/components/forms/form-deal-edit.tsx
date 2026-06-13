@@ -44,9 +44,9 @@ import type { DealStatus } from "@/db/schema"
 // lost/withdrawn (kept for analytics); `deleted` = test/mistake, hidden
 // from the board AND excluded from deal discovery.
 const DEAL_STATUS_OPTIONS: { value: DealStatus; label: string }[] = [
-  { value: "active", label: "Active" },
-  { value: "cancelled", label: "Cancelled (lost / withdrawn)" },
-  { value: "deleted", label: "Deleted (hidden, excluded from discovery)" },
+  { value: "active", label: "Активна" },
+  { value: "cancelled", label: "Отменена (проиграна / отозвана)" },
+  { value: "deleted", label: "Удалена (скрыта, исключена из поиска)" },
 ]
 
 type DealFormData = {
@@ -216,7 +216,7 @@ export default function DealEditDialog({
         const trimmedValue = data.value.trim()
         const numericValue = trimmedValue === "" ? null : Number(trimmedValue)
         if (numericValue !== null && !Number.isFinite(numericValue)) {
-          toast.error("Value must be a number")
+          toast.error("Стоимость должна быть числом")
           return
         }
         const payload =
@@ -248,19 +248,22 @@ export default function DealEditDialog({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to save deal")
+          toast.error(err.error || "Не удалось сохранить сделку")
           return
         }
-        toast.success(mode === "create" ? "Deal created" : "Deal updated")
+        toast.success(mode === "create" ? "Сделка создана" : "Сделка обновлена")
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to save deal")
+        toast.error("Не удалось сохранить сделку")
       }
     })
   }
 
-  const title = mode === "create" ? "New deal" : `Edit deal: ${deal?.name ?? ""}`
+  const title =
+    mode === "create"
+      ? "Новая сделка"
+      : `Редактирование сделки: ${deal?.name ?? ""}`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -274,12 +277,12 @@ export default function DealEditDialog({
             <FormField
               control={form.control}
               name="name"
-              rules={{ required: "Name is required" }}
+              rules={{ required: "Укажите название" }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name *</FormLabel>
+                  <FormLabel className="text-gray-400">Название *</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Deal name" />
+                    <Input {...field} placeholder="Название сделки" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -291,12 +294,12 @@ export default function DealEditDialog({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Description</FormLabel>
+                  <FormLabel className="text-gray-400">Описание</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       rows={3}
-                      placeholder="Optional details…"
+                      placeholder="Необязательные детали…"
                     />
                   </FormControl>
                   <FormMessage />
@@ -308,14 +311,14 @@ export default function DealEditDialog({
               <FormField
                 control={form.control}
                 name="clientId"
-                rules={{ required: "Client is required" }}
+                rules={{ required: "Укажите клиента" }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Client *</FormLabel>
+                    <FormLabel className="text-gray-400">Клиент *</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select client" />
+                          <SelectValue placeholder="Выберите клиента" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -333,16 +336,16 @@ export default function DealEditDialog({
               <FormField
                 control={form.control}
                 name="funnelStageId"
-                rules={{ required: "Funnel stage is required" }}
+                rules={{ required: "Укажите этап воронки" }}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-gray-400">
-                      Funnel stage *
+                      Этап воронки *
                     </FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select stage" />
+                          <SelectValue placeholder="Выберите этап" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -368,7 +371,7 @@ export default function DealEditDialog({
                 name="value"
                 render={({ field }) => (
                   <FormItem className="col-span-2">
-                    <FormLabel className="text-gray-400">Value</FormLabel>
+                    <FormLabel className="text-gray-400">Стоимость</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -387,15 +390,15 @@ export default function DealEditDialog({
                 control={form.control}
                 name="currency"
                 rules={{
-                  required: "Currency is required",
+                  required: "Укажите валюту",
                   pattern: {
                     value: /^[A-Za-z]{3}$/,
-                    message: "3-letter ISO code",
+                    message: "3-буквенный код ISO",
                   },
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Currency</FormLabel>
+                    <FormLabel className="text-gray-400">Валюта</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
@@ -411,14 +414,14 @@ export default function DealEditDialog({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-gray-400">Contacts</Label>
+              <Label className="text-gray-400">Контакты</Label>
               {!watchedClientId ? (
                 <div className="text-xs text-muted-foreground">
-                  Select a client to choose contacts.
+                  Выберите клиента, чтобы выбрать контакты.
                 </div>
               ) : orderedContactOptions.length === 0 ? (
                 <div className="text-xs text-muted-foreground">
-                  No contacts linked to this client yet.
+                  К этому клиенту ещё не привязаны контакты.
                 </div>
               ) : (
                 <div className="max-h-44 overflow-y-auto rounded-md border border-input bg-background dark:bg-muted/30 p-2 space-y-1">
@@ -448,7 +451,7 @@ export default function DealEditDialog({
                 </div>
               )}
               <div className="text-xs text-muted-foreground">
-                {selectedContactIds.size} selected
+                Выбрано: {selectedContactIds.size}
               </div>
             </div>
 
@@ -458,7 +461,7 @@ export default function DealEditDialog({
                 name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Status</FormLabel>
+                    <FormLabel className="text-gray-400">Статус</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -488,10 +491,10 @@ export default function DealEditDialog({
                 variant="outline"
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                Отмена
               </Button>
               <LoadingButton type="submit" loading={isPending}>
-                {mode === "create" ? "Create" : "Save"}
+                {mode === "create" ? "Создать" : "Сохранить"}
               </LoadingButton>
             </DialogFooter>
           </form>

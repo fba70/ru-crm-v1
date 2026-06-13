@@ -22,6 +22,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 type Scope = "org" | "system"
 
 export type ParseBatchFilters = {
@@ -111,14 +120,14 @@ export function ParseBatchControl({
         method: "POST",
       })
       const data = await res.json()
-      if (!res.ok) return { ok: false, error: data.error || "Parse failed" }
+      if (!res.ok) return { ok: false, error: data.error || "Ошибка разбора" }
       // parseSourceItem returns HTTP 200 even on failure (the batch-
       // safety contract). Inspect the parentStatus to know if it
       // actually worked.
       if (data?.parentStatus === "failed") {
         return {
           ok: false,
-          error: data?.parentParseError || "Parse failed",
+          error: data?.parentParseError || "Ошибка разбора",
         }
       }
       return { ok: true }
@@ -144,17 +153,19 @@ export function ParseBatchControl({
       const res = await fetch(`/api/sources/items/pending-parse-ids?${qs}`)
       const data = await res.json()
       if (!res.ok)
-        throw new Error(data.error || "Failed to list pending items")
+        throw new Error(
+          data.error || "Не удалось получить список элементов в очереди",
+        )
       ids = (data.ids ?? []) as string[]
       total = (data.total ?? ids.length) as number
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Unknown error")
+      toast.error(err instanceof Error ? err.message : "Неизвестная ошибка")
       setRunning(false)
       return
     }
 
     if (ids.length === 0) {
-      toast.message("Nothing to parse — no pending items in scope")
+      toast.message("Нечего разбирать — нет элементов в очереди в этой области")
       setRunning(false)
       return
     }
@@ -205,27 +216,29 @@ export function ParseBatchControl({
 
     if (cancelled) {
       toast.message(
-        `Cancelled — ${progress?.done ?? 0} of ${ids.length} attempted`,
+        `Отменено — обработано ${progress?.done ?? 0} из ${ids.length}`,
       )
     } else if (failures.length === 0) {
       toast.success(
-        `Parsed ${ids.length} ${ids.length === 1 ? "item" : "items"}`,
+        `Разобрано ${ids.length} ${plural(ids.length, ["элемент", "элемента", "элементов"])}`,
       )
     } else {
-      toast.success(`Parsed ${ok} item${ok === 1 ? "" : "s"}`)
+      toast.success(
+        `Разобрано ${ok} ${plural(ok, ["элемент", "элемента", "элементов"])}`,
+      )
       for (const f of failures.slice(0, FAILURE_TOAST_CAP)) {
         toast.error(`${f.id.slice(0, 8)}…: ${f.error}`)
       }
       if (failures.length > FAILURE_TOAST_CAP) {
         toast.error(
-          `…and ${failures.length - FAILURE_TOAST_CAP} more failures (still in Pending with "Parse failed")`,
+          `…и ещё ${failures.length - FAILURE_TOAST_CAP} ошибок (остались в очереди со статусом «Ошибка разбора»)`,
         )
       }
     }
 
     if (total > ids.length) {
       toast.message(
-        `${total - ids.length} more rows match — re-run "Parse all" to process the next batch`,
+        `Ещё ${total - ids.length} строк подходят — запустите «Разобрать все» снова для следующей партии`,
       )
     }
 
@@ -252,10 +265,10 @@ export function ParseBatchControl({
           <div className="flex items-center gap-2 font-medium min-w-0">
             <Loader className="h-3.5 w-3.5 animate-spin shrink-0" />
             <span className="truncate">
-              Parsing — {progress.done} / {progress.total}
+              Разбор — {progress.done} / {progress.total}
               {progress.failed > 0 && (
                 <span className="text-destructive ml-2">
-                  · {progress.failed} failed
+                  · ошибок {progress.failed}
                 </span>
               )}
             </span>
@@ -268,7 +281,7 @@ export function ParseBatchControl({
             disabled={cancelRef.current}
           >
             <X className="h-3.5 w-3.5 mr-1" />
-            {cancelRef.current ? "Cancelling…" : "Cancel"}
+            {cancelRef.current ? "Отмена…" : "Отменить"}
           </Button>
         </div>
         <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -284,23 +297,24 @@ export function ParseBatchControl({
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2 flex-wrap">
       <span className="text-xs text-muted-foreground">
-        {count} {count === 1 ? "item" : "items"} ready to parse
-        {count >= cap && ` (showing first ${cap} per click)`}
+        {count} {plural(count, ["элемент", "элемента", "элементов"])} готово к
+        разбору
+        {count >= cap && ` (показаны первые ${cap} за раз)`}
       </span>
       <div className="flex items-center gap-3 flex-wrap">
         <label
           className="flex items-center gap-2 text-xs text-muted-foreground select-none cursor-pointer"
-          title="Sequential, with a 4-second delay between calls. Use this on free-tier credits to stay under the AI Gateway rate limit."
+          title="Последовательно, с задержкой 4 секунды между вызовами. Используйте на бесплатном тарифе, чтобы не превысить лимит AI Gateway."
         >
           <Checkbox
             checked={slowMode}
             onCheckedChange={(v) => setSlowMode(v === true)}
           />
-          Slow mode (free-tier safe)
+          Медленный режим (безопасно для бесплатного тарифа)
         </label>
         <Button variant="default" size="sm" className="h-8" onClick={start}>
           <Sparkles className="h-4 w-4 mr-2" />
-          Parse all ({count})
+          Разобрать все ({count})
         </Button>
       </div>
     </div>

@@ -32,14 +32,14 @@ export function TableUserApiKeys() {
       try {
         const res = await fetch("/api/auth/keys")
         if (!res.ok) {
-          throw new Error("Failed to fetch API keys")
+          throw new Error("Не удалось загрузить API-ключи")
         }
         const data = await res.json()
         // console.log("Fetched API keys:", data)
         const keys = data.data?.apiKeys ?? data.data ?? []
         setApiKeys(Array.isArray(keys) ? keys : [])
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error")
+        setError(err instanceof Error ? err.message : "Неизвестная ошибка")
       } finally {
         setLoading(false)
       }
@@ -78,9 +78,9 @@ export function TableUserApiKeys() {
     const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
 
     if (now > expiry) {
-      return { text: "Expired", color: "text-red-500" }
+      return { text: "Истёк", color: "text-red-500" }
     } else if (expiry <= oneWeekFromNow) {
-      return { text: "Expires soon", color: "text-orange-500" }
+      return { text: "Скоро истекает", color: "text-orange-500" }
     } else {
       return { text: "OK", color: "text-green-500" }
     }
@@ -92,22 +92,22 @@ export function TableUserApiKeys() {
         method: "DELETE",
       })
       if (res.ok) {
-        toast.success("API key deleted successfully")
+        toast.success("API-ключ удалён")
         setKeyChange((prev) => prev + 1)
       } else {
         const errorData = await res.json()
-        toast.error(errorData.error || "Failed to delete API key")
+        toast.error(errorData.error || "Не удалось удалить API-ключ")
       }
     } catch (err) {
       console.error("Network error:", err)
-      toast.error("Network error")
+      toast.error("Ошибка сети")
     }
   }
 
   if (error) {
     return (
       <div className="text-red-500 text-lg">
-        Error loading keys data: {error}
+        Ошибка загрузки API-ключей: {error}
       </div>
     )
   }
@@ -121,14 +121,14 @@ export function TableUserApiKeys() {
           <div className="flex flex-row items-center justify-between gap-2 mb-4">
             <div className="flex flex-row items-center justify-center gap-2">
               <Input
-                placeholder="Search key name"
+                placeholder="Поиск по названию ключа"
                 type="text"
                 value={searchName}
                 onChange={(e) => setSearchName(e.target.value)}
                 className="max-w-xs"
               />
               <Button variant="outline" onClick={() => setSortAsc(!sortAsc)}>
-                Sort by Date {sortAsc ? "↑" : "↓"}
+                По дате {sortAsc ? "↑" : "↓"}
               </Button>
             </div>
 
@@ -147,11 +147,11 @@ export function TableUserApiKeys() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Key name</TableHead>
-                <TableHead>Created at</TableHead>
-                <TableHead>Expires at</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>Название ключа</TableHead>
+                <TableHead>Создан</TableHead>
+                <TableHead>Истекает</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead>Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,12 +161,12 @@ export function TableUserApiKeys() {
                   <TableRow key={key.id}>
                     <TableCell>{key.name}</TableCell>
                     <TableCell>
-                      {new Date(key.createdAt).toLocaleString()}
+                      {new Date(key.createdAt).toLocaleString("ru-RU")}
                     </TableCell>
                     <TableCell>
                       {key.expiresAt
-                        ? new Date(key.expiresAt).toLocaleString()
-                        : "Never"}
+                        ? new Date(key.expiresAt).toLocaleString("ru-RU")
+                        : "Никогда"}
                     </TableCell>
                     <TableCell>
                       <span className={status.color}>{status.text}</span>
@@ -176,7 +176,7 @@ export function TableUserApiKeys() {
                         variant="outline"
                         onClick={() => handleDelete(key.id)}
                       >
-                        Delete
+                        Удалить
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -187,7 +187,7 @@ export function TableUserApiKeys() {
 
           <div className="flex items-center justify-end gap-4 mt-4">
             <span className="text-sm text-gray-400">
-              page {page} of {totalPages}
+              стр. {page} из {totalPages}
             </span>
             <div className="flex gap-2">
               <Button
@@ -195,14 +195,14 @@ export function TableUserApiKeys() {
                 disabled={page === 1}
                 onClick={() => setPage(page - 1)}
               >
-                previous
+                Назад
               </Button>
               <Button
                 variant="outline"
                 disabled={page === totalPages || totalPages === 0}
                 onClick={() => setPage(page + 1)}
               >
-                next
+                Вперёд
               </Button>
             </div>
           </div>

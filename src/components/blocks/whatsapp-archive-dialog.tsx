@@ -14,9 +14,18 @@ import { FolderUp, X, MessageCircle } from "lucide-react"
 import { toast } from "sonner"
 
 function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024) return `${bytes} Б`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
+}
+
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
 }
 
 // Chunk size for the chunked upload loop. Tuned to:
@@ -151,7 +160,7 @@ export function WhatsAppArchiveDialog({
       body: fd,
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(data.error || "Upload failed")
+    if (!res.ok) throw new Error(data.error || "Ошибка загрузки")
     return data as UploadResponse
   }
 
@@ -191,7 +200,7 @@ export function WhatsAppArchiveDialog({
           // file in this chunk as failed so the user knows nothing
           // landed for this batch — but keep going; subsequent chunks
           // are independent.
-          const msg = err instanceof Error ? err.message : "Unknown error"
+          const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
           for (const f of chunk) {
             allFailures.push({ fileName: f.name, error: msg })
             totalFailed++
@@ -218,12 +227,12 @@ export function WhatsAppArchiveDialog({
       // the breakdown without scrolling a multiline message.
       if (totalGroups > 0) {
         toast.success(
-          `Imported ${totalGroups} chat ${totalGroups === 1 ? "group" : "groups"} → Pending`,
+          `Импортировано ${totalGroups} ${plural(totalGroups, ["группа чата", "группы чата", "групп чата"])} → В очередь`,
         )
       }
       if (totalAttachments > 0) {
         toast.success(
-          `Parsed ${totalAttachments} attachment${totalAttachments === 1 ? "" : "s"} → Processed`,
+          `Разобрано ${totalAttachments} ${plural(totalAttachments, ["вложение", "вложения", "вложений"])} → Обработано`,
         )
       }
       // Per-file failure toasts — capped so a catastrophic upload
@@ -235,7 +244,7 @@ export function WhatsAppArchiveDialog({
       }
       if (allFailures.length > FAILURE_TOAST_CAP) {
         toast.error(
-          `…and ${allFailures.length - FAILURE_TOAST_CAP} more failures (see Pending / Processed tables)`,
+          `…и ещё ${allFailures.length - FAILURE_TOAST_CAP} ошибок (см. таблицы «В очереди» / «Обработано»)`,
         )
       }
       if (
@@ -244,7 +253,7 @@ export function WhatsAppArchiveDialog({
         totalFailed === 0
       ) {
         toast.message(
-          "Nothing to import — folder produced no recognised content",
+          "Нечего импортировать — в папке не найдено распознанного содержимого",
         )
       }
 
@@ -269,7 +278,7 @@ export function WhatsAppArchiveDialog({
           the file list rows from visually escaping the dialog body. */}
       <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Sync from WhatsApp Archive</DialogTitle>
+          <DialogTitle>Импорт архива WhatsApp</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 min-w-0 flex-1 overflow-y-auto">
@@ -287,10 +296,10 @@ export function WhatsAppArchiveDialog({
           >
             <FolderUp className="h-6 w-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground text-center">
-              Click to pick the WhatsApp archive folder
+              Нажмите, чтобы выбрать папку с архивом WhatsApp
             </p>
             <p className="text-xs text-muted-foreground/80 text-center">
-              Includes <code>_chat.txt</code> + media files
+              Включает <code>_chat.txt</code> + медиафайлы
             </p>
             <input
               ref={inputRef}
@@ -312,18 +321,19 @@ export function WhatsAppArchiveDialog({
             <div className="space-y-2 min-w-0">
               <div className="flex items-center justify-between text-xs text-muted-foreground gap-2 flex-wrap">
                 <span>
-                  {selected.length} file{selected.length === 1 ? "" : "s"} ·{" "}
+                  {selected.length}{" "}
+                  {plural(selected.length, ["файл", "файла", "файлов"])} ·{" "}
                   {formatSize(totalBytes)}
                 </span>
                 {chatFile ? (
                   <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 shrink-0">
                     <MessageCircle className="h-3.5 w-3.5" />
-                    Found <code className="text-xs">_chat.txt</code>
+                    Найден <code className="text-xs">_chat.txt</code>
                   </span>
                 ) : (
                   <span className="text-amber-600 dark:text-amber-400 shrink-0">
-                    No <code className="text-xs">_chat.txt</code> — media-only
-                    import
+                    Нет <code className="text-xs">_chat.txt</code> — импорт только
+                    медиа
                   </span>
                 )}
               </div>
@@ -350,7 +360,7 @@ export function WhatsAppArchiveDialog({
                       size="icon"
                       className="h-6 w-6 shrink-0"
                       onClick={() => removeAt(i)}
-                      aria-label={`Remove ${f.name}`}
+                      aria-label={`Удалить ${f.name}`}
                     >
                       <X className="h-3 w-3" />
                     </Button>
@@ -379,7 +389,7 @@ export function WhatsAppArchiveDialog({
             onClick={() => onOpenChange(false)}
             disabled={uploading}
           >
-            Cancel
+            Отмена
           </Button>
           <LoadingButton
             type="button"
@@ -387,7 +397,7 @@ export function WhatsAppArchiveDialog({
             loading={uploading}
             disabled={selected.length === 0}
           >
-            Import &amp; parse{selected.length > 0 ? ` (${selected.length})` : ""}
+            Импортировать и разобрать{selected.length > 0 ? ` (${selected.length})` : ""}
           </LoadingButton>
         </DialogFooter>
       </DialogContent>
@@ -423,11 +433,11 @@ function ProgressPanel({
       <div className="flex items-center justify-between text-xs">
         <span className="font-medium">
           {inFlight
-            ? `Processing batch ${chunkDone + 1} of ${chunkTotal}…`
-            : "Done"}
+            ? `Обработка партии ${chunkDone + 1} из ${chunkTotal}…`
+            : "Готово"}
         </span>
         <span className="text-muted-foreground">
-          {done} / {total} files · {pct}%
+          {done} / {total} файлов · {pct}%
         </span>
       </div>
       <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -437,12 +447,12 @@ function ProgressPanel({
         />
       </div>
       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-        {groups > 0 && <span>{groups} chat groups → Pending</span>}
+        {groups > 0 && <span>{groups} групп чата → В очередь</span>}
         {attachments > 0 && (
-          <span>{attachments} attachments → Processed</span>
+          <span>{attachments} вложений → Обработано</span>
         )}
         {failed > 0 && (
-          <span className="text-destructive">{failed} failed</span>
+          <span className="text-destructive">ошибок {failed}</span>
         )}
       </div>
     </div>

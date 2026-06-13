@@ -59,32 +59,32 @@ export const ATTACHMENT_LABELS: Record<
   ParsedAttachmentKind,
   { title: string; icon: React.ReactNode }
 > = {
-  pdf: { title: "PDF attachment", icon: <FileText className="h-4 w-4" /> },
+  pdf: { title: "Вложение PDF", icon: <FileText className="h-4 w-4" /> },
   image: {
-    title: "Image attachment",
+    title: "Изображение",
     icon: <ImageIcon className="h-4 w-4" />,
   },
-  audio: { title: "Audio attachment", icon: <Mic className="h-4 w-4" /> },
-  video: { title: "Video attachment", icon: <Film className="h-4 w-4" /> },
+  audio: { title: "Аудио", icon: <Mic className="h-4 w-4" /> },
+  video: { title: "Видео", icon: <Film className="h-4 w-4" /> },
   video_audio: {
-    title: "Audio transcript (from video)",
+    title: "Расшифровка аудио (из видео)",
     icon: <Captions className="h-4 w-4" />,
   },
-  docx: { title: "Word document", icon: <BookOpen className="h-4 w-4" /> },
+  docx: { title: "Документ Word", icon: <BookOpen className="h-4 w-4" /> },
   pptx: {
-    title: "Presentation",
+    title: "Презентация",
     icon: <Presentation className="h-4 w-4" />,
   },
   docs: {
-    title: "Google Doc",
+    title: "Google Документ",
     icon: <FileType className="h-4 w-4" />,
   },
   slides: {
-    title: "Google Slides",
+    title: "Google Презентация",
     icon: <Presentation className="h-4 w-4" />,
   },
   sheets: {
-    title: "Google Sheet",
+    title: "Google Таблица",
     icon: <FileSpreadsheet className="h-4 w-4" />,
   },
 }
@@ -101,9 +101,9 @@ export const BODY_ICONS = {
 // ── Helpers ───────────────────────────────────────────────────────────
 
 export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  if (n < 1024) return `${n} Б`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`
+  return `${(n / (1024 * 1024)).toFixed(1)} МБ`
 }
 
 // Streamdown doesn't understand YAML frontmatter — it renders `---` as an
@@ -156,9 +156,9 @@ export function ParsedBlock({
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(markdown)
-      toast.success("Markdown copied")
+      toast.success("Markdown скопирован")
     } catch {
-      toast.error("Could not copy to clipboard")
+      toast.error("Не удалось скопировать в буфер обмена")
     }
   }
 
@@ -172,11 +172,11 @@ export function ParsedBlock({
         body: JSON.stringify({ sourceId, parentSourceId, markdown }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Failed to save to R2")
+      if (!res.ok) throw new Error(data.error || "Не удалось сохранить в R2")
       setSavedKey(data.key)
-      toast.success(`Saved to R2: ${data.key}`)
+      toast.success(`Сохранено в R2: ${data.key}`)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error"
+      const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
       toast.error(msg)
     } finally {
       setSaving(false)
@@ -201,12 +201,12 @@ export function ParsedBlock({
             ) : (
               <CloudUpload className="h-4 w-4 mr-1" />
             )}
-            {saving ? "Saving…" : savedKey ? "Saved" : "Save to R2"}
+            {saving ? "Сохранение…" : savedKey ? "Сохранено" : "Сохранить в R2"}
           </Button>
         )}
         <Button variant="outline" size="sm" onClick={handleCopy}>
           <Copy className="h-4 w-4 mr-1" />
-          Copy
+          Копировать
         </Button>
       </div>
       <div
@@ -216,7 +216,7 @@ export function ParsedBlock({
       </div>
       <details className="rounded-md border bg-muted/10">
         <summary className="px-3 py-2 text-xs cursor-pointer select-none">
-          Raw markdown source
+          Исходный markdown
         </summary>
         <pre className="px-3 pb-3 text-xs overflow-x-auto whitespace-pre-wrap wrap-break-word">
           {markdown}

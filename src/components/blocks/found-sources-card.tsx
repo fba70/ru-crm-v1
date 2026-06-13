@@ -34,7 +34,7 @@ type SearchOutput = {
 
 function formatDate(iso: string | null): string {
   if (!iso) return ""
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(iso).toLocaleString("ru-RU", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -51,7 +51,7 @@ function hitTitle(hit: Hit): string {
   if (hit.filename && hit.filename.trim()) return hit.filename
   if (hit.snippet && hit.snippet.trim()) return hit.snippet
   if (hit.summary && hit.summary.trim()) return hit.summary
-  return "(untitled)"
+  return "(без названия)"
 }
 
 // Secondary line under the title: prefer the raw snippet, fall back to the
@@ -87,7 +87,7 @@ export function FoundSourcesCard({
     return (
       <div className="rounded-md border bg-card mb-4 p-3 flex items-center gap-2 text-sm text-muted-foreground">
         <Loader className="h-4 w-4 animate-spin" />
-        Searching organization sources…
+        Поиск по источникам организации…
       </div>
     )
   }
@@ -95,7 +95,7 @@ export function FoundSourcesCard({
   if (state === "output-error" || errorText) {
     return (
       <div className="rounded-md border bg-destructive/10 text-destructive mb-4 p-3 text-sm">
-        Source search failed{errorText ? `: ${errorText}` : "."}
+        Не удалось выполнить поиск по источникам{errorText ? `: ${errorText}` : "."}
       </div>
     )
   }
@@ -110,14 +110,14 @@ export function FoundSourcesCard({
       <div className="flex items-center gap-2 px-3 py-2 border-b">
         <FileSearch className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">
-          Found Source{hits.length === 1 ? "" : "s"}
+          {hits.length === 1 ? "Найден источник" : "Найдены источники"}
         </span>
         <span className="text-xs text-muted-foreground">
           {hits.length === 0
-            ? "no matches"
+            ? "нет совпадений"
             : `${hits.length}${
                 result && result.totalMatched > hits.length
-                  ? ` of ${result.totalMatched}`
+                  ? ` из ${result.totalMatched}`
                   : ""
               }`}
         </span>
@@ -125,7 +125,7 @@ export function FoundSourcesCard({
 
       {hits.length === 0 ? (
         <p className="px-3 py-4 text-sm text-muted-foreground">
-          No matches found.
+          Совпадений не найдено.
         </p>
       ) : (
         <div className="p-3 space-y-2">
@@ -163,7 +163,7 @@ function FoundSourceCardRow({ hit }: { hit: Hit }) {
       const res = await fetch(`/api/sources/items/${hit.id}/markdown`)
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || "Failed to load markdown")
+        throw new Error(data.error || "Не удалось загрузить документ")
       }
       const spec = {
         root: "root",
@@ -183,7 +183,7 @@ function FoundSourceCardRow({ hit }: { hit: Hit }) {
         title,
       })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Unknown error")
+      toast.error(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setPanelLoading(false)
     }
@@ -233,7 +233,7 @@ function FoundSourceCardRow({ hit }: { hit: Hit }) {
           onClick={() => setPreviewOpen(true)}
         >
           <Eye className="h-3.5 w-3.5 mr-1" />
-          Preview
+          Просмотр
         </Button>
         <Button
           variant="outline"
@@ -247,7 +247,7 @@ function FoundSourceCardRow({ hit }: { hit: Hit }) {
           ) : (
             <PanelRightOpen className="h-3.5 w-3.5 mr-1" />
           )}
-          Open in panel
+          Открыть в панели
         </Button>
       </div>
 

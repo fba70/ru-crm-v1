@@ -21,7 +21,7 @@ export default async function SourcesPage() {
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">SOURCES</h1>
+      <h1 className="text-2xl font-medium mt-2">ИСТОЧНИКИ ДАННЫХ</h1>
 
       <div className="w-full max-w-7xl px-4 space-y-6">
         <SourcesPageShell

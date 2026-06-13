@@ -31,15 +31,15 @@ import { z } from "zod"
 
 const signUpSchema = z
   .object({
-    name: z.string().min(1, { message: "Name is required" }),
-    email: z.email({ message: "Please enter a valid email" }),
+    name: z.string().min(1, { message: "Введите имя" }),
+    email: z.email({ message: "Введите корректный email" }),
     password: passwordSchema,
     passwordConfirmation: z
       .string()
-      .min(1, { message: "Please confirm password" }),
+      .min(1, { message: "Подтвердите пароль" }),
   })
   .refine((data) => data.password === data.passwordConfirmation, {
-    message: "Passwords do not match",
+    message: "Пароли не совпадают",
     path: ["passwordConfirmation"],
   })
 
@@ -96,14 +96,14 @@ export function SignUpForm() {
 
     if (error) {
       if (error.status === 422) {
-        setError("Email address is already used, please select another one")
-        toast.error("Email address is already used, please select another one")
+        setError("Этот email уже используется, выберите другой")
+        toast.error("Этот email уже используется, выберите другой")
       } else {
-        setError(error.message || "Unknown authorization error")
-        toast.error(error.message || "Unknown authorization error")
+        setError(error.message || "Неизвестная ошибка авторизации")
+        toast.error(error.message || "Неизвестная ошибка авторизации")
       }
     } else {
-      toast.success("Sign-Up is successful!")
+      toast.success("Регистрация прошла успешно!")
       router.push("/dashboard")
     }
   }
@@ -113,9 +113,9 @@ export function SignUpForm() {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-lg md:text-xl">Sign Up</CardTitle>
+        <CardTitle className="text-lg md:text-xl">Регистрация</CardTitle>
         <CardDescription className="text-xs md:text-sm">
-          Enter your information to create an account
+          Введите свои данные, чтобы создать аккаунт
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -124,12 +124,12 @@ export function SignUpForm() {
             role="alert"
             className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300"
           >
-            <p className="font-medium">You have a pending invitation.</p>
+            <p className="font-medium">У вас есть активное приглашение.</p>
             <p className="mt-1 text-xs">
-              An organization has already invited{" "}
-              <strong>{pendingInviteEmail}</strong>. Please use the invitation
-              link from your email to join. If you don&apos;t have it, ask the
-              organization administrator to resend it.
+              Организация уже пригласила{" "}
+              <strong>{pendingInviteEmail}</strong>. Пожалуйста, используйте
+              ссылку-приглашение из письма, чтобы присоединиться. Если её нет,
+              попросите администратора организации отправить её повторно.
             </p>
           </div>
         )}
@@ -140,9 +140,9 @@ export function SignUpForm() {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Name</FormLabel>
+                  <FormLabel>Имя</FormLabel>
                   <FormControl>
-                    <Input placeholder="John Doe" {...field} />
+                    <Input placeholder="Иван Иванов" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -176,11 +176,11 @@ export function SignUpForm() {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Password</FormLabel>
+                  <FormLabel>Пароль</FormLabel>
                   <FormControl>
                     <PasswordInput
                       autoComplete="new-password"
-                      placeholder="Password"
+                      placeholder="Пароль"
                       {...field}
                     />
                   </FormControl>
@@ -194,11 +194,11 @@ export function SignUpForm() {
               name="passwordConfirmation"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Confirm Password</FormLabel>
+                  <FormLabel>Подтвердите пароль</FormLabel>
                   <FormControl>
                     <PasswordInput
                       autoComplete="new-password"
-                      placeholder="Confirm password"
+                      placeholder="Подтвердите пароль"
                       {...field}
                     />
                   </FormControl>
@@ -218,7 +218,7 @@ export function SignUpForm() {
               className="w-full mt-2"
               loading={loading}
             >
-              Create an account
+              Создать аккаунт
             </LoadingButton>
           </form>
         </Form>
@@ -226,9 +226,9 @@ export function SignUpForm() {
       <CardFooter>
         <div className="flex w-full justify-center border-t pt-4">
           <p className="text-muted-foreground text-center text-xs">
-            Already have an account?{" "}
+            Уже есть аккаунт?{" "}
             <Link href="/sign-in" className="underline">
-              Sign in
+              Войти
             </Link>
           </p>
         </div>

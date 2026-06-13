@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { addDays, differenceInCalendarDays, format, startOfDay } from "date-fns"
+import { ru } from "date-fns/locale"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -38,9 +39,18 @@ const TIMELINE_STATUSES = ["todo", "in_progress", "done"] as const
 type TimelineStatus = (typeof TIMELINE_STATUSES)[number]
 
 const STATUS_LABELS: Record<TimelineStatus, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
+  todo: "К выполнению",
+  in_progress: "В работе",
+  done: "Выполнено",
+}
+
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
 }
 
 type Tick = { date: Date; offsetDays: number }
@@ -156,7 +166,7 @@ export function TaskTimeline({
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">
-            From
+            С
           </Label>
           <Input
             type="date"
@@ -166,7 +176,7 @@ export function TaskTimeline({
           />
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">To</Label>
+          <Label className="text-xs text-muted-foreground mb-1 block">По</Label>
           <Input
             type="date"
             value={toStr}
@@ -180,7 +190,7 @@ export function TaskTimeline({
           className="h-8"
           onClick={resetWindow}
         >
-          Reset to ±1 week
+          Сбросить на ±1 неделю
         </Button>
         <div className="flex items-center gap-2 ml-auto">
           <Checkbox
@@ -192,14 +202,14 @@ export function TaskTimeline({
             htmlFor="timeline-exclude-done"
             className="text-xs text-muted-foreground cursor-pointer"
           >
-            Exclude done tasks
+            Скрыть выполненные
           </Label>
         </div>
       </div>
 
       {visibleGroups.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground border rounded-md">
-          No tasks to display in the timeline.
+          Нет задач для отображения на хронологии.
         </div>
       ) : (
         <div className="border rounded-md overflow-hidden">
@@ -213,7 +223,7 @@ export function TaskTimeline({
                 className="shrink-0 px-3 py-2 text-sm font-medium border-r"
                 style={{ width: `${SIDEBAR_REM}rem` }}
               >
-                Task
+                Задача
               </div>
               <div
                 className="relative flex-1"
@@ -226,7 +236,7 @@ export function TaskTimeline({
                       left: `${(todayOffset / totalDays) * 100}%`,
                     }}
                   >
-                    today
+                    сегодня
                   </div>
                 )}
                 {ticks.map((t, i) => {
@@ -242,7 +252,7 @@ export function TaskTimeline({
                       }}
                     >
                       <span className="px-1 whitespace-nowrap">
-                        {format(t.date, fmt)}
+                        {format(t.date, fmt, { locale: ru })}
                       </span>
                     </div>
                   )
@@ -338,7 +348,7 @@ export function TaskTimeline({
                                     width: `${widthPct}%`,
                                     minWidth: 4,
                                   }}
-                                  title={`${task.name} · ${format(start, "MMM d")} → ${format(end, "MMM d, yyyy")}`}
+                                  title={`${task.name} · ${format(start, "d MMM", { locale: ru })} → ${format(end, "d MMM yyyy", { locale: ru })}`}
                                 >
                                   <span className="truncate">{task.name}</span>
                                 </button>
@@ -356,11 +366,12 @@ export function TaskTimeline({
 
           <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground bg-muted/30 border-t">
             <span>
-              {format(minDate, "MMM d, yyyy")} —{" "}
-              {format(maxDate, "MMM d, yyyy")}
+              {format(minDate, "d MMM yyyy", { locale: ru })} —{" "}
+              {format(maxDate, "d MMM yyyy", { locale: ru })}
             </span>
             <span>
-              {visible.length} task{visible.length === 1 ? "" : "s"}
+              {visible.length}{" "}
+              {plural(visible.length, ["задача", "задачи", "задач"])}
             </span>
           </div>
         </div>

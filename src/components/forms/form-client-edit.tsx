@@ -61,6 +61,21 @@ const FUNNEL_PHASES: FunnelPhase[] = [
 // create it. Flip back to `active` here to restore.
 const STATUSES: EntityStatus[] = ["active", "suspended", "initial", "deleted"]
 
+// UI display labels (DB enum values stay English).
+const PHASE_LABEL: Record<string, string> = {
+  awareness: "Осведомлённость",
+  interest: "Интерес",
+  decision: "Решение",
+  action: "Действие",
+  retention: "Удержание",
+}
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активный",
+  suspended: "Приостановлен",
+  initial: "Новый",
+  deleted: "Удалён",
+}
+
 type ClientFormData = {
   name: string
   namePhys: string
@@ -89,7 +104,7 @@ function ContactList({ contacts }: { contacts: ClientContactPreview[] }) {
   return (
     <div className="rounded-md border p-3 space-y-2">
       <div className="text-sm font-medium text-muted-foreground">
-        Related contacts ({contacts.length})
+        Связанные контакты ({contacts.length})
       </div>
       <ul className="space-y-1">
         {contacts.map((c) => (
@@ -186,20 +201,22 @@ export default function ClientEditDialog({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Failed to save client")
+          toast.error(err.error || "Не удалось сохранить клиента")
           return
         }
-        toast.success(mode === "create" ? "Client created" : "Client updated")
+        toast.success(mode === "create" ? "Клиент создан" : "Клиент обновлён")
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Failed to save client")
+        toast.error("Не удалось сохранить клиента")
       }
     })
   }
 
   const title =
-    mode === "create" ? "New client" : `Edit client: ${client?.name ?? ""}`
+    mode === "create"
+      ? "Новый клиент"
+      : `Редактирование клиента: ${client?.name ?? ""}`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -213,12 +230,12 @@ export default function ClientEditDialog({
             <FormField
               control={form.control}
               name="name"
-              rules={{ required: "Name is required" }}
+              rules={{ required: "Укажите название" }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Name *</FormLabel>
+                  <FormLabel className="text-gray-400">Название *</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Client name" />
+                    <Input {...field} placeholder="Название клиента" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -231,12 +248,12 @@ export default function ClientEditDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-gray-400">
-                    Physical person name
+                    ФИО физлица
                   </FormLabel>
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="Name of the individual (if not an organization)"
+                      placeholder="ФИО физического лица (если это не организация)"
                     />
                   </FormControl>
                   <FormMessage />
@@ -250,9 +267,9 @@ export default function ClientEditDialog({
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Phone</FormLabel>
+                    <FormLabel className="text-gray-400">Телефон</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="+1 555 000 0000" />
+                      <Input {...field} placeholder="+7 999 000 0000" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -282,9 +299,9 @@ export default function ClientEditDialog({
               name="address"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Address</FormLabel>
+                  <FormLabel className="text-gray-400">Адрес</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Street, city, country" />
+                    <Input {...field} placeholder="Улица, город, страна" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -296,7 +313,7 @@ export default function ClientEditDialog({
               name="webUrl"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Website</FormLabel>
+                  <FormLabel className="text-gray-400">Сайт</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="https://example.com" />
                   </FormControl>
@@ -311,14 +328,14 @@ export default function ClientEditDialog({
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Type</FormLabel>
+                    <FormLabel className="text-gray-400">Тип</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a type" />
+                          <SelectValue placeholder="Выберите тип" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -341,12 +358,12 @@ export default function ClientEditDialog({
               name="comment"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Comment</FormLabel>
+                  <FormLabel className="text-gray-400">Комментарий</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       rows={3}
-                      placeholder="Notes to help identify this client"
+                      placeholder="Заметки, помогающие опознать клиента"
                     />
                   </FormControl>
                   <FormMessage />
@@ -359,11 +376,11 @@ export default function ClientEditDialog({
               name="aliases"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Also known as</FormLabel>
+                  <FormLabel className="text-gray-400">Другие названия</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="Other spellings, comma-separated (e.g. AST, АСТ, AST INTER)"
+                      placeholder="Другие написания через запятую (напр. AST, АСТ, AST INTER)"
                     />
                   </FormControl>
                   <FormMessage />
@@ -378,7 +395,7 @@ export default function ClientEditDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-gray-400">
-                      Funnel phase
+                      Этап воронки
                     </FormLabel>
                     <Select
                       value={field.value}
@@ -392,7 +409,7 @@ export default function ClientEditDialog({
                       <SelectContent>
                         {FUNNEL_PHASES.map((p) => (
                           <SelectItem key={p} value={p}>
-                            {p.charAt(0).toUpperCase() + p.slice(1)}
+                            {PHASE_LABEL[p] ?? p}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -406,7 +423,7 @@ export default function ClientEditDialog({
                 name="status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-gray-400">Status</FormLabel>
+                    <FormLabel className="text-gray-400">Статус</FormLabel>
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
@@ -419,7 +436,7 @@ export default function ClientEditDialog({
                       <SelectContent>
                         {STATUSES.map((s) => (
                           <SelectItem key={s} value={s}>
-                            {s.charAt(0).toUpperCase() + s.slice(1)}
+                            {STATUS_LABEL[s] ?? s}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -440,10 +457,10 @@ export default function ClientEditDialog({
                 variant="outline"
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                Отмена
               </Button>
               <LoadingButton type="submit" loading={isPending}>
-                {mode === "create" ? "Create" : "Save"}
+                {mode === "create" ? "Создать" : "Сохранить"}
               </LoadingButton>
             </DialogFooter>
           </form>

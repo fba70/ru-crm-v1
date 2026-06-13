@@ -4,12 +4,14 @@
 
 import type { OrderStatus } from "@/db/schema"
 
+// UI display labels (Russian). The DB enum values (draft / awaiting_client /
+// …) stay English — only what the operator sees is translated.
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
-  draft: "Draft",
-  awaiting_client: "Awaiting client",
-  confirmed: "Confirmed",
-  finalized: "Finalized",
-  cancelled: "Cancelled",
+  draft: "Черновик",
+  awaiting_client: "Ожидает клиента",
+  confirmed: "Подтверждён",
+  finalized: "Оформлен",
+  cancelled: "Отменён",
 }
 
 export const ORDER_STATUS_COLOR: Record<OrderStatus, string> = {

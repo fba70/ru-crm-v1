@@ -29,6 +29,25 @@ import type { SourceProvider } from "@/db/schema"
 const ITEMS_PER_PAGE = 10
 const ALL_PROVIDERS = "__all__"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
+// Display labels — DB enum keys stay English.
+const TYPE_LABEL: Record<string, string> = {
+  external: "Внешний",
+  internal: "Внутренний",
+}
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активен",
+  inactive: "Неактивен",
+}
+
 // Single-line provider cell with the registry icon + label. Falls
 // through to a synthetic entry for unknown providers (see
 // `getProvider`) so the row still renders during a brief deploy
@@ -67,12 +86,12 @@ export function TableAdminSources() {
       if (showInactive) params.set("showInactive", "1")
 
       const res = await fetch(`/api/admin/sources?${params}`)
-      if (!res.ok) throw new Error("Failed to fetch sources")
+      if (!res.ok) throw new Error("Не удалось загрузить источники")
       const data = await res.json()
       setSources(data.sources ?? [])
       setTotal(data.total ?? 0)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -87,7 +106,7 @@ export function TableAdminSources() {
   if (error) {
     return (
       <div className="text-red-500 text-lg">
-        Error loading sources: {error}
+        Ошибка загрузки источников: {error}
       </div>
     )
   }
@@ -96,7 +115,7 @@ export function TableAdminSources() {
     <>
       <div className="flex flex-row flex-wrap items-center gap-2 mb-4">
         <Input
-          placeholder="Search by name"
+          placeholder="Поиск по названию"
           value={searchName}
           onChange={(e) => {
             setSearchName(e.target.value)
@@ -115,7 +134,7 @@ export function TableAdminSources() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL_PROVIDERS}>All providers</SelectItem>
+            <SelectItem value={ALL_PROVIDERS}>Все провайдеры</SelectItem>
             {PROVIDER_LIST.map((p) => (
               <SelectItem key={p.provider} value={p.provider}>
                 {p.label}
@@ -131,13 +150,13 @@ export function TableAdminSources() {
               setPage(1)
             }}
           />
-          Show inactive
+          Показывать неактивные
         </label>
         <Button variant="outline" onClick={fetchSources}>
           <RefreshCcw className="h-4 w-4" />
         </Button>
         <span className="ml-auto text-sm text-gray-400">
-          {total} source{total !== 1 && "s"} total
+          {total} {plural(total, ["источник", "источника", "источников"])} всего
         </span>
         <FormAdminEditSource onSuccess={fetchSources} />
       </div>
@@ -151,28 +170,28 @@ export function TableAdminSources() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Type</TableHead>
-                <TableHead>Provider</TableHead>
-                <TableHead>Organization</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>System</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Auto Parse</TableHead>
-                <TableHead className="w-12">Actions</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Провайдер</TableHead>
+                <TableHead>Организация</TableHead>
+                <TableHead>Название</TableHead>
+                <TableHead>Системный</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead>Авторазбор</TableHead>
+                <TableHead className="w-12">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sources.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-gray-500">
-                    No sources found
+                    Источники не найдены
                   </TableCell>
                 </TableRow>
               ) : (
                 sources.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="text-sm capitalize">
-                      {s.type}
+                    <TableCell className="text-sm">
+                      {TYPE_LABEL[s.type] ?? s.type}
                     </TableCell>
                     <TableCell className="text-sm">
                       <ProviderCell provider={s.provider} />
@@ -185,7 +204,7 @@ export function TableAdminSources() {
                       ) : (
                         s.ownerOrganizationName ?? (
                           <span className="text-muted-foreground italic">
-                            unknown
+                            неизвестно
                           </span>
                         )
                       )}
@@ -198,7 +217,7 @@ export function TableAdminSources() {
                           className="gap-1 text-xs"
                         >
                           <ShieldCheck className="h-3 w-3" />
-                          System
+                          Системный
                         </Badge>
                       ) : (
                         <span className="text-muted-foreground text-xs">
@@ -211,9 +230,9 @@ export function TableAdminSources() {
                         variant={
                           s.status === "active" ? "default" : "outline"
                         }
-                        className="text-xs capitalize"
+                        className="text-xs"
                       >
-                        {s.status}
+                        {STATUS_LABEL[s.status] ?? s.status}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -223,7 +242,7 @@ export function TableAdminSources() {
                         }
                         className="text-xs"
                       >
-                        {s.automatedParsingIsAllowed ? "On" : "Off"}
+                        {s.automatedParsingIsAllowed ? "Вкл" : "Выкл"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -240,7 +259,7 @@ export function TableAdminSources() {
 
           <div className="flex items-center justify-end gap-4 mt-4">
             <span className="text-sm text-gray-400">
-              page {page} of {totalPages || 1}
+              стр. {page} из {totalPages || 1}
             </span>
             <div className="flex gap-2">
               <Button
@@ -248,14 +267,14 @@ export function TableAdminSources() {
                 disabled={page === 1}
                 onClick={() => setPage(page - 1)}
               >
-                previous
+                Назад
               </Button>
               <Button
                 variant="outline"
                 disabled={page >= totalPages}
                 onClick={() => setPage(page + 1)}
               >
-                next
+                Вперёд
               </Button>
             </div>
           </div>

@@ -25,6 +25,15 @@ type Props = {
   showOrgColumn: boolean
 }
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 export function TableRules({
   ruleType,
   canEdit,
@@ -45,11 +54,11 @@ export function TableRules({
       const params = new URLSearchParams({ type: ruleType })
       if (searchName) params.set("search", searchName)
       const res = await fetch(`/api/rules?${params}`)
-      if (!res.ok) throw new Error("Failed to fetch rules")
+      if (!res.ok) throw new Error("Не удалось загрузить правила")
       const data = await res.json()
       setRules(data.rules ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -68,24 +77,24 @@ export function TableRules({
     : rules
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this rule?")) return
+    if (!confirm("Удалить это правило?")) return
     try {
       const res = await fetch(`/api/rules?id=${id}`, { method: "DELETE" })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        toast.error(err.error || "Failed to delete rule")
+        toast.error(err.error || "Не удалось удалить правило")
         return
       }
-      toast.success("Rule deleted")
+      toast.success("Правило удалено")
       fetchRules()
     } catch {
-      toast.error("Failed to delete rule")
+      toast.error("Не удалось удалить правило")
     }
   }
 
   if (error) {
     return (
-      <div className="text-red-500 text-lg">Error loading rules: {error}</div>
+      <div className="text-red-500 text-lg">Ошибка загрузки правил: {error}</div>
     )
   }
 
@@ -100,14 +109,14 @@ export function TableRules({
     <>
       <div className="flex flex-row flex-wrap items-center gap-2 mb-4">
         <Input
-          placeholder="Search by name"
+          placeholder="Поиск по названию"
           value={searchName}
           onChange={(e) => setSearchName(e.target.value)}
           className="max-w-48"
         />
         {showOrgFilter && (
           <Input
-            placeholder="Filter by organization"
+            placeholder="Фильтр по организации"
             value={searchOrg}
             onChange={(e) => setSearchOrg(e.target.value)}
             className="max-w-56"
@@ -117,7 +126,8 @@ export function TableRules({
           <RefreshCcw className="h-4 w-4" />
         </Button>
         <span className="ml-auto text-sm text-gray-400">
-          {visibleRules.length} rule{visibleRules.length !== 1 && "s"}
+          {visibleRules.length}{" "}
+          {plural(visibleRules.length, ["правило", "правила", "правил"])}
         </span>
         {canEdit && (
           <RuleEditDialog
@@ -128,7 +138,7 @@ export function TableRules({
             trigger={
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                New rule
+                Новое правило
               </Button>
             }
           />
@@ -143,12 +153,12 @@ export function TableRules({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              {showUserColumn && <TableHead>Created by</TableHead>}
-              {showOrgColumn && <TableHead>Organization</TableHead>}
-              <TableHead>Created</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>Название</TableHead>
+              {showUserColumn && <TableHead>Создал</TableHead>}
+              {showOrgColumn && <TableHead>Организация</TableHead>}
+              <TableHead>Создано</TableHead>
+              <TableHead>Обновлено</TableHead>
+              <TableHead className="text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,7 +168,7 @@ export function TableRules({
                   colSpan={colCount}
                   className="text-center text-gray-500"
                 >
-                  No rules found
+                  Правила не найдены
                 </TableCell>
               </TableRow>
             ) : (
@@ -178,10 +188,10 @@ export function TableRules({
                     </TableCell>
                   )}
                   <TableCell>
-                    {new Date(r.createdAt).toLocaleDateString()}
+                    {new Date(r.createdAt).toLocaleDateString("ru-RU")}
                   </TableCell>
                   <TableCell>
-                    {new Date(r.updatedAt).toLocaleDateString()}
+                    {new Date(r.updatedAt).toLocaleDateString("ru-RU")}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">

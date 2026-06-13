@@ -54,11 +54,11 @@ export default function InviteMemberDialog({
       })
 
       if (error) {
-        toast.error(error.message || "Failed to send invitation")
+        toast.error(error.message || "Не удалось отправить приглашение")
         return
       }
 
-      toast.success(`Invitation sent to ${data.email}`)
+      toast.success(`Приглашение отправлено на ${data.email}`)
       form.reset()
       onSuccess?.()
       setOpen(false)
@@ -69,12 +69,12 @@ export default function InviteMemberDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="default" size="sm">
-          Invite User
+          Пригласить
         </Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>Invite User to Organization</DialogTitle>
+          <DialogTitle>Пригласить пользователя в организацию</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -83,7 +83,7 @@ export default function InviteMemberDialog({
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-gray-400">Email Address</FormLabel>
+                  <FormLabel className="text-gray-400">Адрес email</FormLabel>
                   <FormControl>
                     <Input
                       type="email"
@@ -97,7 +97,7 @@ export default function InviteMemberDialog({
             />
             <DialogFooter>
               <LoadingButton type="submit" className="w-full" loading={isPending}>
-                Send Invitation
+                Отправить приглашение
               </LoadingButton>
             </DialogFooter>
           </form>

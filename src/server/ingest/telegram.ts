@@ -12,7 +12,7 @@ import "server-only"
 
 import { timingSafeEqual } from "node:crypto"
 import { eq } from "drizzle-orm"
-import type { Update } from "grammy/types"
+import type { Message, Update } from "grammy/types"
 import { db } from "@/db/drizzle"
 import { source } from "@/db/schema"
 import { getTelegramCredentials } from "@/server/providers/credentials"
@@ -97,6 +97,41 @@ type PersistResult =
   | { outcome: "ingested"; itemId: string; inserted: boolean; chatId: number }
   | { outcome: "ignored" }
 
+// Telegram service/system messages — the payload lives in one of these named
+// fields and `message.text` is absent, so they'd already drop out at the text
+// check. We reject them explicitly so the exclusion is documented and a field
+// we don't read can never slip through as a blank-text source item: chat
+// joins/leaves, title/photo changes, pins, group/channel creation, chat
+// migrations, and the auto-delete-timer change. (List per the Telegram
+// Bot API Message object.)
+const SERVICE_MESSAGE_KEYS = [
+  "new_chat_members",
+  "left_chat_member",
+  "new_chat_title",
+  "new_chat_photo",
+  "delete_chat_photo",
+  "pinned_message",
+  "group_chat_created",
+  "supergroup_chat_created",
+  "channel_chat_created",
+  "migrate_to_chat_id",
+  "migrate_from_chat_id",
+  "message_auto_delete_timer_changed",
+] as const
+
+function isServiceMessage(message: Message): boolean {
+  const m = message as unknown as Record<string, unknown>
+  return SERVICE_MESSAGE_KEYS.some((k) => m[k] != null)
+}
+
+// A bot command is any message whose text starts with "/" (/start, /help,
+// /settings, …) — control input for the bot, never client content. Telegram
+// also tags these with a `bot_command` entity at offset 0; the leading-slash
+// test is the broader, simpler rule the operator asked for.
+function isBotCommand(text: string): boolean {
+  return text.startsWith("/")
+}
+
 // Persist one update into a source_item. Pure persistence — NO secret
 // verification, NO ack (callers own those). Phase 1 scope: direct-message
 // TEXT only; group messages (Phase 3) and attachments (Phase 2) are
@@ -111,8 +146,16 @@ async function persistTelegramMessage(
   if (!message) return { outcome: "ignored" }
   if (message.chat.type !== "private") return { outcome: "ignored" }
 
+  // Drop Telegram service/system messages (joins, leaves, pins, title/photo
+  // changes, migrations, auto-delete timer) — no client signal in them.
+  if (isServiceMessage(message)) return { outcome: "ignored" }
+
   const text = message.text?.trim()
   if (!text) return { outcome: "ignored" }
+
+  // Drop bot commands (anything starting with "/": /start, /help, /settings, …)
+  // — these drive the bot, they aren't messages from a client.
+  if (isBotCommand(text)) return { outcome: "ignored" }
 
   const from = message.from
   const senderName =

@@ -37,6 +37,22 @@ const CONFIDENCE_COLOR: Record<ClientLookupCandidate["confidence"], string> = {
   low: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
 }
 
+// UI labels for the self-rated confidence levels.
+const CONFIDENCE_LABEL: Record<ClientLookupCandidate["confidence"], string> = {
+  high: "высокая",
+  medium: "средняя",
+  low: "низкая",
+}
+
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 export function ClientLookupDialog({
   client,
   trigger,
@@ -81,7 +97,7 @@ export function ClientLookupDialog({
         method: "POST",
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Lookup failed")
+      if (!res.ok) throw new Error(data.error || "Не удалось выполнить поиск")
       const r = data as ClientLookupResult
       setResult(r)
       if (r.candidates.length === 0) {
@@ -96,7 +112,9 @@ export function ClientLookupDialog({
         setPhase("select-candidate")
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Lookup failed")
+      toast.error(
+        err instanceof Error ? err.message : "Не удалось выполнить поиск",
+      )
       setOpen(false)
       reset()
     }
@@ -143,7 +161,7 @@ export function ClientLookupDialog({
 
   const save = useCallback(async () => {
     if (!draft.name.trim()) {
-      toast.error("Name is required")
+      toast.error("Укажите название")
       return
     }
     setPhase("saving")
@@ -161,13 +179,13 @@ export function ClientLookupDialog({
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Save failed")
-      toast.success("Client updated")
+      if (!res.ok) throw new Error(data.error || "Не удалось сохранить")
+      toast.success("Клиент обновлён")
       onSaved()
       setOpen(false)
       reset()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed")
+      toast.error(err instanceof Error ? err.message : "Не удалось сохранить")
       setPhase("edit")
     }
   }, [client.id, draft, onSaved, reset])
@@ -179,11 +197,11 @@ export function ClientLookupDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Globe className="h-4 w-4" />
-            Lookup on web
+            Поиск в интернете
           </DialogTitle>
           <DialogDescription>
-            Searches the web for this company and proposes updates to its
-            contact details. Review and edit before saving.
+            Ищет компанию в интернете и предлагает обновить её контактные
+            данные. Проверьте и отредактируйте перед сохранением.
           </DialogDescription>
         </DialogHeader>
 
@@ -191,7 +209,7 @@ export function ClientLookupDialog({
           <CenterMessage>
             <Loader className="h-6 w-6 animate-spin" />
             <span className="text-sm text-muted-foreground">
-              Searching the web for {client.name}…
+              Поиск в интернете: {client.name}…
             </span>
           </CenterMessage>
         )}
@@ -200,11 +218,11 @@ export function ClientLookupDialog({
           <CenterMessage>
             <AlertTriangle className="h-6 w-6 text-amber-500" />
             <div className="text-sm text-center text-muted-foreground max-w-md">
-              No matches found. Try refining the client name first, then run the
-              lookup again.
+              Совпадений не найдено. Уточните название клиента и запустите поиск
+              снова.
             </div>
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              Close
+              Закрыть
             </Button>
           </CenterMessage>
         )}
@@ -268,8 +286,13 @@ function CandidateSelector({
   return (
     <>
       <div className="text-xs text-muted-foreground border-b pb-2">
-        Found {candidates.length} possible match
-        {candidates.length === 1 ? "" : "es"}. Pick the right one to continue.
+        Найдено {candidates.length}{" "}
+        {plural(candidates.length, [
+          "совпадение",
+          "совпадения",
+          "совпадений",
+        ])}
+        . Выберите подходящее, чтобы продолжить.
       </div>
 
       {notes && (
@@ -292,7 +315,7 @@ function CandidateSelector({
                 variant="secondary"
                 className={CONFIDENCE_COLOR[c.confidence]}
               >
-                {c.confidence}
+                {CONFIDENCE_LABEL[c.confidence]}
               </Badge>
             </div>
             {c.address && (
@@ -323,7 +346,7 @@ function CandidateSelector({
 
       <DialogFooter>
         <Button variant="ghost" onClick={onCancel}>
-          None of these
+          Ни одно из них
         </Button>
       </DialogFooter>
     </>
@@ -381,7 +404,8 @@ function EditView({
           {lowConfidence && (
             <div className="flex items-center gap-1 font-medium">
               <AlertTriangle className="h-3 w-3" />
-              Low-confidence match — review carefully before saving.
+              Совпадение с низкой уверенностью — проверьте внимательно перед
+              сохранением.
             </div>
           )}
           {notes && <div>{notes}</div>}
@@ -390,7 +414,7 @@ function EditView({
 
       <div className="flex-1 overflow-y-auto space-y-3 -mx-1 px-1">
         <FieldRow
-          label="Name"
+          label="Название"
           value={draft.name}
           onChange={(v) => setDraft((d) => ({ ...d, name: v }))}
           changed={isChanged("name")}
@@ -403,21 +427,21 @@ function EditView({
           placeholder="info@example.com"
         />
         <FieldRow
-          label="Phone"
+          label="Телефон"
           value={draft.phone}
           onChange={(v) => setDraft((d) => ({ ...d, phone: v }))}
           changed={isChanged("phone")}
-          placeholder="+43 1 234 5678"
+          placeholder="+7 495 123 4567"
         />
         <FieldRow
-          label="Address"
+          label="Адрес"
           value={draft.address}
           onChange={(v) => setDraft((d) => ({ ...d, address: v }))}
           changed={isChanged("address")}
-          placeholder="Street, City, Country"
+          placeholder="Улица, город, страна"
         />
         <FieldRow
-          label="Website"
+          label="Сайт"
           value={draft.webUrl}
           onChange={(v) => setDraft((d) => ({ ...d, webUrl: v }))}
           changed={isChanged("webUrl")}
@@ -430,20 +454,20 @@ function EditView({
       <DialogFooter className="gap-2">
         {onBack && (
           <Button variant="ghost" onClick={onBack} disabled={saving}>
-            Back
+            Назад
           </Button>
         )}
         <Button variant="ghost" onClick={onCancel} disabled={saving}>
-          Cancel
+          Отмена
         </Button>
         <Button onClick={onSave} disabled={saving}>
           {saving ? (
             <>
               <Loader className="h-4 w-4 mr-1 animate-spin" />
-              Saving…
+              Сохранение…
             </>
           ) : (
-            "Save"
+            "Сохранить"
           )}
         </Button>
       </DialogFooter>
@@ -473,7 +497,7 @@ function FieldRow({
             variant="secondary"
             className="bg-blue-500/15 text-blue-600 dark:text-blue-300 text-[10px] px-1.5 py-0 h-4"
           >
-            changed
+            изменено
           </Badge>
         )}
       </div>
@@ -515,7 +539,7 @@ function SourcesBlock({ sources }: { sources: ClientLookupSource[] }) {
   return (
     <div className="border-t pt-2 space-y-1">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-        Sources
+        Источники
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {visible.map((s, i) => (
@@ -543,7 +567,7 @@ function SourcesBlock({ sources }: { sources: ClientLookupSource[] }) {
             onClick={() => setExpanded(true)}
             className="text-xs text-muted-foreground hover:underline"
           >
-            +{dedupedByDomain.length - 4} more
+            +{dedupedByDomain.length - 4} ещё
           </button>
         )}
       </div>

@@ -7,6 +7,15 @@ import { toast } from "sonner"
 import type { SystemSource } from "@/server/sources"
 import { getProvider, PROVIDER_LIST } from "@/lib/sources/providers"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 // Action bar at the top of the Sources page.
 //
 // The per-source Sync row covers every provider whose registry entry has
@@ -63,7 +72,7 @@ export function SyncActionBar({
             onClick={onOpenWhatsAppUpload}
           >
             <FolderUp className="h-4 w-4 mr-2" />
-            Sync WhatsApp Archive
+            Загрузить архив WhatsApp
           </Button>
         )}
         <Button
@@ -73,7 +82,7 @@ export function SyncActionBar({
           onClick={onOpenDropoffUpload}
         >
           <Upload className="h-4 w-4 mr-2" />
-          Drop Off Your Files
+          Загрузить файлы
         </Button>
       </div>
     </div>
@@ -99,19 +108,19 @@ function SyncButton({
         body: JSON.stringify({ sourceId: source.id }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Sync failed")
+      if (!res.ok) throw new Error(data.error || "Не удалось синхронизировать")
       const { fetched, inserted, updated } = data as {
         fetched: number
         inserted: number
         updated: number
       }
       toast.success(
-        `${source.name} synced — ${fetched} fetched (${inserted} new, ${updated} updated)`,
+        `${source.name}: синхронизировано — получено ${fetched} (${inserted} новых, ${updated} обновлено)`,
       )
       onSynced()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error"
-      toast.error(`Sync ${source.name}: ${msg}`)
+      const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
+      toast.error(`Синхронизация ${source.name}: ${msg}`)
     } finally {
       setBusy(false)
     }
@@ -130,7 +139,7 @@ function SyncButton({
       ) : (
         <ProviderIcon className="h-4 w-4 mr-2" />
       )}
-      Sync {source.name}
+      Синхронизировать {source.name}
     </Button>
   )
 }
@@ -160,7 +169,7 @@ function TelegramFetchButton({
         body: JSON.stringify({ sourceId: source.id }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Fetch failed")
+      if (!res.ok) throw new Error(data.error || "Не удалось получить")
       const { fetched, ingested, ignored, webhookActive } = data as {
         fetched: number
         ingested: number
@@ -169,17 +178,17 @@ function TelegramFetchButton({
       }
       if (webhookActive) {
         toast.info(
-          `${source.name}: a webhook is active — messages arrive automatically, no manual fetch needed.`,
+          `${source.name}: активен веб-хук — сообщения приходят автоматически, ручная загрузка не нужна.`,
         )
       } else {
         toast.success(
-          `${source.name} fetched — ${fetched} update${fetched === 1 ? "" : "s"} (${ingested} ingested, ${ignored} skipped)`,
+          `${source.name}: получено ${fetched} ${plural(fetched, ["обновление", "обновления", "обновлений"])} (${ingested} принято, ${ignored} пропущено)`,
         )
       }
       onSynced()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error"
-      toast.error(`Fetch ${source.name}: ${msg}`)
+      const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
+      toast.error(`Получение ${source.name}: ${msg}`)
     } finally {
       setBusy(false)
     }
@@ -198,7 +207,7 @@ function TelegramFetchButton({
       ) : (
         <ProviderIcon className="h-4 w-4 mr-2" />
       )}
-      Fetch {source.name}
+      Получить {source.name}
     </Button>
   )
 }

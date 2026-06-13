@@ -56,6 +56,21 @@ const FUNNEL_PHASES = [
   "retention",
 ] as const
 
+// UI display labels (DB enum values stay English).
+const STATUS_LABEL: Record<string, string> = {
+  active: "Активный",
+  initial: "Новый",
+  suspended: "Приостановлен",
+  deleted: "Удалён",
+}
+const PHASE_LABEL: Record<string, string> = {
+  awareness: "Осведомлённость",
+  interest: "Интерес",
+  decision: "Решение",
+  action: "Действие",
+  retention: "Удержание",
+}
+
 function usePaged<T>(items: T[], pageSize: number = PAGE_SIZE) {
   const [page, setPage] = useState(1)
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize))
@@ -357,15 +372,15 @@ export default function ClientsPage() {
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">CLIENTS</h1>
+      <h1 className="text-2xl font-medium mt-2">КЛИЕНТЫ & КОНТАКТЫ</h1>
 
       <div className="w-full max-w-7xl px-4">
         <Tabs defaultValue="clientsContacts" className="w-full">
           <TabsList>
             <TabsTrigger value="clientsContacts">
-              Clients &amp; Contacts
+              Клиенты и контакты
             </TabsTrigger>
-            <TabsTrigger value="deals">Deals</TabsTrigger>
+            <TabsTrigger value="deals">Сделки</TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -380,7 +395,7 @@ export default function ClientsPage() {
                 trigger={
                   <Button size="sm" variant="default">
                     <Sparkles className="h-4 w-4 mr-1" />
-                    Discover from sources
+                    Найти в источниках
                   </Button>
                 }
               />
@@ -390,7 +405,7 @@ export default function ClientsPage() {
                 trigger={
                   <Button size="sm">
                     <Plus className="h-4 w-4 mr-1" />
-                    New client
+                    Новый клиент
                   </Button>
                 }
               />
@@ -400,7 +415,7 @@ export default function ClientsPage() {
                 trigger={
                   <Button size="sm">
                     <Plus className="h-4 w-4 mr-1" />
-                    New contact
+                    Новый контакт
                   </Button>
                 }
               />
@@ -408,18 +423,18 @@ export default function ClientsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Clients</CardTitle>
+                <CardTitle>Клиенты</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Input
-                    placeholder="Filter by name…"
+                    placeholder="Фильтр по названию…"
                     value={clientNameFilter}
                     onChange={(e) => setClientNameFilter(e.target.value)}
                     className="flex-1 min-w-45"
                   />
                   <Input
-                    placeholder="Filter by email…"
+                    placeholder="Фильтр по email…"
                     value={clientEmailFilter}
                     onChange={(e) => setClientEmailFilter(e.target.value)}
                     className="flex-1 min-w-45"
@@ -432,13 +447,13 @@ export default function ClientsPage() {
                         ("All statuses") so the dropdowns stay compact and
                         the inputs absorb the remaining row width. */}
                     <SelectTrigger className="w-fit">
-                      <SelectValue placeholder="Status" />
+                      <SelectValue placeholder="Статус" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ALL}>All statuses</SelectItem>
+                      <SelectItem value={ALL}>Все статусы</SelectItem>
                       {CLIENT_STATUSES.map((s) => (
                         <SelectItem key={s} value={s}>
-                          {s}
+                          {STATUS_LABEL[s] ?? s}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -448,13 +463,13 @@ export default function ClientsPage() {
                     onValueChange={setClientPhaseFilter}
                   >
                     <SelectTrigger className="w-fit">
-                      <SelectValue placeholder="Funnel phase" />
+                      <SelectValue placeholder="Этап воронки" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ALL}>All funnel phases</SelectItem>
+                      <SelectItem value={ALL}>Все этапы воронки</SelectItem>
                       {FUNNEL_PHASES.map((p) => (
                         <SelectItem key={p} value={p}>
-                          {p}
+                          {PHASE_LABEL[p] ?? p}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -463,7 +478,7 @@ export default function ClientsPage() {
 
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-xs text-muted-foreground">
-                    {filteredClients.length} of {clients.length} clients
+                    {filteredClients.length} из {clients.length} клиентов
                   </div>
                   <Button
                     variant="ghost"
@@ -472,7 +487,7 @@ export default function ClientsPage() {
                     disabled={!hasClientFilters}
                   >
                     <X className="h-4 w-4 mr-1" />
-                    Clear filters
+                    Сбросить фильтры
                   </Button>
                 </div>
 
@@ -481,9 +496,9 @@ export default function ClientsPage() {
                     <Loader className="animate-spin h-6 w-6" />
                   </div>
                 ) : clients.length === 0 ? (
-                  <EmptyState label="No clients yet." />
+                  <EmptyState label="Пока нет клиентов." />
                 ) : filteredClients.length === 0 ? (
-                  <EmptyState label="No clients match the filters." />
+                  <EmptyState label="Нет клиентов по заданным фильтрам." />
                 ) : (
                   <>
                     <div className="grid grid-cols-3 gap-4">{clientGrid}</div>
@@ -501,18 +516,18 @@ export default function ClientsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Contacts</CardTitle>
+                <CardTitle>Контакты</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Input
-                    placeholder="Filter by name…"
+                    placeholder="Фильтр по имени…"
                     value={contactNameFilter}
                     onChange={(e) => setContactNameFilter(e.target.value)}
                     className="flex-1 min-w-45"
                   />
                   <Input
-                    placeholder="Filter by email…"
+                    placeholder="Фильтр по email…"
                     value={contactEmailFilter}
                     onChange={(e) => setContactEmailFilter(e.target.value)}
                     className="flex-1 min-w-45"
@@ -522,13 +537,13 @@ export default function ClientsPage() {
                     onValueChange={setContactStatusFilter}
                   >
                     <SelectTrigger className="w-fit">
-                      <SelectValue placeholder="Status" />
+                      <SelectValue placeholder="Статус" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ALL}>All statuses</SelectItem>
+                      <SelectItem value={ALL}>Все статусы</SelectItem>
                       {CLIENT_STATUSES.map((s) => (
                         <SelectItem key={s} value={s}>
-                          {s}
+                          {STATUS_LABEL[s] ?? s}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -537,7 +552,7 @@ export default function ClientsPage() {
 
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-xs text-muted-foreground">
-                    {filteredContacts.length} of {contacts.length} contacts
+                    {filteredContacts.length} из {contacts.length} контактов
                   </div>
                   <Button
                     variant="ghost"
@@ -546,7 +561,7 @@ export default function ClientsPage() {
                     disabled={!hasContactFilters}
                   >
                     <X className="h-4 w-4 mr-1" />
-                    Clear filters
+                    Сбросить фильтры
                   </Button>
                 </div>
 
@@ -555,9 +570,9 @@ export default function ClientsPage() {
                     <Loader className="animate-spin h-6 w-6" />
                   </div>
                 ) : contacts.length === 0 ? (
-                  <EmptyState label="No contacts yet." />
+                  <EmptyState label="Пока нет контактов." />
                 ) : filteredContacts.length === 0 ? (
-                  <EmptyState label="No contacts match the filters." />
+                  <EmptyState label="Нет контактов по заданным фильтрам." />
                 ) : (
                   <>
                     <div className="grid grid-cols-3 gap-4">{contactGrid}</div>
@@ -584,7 +599,7 @@ export default function ClientsPage() {
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-baseline gap-2 min-w-0">
                     <span className="text-sm text-muted-foreground">
-                      Curent sales funnel value:
+                      Текущая стоимость воронки продаж:
                     </span>
                     <span className="text-xl font-semibold text-orange-300">
                       €
@@ -600,7 +615,7 @@ export default function ClientsPage() {
                       trigger={
                         <Button size="sm" variant="default">
                           <Sparkles className="h-4 w-4 mr-1" />
-                          Discover from sources
+                          Найти в источниках
                         </Button>
                       }
                     />
@@ -610,7 +625,7 @@ export default function ClientsPage() {
                       trigger={
                         <Button size="sm">
                           <Plus className="h-4 w-4 mr-1" />
-                          New deal
+                          Новая сделка
                         </Button>
                       }
                     />
@@ -619,7 +634,7 @@ export default function ClientsPage() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Input
-                    placeholder="Search name or description…"
+                    placeholder="Поиск по названию или описанию…"
                     value={dealQueryFilter}
                     onChange={(e) => setDealQueryFilter(e.target.value)}
                     className="flex-1 min-w-45"
@@ -629,10 +644,10 @@ export default function ClientsPage() {
                     onValueChange={setDealClientFilter}
                   >
                     <SelectTrigger className="w-fit">
-                      <SelectValue placeholder="Client" />
+                      <SelectValue placeholder="Клиент" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ALL}>All clients</SelectItem>
+                      <SelectItem value={ALL}>Все клиенты</SelectItem>
                       {dealClientOptions.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           {c.name}
@@ -647,20 +662,20 @@ export default function ClientsPage() {
                         setDealIncludeCancelled(Boolean(v))
                       }
                     />
-                    Include cancelled
+                    Показать отменённые
                   </label>
                   <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
                     <Checkbox
                       checked={dealIncludeDeleted}
                       onCheckedChange={(v) => setDealIncludeDeleted(Boolean(v))}
                     />
-                    Include deleted
+                    Показать удалённые
                   </label>
                 </div>
 
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-xs text-muted-foreground">
-                    {filteredDeals.length} of {deals.length} deals
+                    {filteredDeals.length} из {deals.length} сделок
                   </div>
                   <Button
                     variant="ghost"
@@ -669,7 +684,7 @@ export default function ClientsPage() {
                     disabled={!hasDealFilters}
                   >
                     <X className="h-4 w-4 mr-1" />
-                    Clear filters
+                    Сбросить фильтры
                   </Button>
                 </div>
 
@@ -678,7 +693,7 @@ export default function ClientsPage() {
                     <Loader className="animate-spin h-6 w-6" />
                   </div>
                 ) : dealStages.length === 0 ? (
-                  <EmptyState label="No funnel stages configured. Run the seed script to populate them." />
+                  <EmptyState label="Этапы воронки не настроены. Запустите скрипт инициализации, чтобы их создать." />
                 ) : (
                   <Tabs defaultValue={dealStages[0].id} className="w-full">
                     <TabsList className="flex-wrap h-auto">
@@ -701,8 +716,8 @@ export default function ClientsPage() {
                             onChanged={refreshAll}
                             emptyLabel={
                               hasDealFilters
-                                ? `No deals match the filters in "${s.name}".`
-                                : `No deals in "${s.name}".`
+                                ? `Нет сделок по фильтрам на этапе «${s.name}».`
+                                : `Нет сделок на этапе «${s.name}».`
                             }
                           />
                         </TabsContent>

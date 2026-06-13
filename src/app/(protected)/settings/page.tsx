@@ -24,9 +24,9 @@ export default function SettingsPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <ShieldAlert className="h-16 w-16 text-red-500 mb-4" />
-        <h1 className="text-2xl font-medium">Access Denied</h1>
+        <h1 className="text-2xl font-medium">Доступ запрещён</h1>
         <p className="text-gray-500 mt-2">
-          You do not have permission to access this page.
+          У вас нет прав для доступа к этой странице.
         </p>
       </div>
     )
@@ -34,16 +34,16 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">PLATFORM SETTINGS</h1>
+      <h1 className="text-2xl font-medium mt-2">НАСТРОЙКИ СИСТЕМЫ</h1>
 
       <div className="w-full max-w-7xl px-4">
         <Tabs defaultValue="users" className="w-full">
           <TabsList>
-            <TabsTrigger value="users">Users</TabsTrigger>
-            <TabsTrigger value="organizations">Organizations</TabsTrigger>
-            <TabsTrigger value="templates">Templates</TabsTrigger>
-            <TabsTrigger value="sources">Sources</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="users">Пользователи</TabsTrigger>
+            <TabsTrigger value="organizations">Организации</TabsTrigger>
+            <TabsTrigger value="templates">Шаблоны</TabsTrigger>
+            <TabsTrigger value="sources">Источники</TabsTrigger>
+            <TabsTrigger value="settings">Настройки</TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -102,7 +102,7 @@ export default function SettingsPage() {
             <Card>
               <CardContent className="pt-6">
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  No platform settings yet.
+                  Настроек платформы пока нет.
                 </p>
               </CardContent>
             </Card>

@@ -3,16 +3,16 @@ import type { ResolveFailReason } from "@/server/order-links"
 
 const COPY: Record<ResolveFailReason, { title: string; body: string }> = {
   not_found: {
-    title: "Link not found",
-    body: "This order link is invalid or no longer exists.",
+    title: "Ссылка не найдена",
+    body: "Эта ссылка на заказ недействительна или больше не существует.",
   },
   revoked: {
-    title: "Link no longer active",
-    body: "This order link has been revoked. Please contact the sender for an up-to-date link.",
+    title: "Ссылка больше не активна",
+    body: "Эта ссылка на заказ была отозвана. Пожалуйста, запросите у отправителя актуальную ссылку.",
   },
   expired: {
-    title: "Link expired",
-    body: "This order link has expired. Please contact the sender for a new one.",
+    title: "Срок ссылки истёк",
+    body: "Срок действия этой ссылки на заказ истёк. Пожалуйста, запросите у отправителя новую.",
   },
 }
 

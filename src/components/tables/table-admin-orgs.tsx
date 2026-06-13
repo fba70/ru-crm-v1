@@ -15,6 +15,15 @@ import { Loader, RefreshCcw } from "lucide-react"
 import AdminEditOrgDialog from "@/components/forms/form-admin-edit-org"
 import type { AdminOrg } from "@/app/api/admin/organizations/route"
 
+// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
+  return forms[2]
+}
+
 const ITEMS_PER_PAGE = 10
 
 export function TableAdminOrgs() {
@@ -39,13 +48,13 @@ export function TableAdminOrgs() {
 
       const res = await fetch(`/api/admin/organizations?${params}`)
       if (!res.ok) {
-        throw new Error("Failed to fetch organizations")
+        throw new Error("Не удалось загрузить организации")
       }
       const data = await res.json()
       setOrgs(data.organizations ?? [])
       setTotal(data.total ?? 0)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setLoading(false)
     }
@@ -60,7 +69,7 @@ export function TableAdminOrgs() {
   if (error) {
     return (
       <div className="text-red-500 text-lg">
-        Error loading organizations: {error}
+        Ошибка загрузки организаций: {error}
       </div>
     )
   }
@@ -69,7 +78,7 @@ export function TableAdminOrgs() {
     <>
       <div className="flex flex-row flex-wrap items-center gap-2 mb-4">
         <Input
-          placeholder="Search by name"
+          placeholder="Поиск по названию"
           value={searchName}
           onChange={(e) => {
             setSearchName(e.target.value)
@@ -81,7 +90,7 @@ export function TableAdminOrgs() {
           <RefreshCcw className="h-4 w-4" />
         </Button>
         <span className="ml-auto text-sm text-gray-400">
-          {total} organization{total !== 1 && "s"} total
+          {total} {plural(total, ["организация", "организации", "организаций"])} всего
         </span>
       </div>
 
@@ -94,19 +103,19 @@ export function TableAdminOrgs() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Members</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Owner Email</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>Название</TableHead>
+                <TableHead>Создана</TableHead>
+                <TableHead>Участники</TableHead>
+                <TableHead>Владелец</TableHead>
+                <TableHead>Email владельца</TableHead>
+                <TableHead>Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {orgs.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-gray-500">
-                    No organizations found
+                    Организации не найдены
                   </TableCell>
                 </TableRow>
               ) : (
@@ -114,7 +123,7 @@ export function TableAdminOrgs() {
                   <TableRow key={org.id}>
                     <TableCell className="font-medium">{org.name}</TableCell>
                     <TableCell>
-                      {new Date(org.createdAt).toLocaleDateString()}
+                      {new Date(org.createdAt).toLocaleDateString("ru-RU")}
                     </TableCell>
                     <TableCell>{org.memberCount}</TableCell>
                     <TableCell>
@@ -138,7 +147,7 @@ export function TableAdminOrgs() {
 
           <div className="flex items-center justify-end gap-4 mt-4">
             <span className="text-sm text-gray-400">
-              page {page} of {totalPages || 1}
+              стр. {page} из {totalPages || 1}
             </span>
             <div className="flex gap-2">
               <Button
@@ -146,14 +155,14 @@ export function TableAdminOrgs() {
                 disabled={page === 1}
                 onClick={() => setPage(page - 1)}
               >
-                previous
+                Назад
               </Button>
               <Button
                 variant="outline"
                 disabled={page >= totalPages}
                 onClick={() => setPage(page + 1)}
               >
-                next
+                Вперёд
               </Button>
             </div>
           </div>

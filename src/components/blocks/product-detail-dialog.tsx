@@ -11,6 +11,15 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ExternalLink, ImageOff, Loader } from "lucide-react"
 import type { ProductDetail } from "@/app/api/products/[id]/route"
+import type { EntityStatus } from "@/db/schema"
+
+// UI display labels for the entity status badge (DB enum values stay English).
+const STATUS_LABEL: Record<EntityStatus, string> = {
+  active: "Активный",
+  suspended: "Приостановлен",
+  initial: "Новый",
+  deleted: "Удалён",
+}
 
 // Humanize a DB field name into a readable label: snake/camel → spaced,
 // first letter capitalised. e.g. "country_name" → "Country name",
@@ -98,7 +107,7 @@ export function ProductDetailDialog({
     let cancelled = false
     fetch(`/api/products/${productId}`)
       .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json()).error ?? "Failed to load")
+        if (!r.ok) throw new Error((await r.json()).error ?? "Не удалось загрузить")
         return r.json()
       })
       .then((data) => {
@@ -108,7 +117,7 @@ export function ProductDetailDialog({
       })
       .catch((e) => {
         if (!cancelled)
-          setError(e instanceof Error ? e.message : "Failed to load")
+          setError(e instanceof Error ? e.message : "Не удалось загрузить")
       })
     return () => {
       cancelled = true
@@ -134,7 +143,7 @@ export function ProductDetailDialog({
       <DialogContent className="sm:max-w-212 max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="pr-6">
-            {product?.name ?? "Product details"}
+            {product?.name ?? "Карточка товара"}
           </DialogTitle>
         </DialogHeader>
 
@@ -168,18 +177,18 @@ export function ProductDetailDialog({
                 )}
               </div>
               <div className="flex-1 min-w-0 space-y-5">
-                <Group title="Main">
+                <Group title="Основное">
                   <Field
-                    label="Category"
+                    label="Категория"
                     value={product.category ?? "—"}
                   />
-                  <Field label="Price" value={formatPrice(product.price)} />
+                  <Field label="Цена" value={formatPrice(product.price)} />
                   <Field
-                    label="Total stock"
+                    label="Остаток"
                     value={product.totalStock ?? "—"}
                   />
                   <Field
-                    label="Web page"
+                    label="Страница на сайте"
                     value={
                       product.webPageUrl ? (
                         <a
@@ -188,7 +197,7 @@ export function ProductDetailDialog({
                           rel="noopener noreferrer"
                           className="text-orange-400 hover:underline inline-flex items-center gap-1"
                         >
-                          Open <ExternalLink className="h-3.5 w-3.5" />
+                          Открыть <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                       ) : (
                         "—"
@@ -196,14 +205,18 @@ export function ProductDetailDialog({
                     }
                   />
                   <Field
-                    label="Status"
-                    value={<Badge variant="secondary">{product.status}</Badge>}
+                    label="Статус"
+                    value={
+                      <Badge variant="secondary">
+                        {STATUS_LABEL[product.status] ?? product.status}
+                      </Badge>
+                    }
                   />
                 </Group>
 
                 {/* Accounting IDs (cols A-B) */}
                 {accounting.length > 0 && (
-                  <Group title="Accounting">
+                  <Group title="Учёт">
                     {accounting.map((e) => (
                       <Field key={e.label} label={e.label} value={e.value} />
                     ))}
@@ -214,7 +227,7 @@ export function ProductDetailDialog({
 
             {/* Additional attributes (cols I-Z + price_range) */}
             {additional.length > 0 && (
-              <Group title="Additional attributes">
+              <Group title="Дополнительные атрибуты">
                 {additional.map((e) => (
                   <Field key={e.label} label={e.label} value={e.value} />
                 ))}
@@ -224,7 +237,7 @@ export function ProductDetailDialog({
             {/* Stock by location (cols AB-AP) — multi-column grid since
                 there are many warehouses and each value is short. */}
             {product.stockMetadata.length > 0 && (
-              <Group title="Stock by location">
+              <Group title="Остатки по складам">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 py-1">
                   {product.stockMetadata.map((loc) => (
                     <div
