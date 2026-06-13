@@ -298,6 +298,11 @@ export default function ProductsPage() {
     items: OrderRequestItemView[]
     index: number
   } | null>(null)
+  // The exact phrase the wizard last auto-filled into the search box. While the
+  // box still holds it verbatim, the catalog ranks by the item's bilingual
+  // `terms` (soft); the moment the rep edits the box, it becomes a normal hard
+  // `q` search (their explicit override). Null when no wizard phrase is staged.
+  const [wizardSearch, setWizardSearch] = useState<string | null>(null)
 
   // Handoff from a card's "Create order" button (/products?orderFromCard=<id>):
   // fetch the card, prefill the New Order dialog with its linked client + the
@@ -329,20 +334,26 @@ export default function ProductsPage() {
   }, [])
 
   // Pre-narrow the catalog for one intent item. Discovery items apply their
-  // structured filters; the item's bilingual `searchTerms` (sent as the
-  // catalog `terms` param, derived from the wizard in `load`) do the ranked
-  // name matching for both modes. The free-text search box is left empty so
-  // the rep can still refine by hand on top of the ranked results.
+  // structured filters; the item's bilingual `searchTerms` rank the catalog
+  // (sent as the `terms` param in `load`) for both modes. We ALSO seed the
+  // visible search box with a human-readable phrase (the item label, else its
+  // first term) so the rep can SEE what's being matched and edit it on the
+  // spot — the key lever when a transliteration misses the Latin catalog.
+  // While the box still holds this exact phrase, matching stays on the soft
+  // `terms` ranking; editing the box switches to a hard `q` search.
   const applyItemToFilters = useCallback((item: OrderRequestItemView) => {
     const f = item.filters ?? {}
     const min = f.priceMin != null ? String(f.priceMin) : ""
     const max = f.priceMax != null ? String(f.priceMax) : ""
-    setSearchInput("")
+    const phrase = (item.label ?? "").trim() || item.searchTerms[0]?.trim() || ""
+    setSearchInput(phrase)
+    setWizardSearch(phrase)
     setPriceMinInput(min)
     setPriceMaxInput(max)
     setAwardsInput("")
     setFilters({
       ...EMPTY_FILTERS,
+      q: phrase,
       category: f.category ?? ALL,
       type: f.type ?? ALL,
       color: f.color ?? ALL,
@@ -472,9 +483,13 @@ export default function ProductsPage() {
     ? parseQtyHint(currentWizardItem.quantityHint)
     : 1
   // The catalog is ranked best-first while a wizard step is active, so the top
-  // row of page 1 is the most probable match — flag it for the rep.
+  // row of page 1 is the most probable match — flag it for the rep. Suppressed
+  // when the top row scored 0 (terms matched nothing → it's filler, not a
+  // match), so we never label an arbitrary product as the "Best match".
   const showBestMatch =
-    !!currentWizardItem?.searchTerms?.length && page === 1
+    !!currentWizardItem?.searchTerms?.length &&
+    page === 1 &&
+    (rows[0]?.score ?? 0) > 0
 
   // Guards against an out-of-order response overwriting a newer one.
   const reqIdRef = useRef(0)
@@ -487,7 +502,14 @@ export default function ProductsPage() {
         limit: String(pageSize),
         offset: String((page - 1) * pageSize),
       })
-      if (filters.q) params.set("q", filters.q)
+      // While the box still holds the untouched wizard phrase, the catalog is
+      // driven by the item's SOFT `terms` ranking (below) — not a hard `q`
+      // filter — so a no-match item still shows products. Once the rep edits
+      // the box, `filters.q` diverges from `wizardSearch` and it becomes a
+      // normal hard `q` search (their explicit override).
+      const boxIsWizardPhrase =
+        !!wizard && wizardSearch !== null && filters.q === wizardSearch
+      if (filters.q && !boxIsWizardPhrase) params.set("q", filters.q)
       if (filters.category !== ALL) params.set("category", filters.category)
       if (filters.type !== ALL) params.set("type", filters.type)
       if (filters.color !== ALL) params.set("color", filters.color)
@@ -505,10 +527,12 @@ export default function ProductsPage() {
       if (filters.priceMin) params.set("priceMin", filters.priceMin)
       if (filters.priceMax) params.set("priceMax", filters.priceMax)
       if (filters.inStock !== ALL) params.set("inStock", filters.inStock)
-      // While the order-from-request wizard is on a step, rank the catalog by
-      // that item's bilingual search tokens (the page's primary matching lever
-      // for the assistant — see `applyItemToFilters`).
-      const wizardTerms = wizard?.items[wizard.index]?.searchTerms ?? []
+      // Rank the catalog by the current item's bilingual search tokens, but
+      // only while the box still shows the auto-filled phrase — once the rep
+      // takes over the box (hard `q` above), the wizard ranking steps aside.
+      const wizardTerms = boxIsWizardPhrase
+        ? (wizard?.items[wizard.index]?.searchTerms ?? [])
+        : []
       if (wizardTerms.length > 0) params.set("terms", wizardTerms.join(","))
       const res = await fetch(`/api/products?${params.toString()}`)
       const data: ListProductsResult = await res.json()
@@ -518,7 +542,7 @@ export default function ProductsPage() {
     } finally {
       if (reqId === reqIdRef.current) setLoading(false)
     }
-  }, [page, pageSize, filters, wizard])
+  }, [page, pageSize, filters, wizard, wizardSearch])
 
   useEffect(() => {
     load()
@@ -529,6 +553,15 @@ export default function ProductsPage() {
   useEffect(() => {
     if (!builder.isActive && wizard) setWizard(null)
   }, [builder.isActive, wizard])
+
+  // Once the wizard is gone, clear the auto-filled search phrase so it doesn't
+  // linger as a stray hard `q` filter over the plain catalog.
+  useEffect(() => {
+    if (!wizard && wizardSearch !== null) {
+      setWizardSearch(null)
+      setSearchInput("")
+    }
+  }, [wizard, wizardSearch])
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
@@ -559,6 +592,10 @@ export default function ProductsPage() {
           </div>
 
           <TabsContent value="catalog" className="mt-4 space-y-4">
+            {/* Block order during AI-assisted assembly: the order being built
+                (Edit order) on top, then the per-item stepper, then the
+                catalog + filters below. */}
+            <OrderBuilderPanel builder={builder} />
             {wizard && currentWizardItem && builder.isActive && (
               <OrderRequestWizardStrip
                 step={wizard.index}
@@ -570,7 +607,6 @@ export default function ProductsPage() {
                 onClose={closeWizard}
               />
             )}
-            <OrderBuilderPanel builder={builder} />
             <Card>
               <CardHeader>
                 <CardTitle>Product Catalog</CardTitle>

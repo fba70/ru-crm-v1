@@ -28,6 +28,11 @@ export type ProductRow = {
   imageUrl: string | null
   totalStock: number | null
   status: EntityStatus
+  // Relevance score from the bilingual `terms` search, when terms were
+  // supplied. `terms` RANKS (orders) rather than filters, so a zero score
+  // means the row is filler shown only because nothing matched — the UI uses
+  // this to suppress a misleading "Best match" badge. Undefined when no terms.
+  score?: number
 }
 
 // Full product shape for the detail dialog — the main columns plus the
@@ -196,8 +201,13 @@ export async function listProducts(
   // best field hit (name > category/accounting > attribute, via GREATEST so a
   // term counts once) is scaled by the term's distinctiveness weight — so a
   // rare brand word in the name dominates a common kind-word in an attribute.
-  // Products with zero hits are excluded; ordering is by score desc, then the
-  // shorter name (tighter match) as a coverage tie-break.
+  // Terms RANK, they do NOT filter: ordering is by score desc, then the
+  // shorter name (tighter match) as a coverage tie-break. A request item whose
+  // terms match nothing (e.g. a transliteration the Latin catalog doesn't
+  // carry) therefore still shows the catalog instead of an empty table — the
+  // rep refines via the visible search box. (The catalog is in Latin while
+  // clients often write Cyrillic, so a hard score>0 filter would routinely
+  // blank the table mid-wizard.)
   const uniqueTerms = [
     ...new Map(
       (params.terms ?? [])
@@ -240,7 +250,8 @@ export async function listProducts(
   const where = and(
     eq(product.organizationId, activeOrgId),
     eq(product.status, "active"),
-    scoreExpr ? sql`${scoreExpr} > 0` : undefined,
+    // NOTE: terms intentionally do NOT appear here — they rank (orderBy), not
+    // filter, so an unmatched term never empties the catalog. See termScore.
     category && category.length > 0
       ? eq(product.category, category)
       : undefined,
@@ -294,6 +305,9 @@ export async function listProducts(
         imageUrl: product.imageUrl,
         totalStock: product.totalStock,
         status: product.status,
+        // Score is null unless terms were supplied; surfaced so the client can
+        // distinguish a real ranked hit from a zero-score filler row.
+        score: scoreExpr ?? sql<number | null>`NULL`,
       })
       .from(product)
       .where(where)
@@ -318,6 +332,7 @@ export async function listProducts(
       imageUrl: r.imageUrl,
       totalStock: r.totalStock,
       status: r.status,
+      score: r.score == null ? undefined : Number(r.score),
     })),
     total: totalRows[0]?.n ?? 0,
   }
