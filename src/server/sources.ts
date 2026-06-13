@@ -395,6 +395,24 @@ export async function updateOwnerOrgSourceCredentials(
     .update(source)
     .set({ credentialsRef: ciphertext })
     .where(eq(source.id, sourceId))
+
+  // Telegram: saving the token (re)registers the bot's webhook so Telegram
+  // starts pushing updates to this source's path. Best-effort — a webhook
+  // failure (e.g. bad token, no public origin in dev) must not fail the
+  // credential save; the operator can re-save to retry, and dev uses polling.
+  if (row.provider === "telegram") {
+    try {
+      const { registerTelegramWebhookForSource } = await import(
+        "@/server/ingest/telegram"
+      )
+      await registerTelegramWebhookForSource(sourceId)
+    } catch (err) {
+      console.error(
+        `[sources] telegram webhook registration failed for ${sourceId}:`,
+        err,
+      )
+    }
+  }
 }
 
 // ── Lazy provisioning of internal sources ────────────────────────────

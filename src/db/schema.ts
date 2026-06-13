@@ -984,6 +984,13 @@ export const sourceProvider = pgEnum("source_provider", [
   // the "Save Chat" button. No remote sync — items arrive pre-parsed at
   // save time. Lazy-provisioned per-org on first save (`getOrCreateAiChatSource`).
   "aichat",
+  // Per-org Telegram bot. Push-ingested via webhook (no remote sync/pull):
+  // each org's admin creates their own bot via BotFather and stores the
+  // token in `credentials_ref`; the bot IS the tenant. Items (DM text in
+  // Phase 1; attachments + group @-mentions later) arrive at
+  // `/api/webhooks/telegram/[sourceId]` and are written directly as
+  // `chat_message` source_items with parseStatus='pending'.
+  "telegram",
 ])
 
 export type SourceProvider = (typeof sourceProvider.enumValues)[number]

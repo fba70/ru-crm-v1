@@ -44,6 +44,7 @@ const PROVIDERS: { value: SourceProvider; label: string }[] = [
   { value: "gdrive", label: "Google Drive" },
   { value: "dropoff", label: "Files Drop Off" },
   { value: "whatsapp", label: "WhatsApp Archive" },
+  { value: "telegram", label: "Telegram Bot" },
 ]
 
 const TYPES: { value: SourceType; label: string }[] = [
@@ -75,6 +76,7 @@ const PROVIDERS_WITH_CREDENTIALS = new Set<SourceProvider>([
   "nylas",
   "gchat",
   "gdrive",
+  "telegram",
 ])
 
 export default function FormAdminEditSource({

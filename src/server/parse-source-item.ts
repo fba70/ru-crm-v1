@@ -23,6 +23,7 @@ import {
 } from "@/server/parsers/text"
 import { parseChatMessage, type ChatAttachmentRef } from "@/server/parsers/chat"
 import { parseWhatsAppGroup } from "@/server/parsers/whatsapp"
+import { parseTelegramMessage } from "@/server/parsers/telegram"
 import { parseDriveFile } from "@/server/parsers/drive"
 import { parsePdfBytes, PdfTooLargeError } from "@/server/parsers/pdf"
 import {
@@ -147,7 +148,14 @@ type ParseContext = {
   sourceId: string
   organizationId: string | null
   externalId: string
-  provider: "nylas" | "gchat" | "gdrive" | "dropoff" | "whatsapp" | "aichat"
+  provider:
+    | "nylas"
+    | "gchat"
+    | "gdrive"
+    | "dropoff"
+    | "whatsapp"
+    | "aichat"
+    | "telegram"
   threadExternalId: string | null
   sourceCreatedAt: Date | null
   parentNamespacedSourceId: string  // markdown frontmatter source_id for the parent
@@ -189,6 +197,8 @@ export async function parseSourceItem(itemId: string): Promise<ParseResult> {
         return await parseGoogleDriveItem(ctx)
       case "whatsapp":
         return await parseWhatsAppItem(ctx)
+      case "telegram":
+        return await parseTelegramItem(ctx)
       case "dropoff":
         // Drop-off files are browser-session only and don't have parent
         // rows in source_item yet (PHASE2.md item 8). Fail loud so a
@@ -297,6 +307,9 @@ async function loadParseContext(itemId: string): Promise<ParseContext> {
       case "aichat":
         // externalId is already `aichat:<sessionId>`; pass through.
         return row.externalId
+      case "telegram":
+        // externalId is `<chat_id>:<message_id>`.
+        return `telegram:${row.externalId}`
     }
   })()
 
@@ -314,6 +327,8 @@ async function loadParseContext(itemId: string): Promise<ParseContext> {
         return "WhatsApp"
       case "aichat":
         return "AI Chat"
+      case "telegram":
+        return "Telegram"
     }
   })()
 
@@ -635,6 +650,47 @@ async function parseWhatsAppItem(ctx: ParseContext): Promise<ParseResult> {
     authors,
     startTimestamp,
     endTimestamp,
+  })
+
+  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+
+  return {
+    parentStatus: "complete",
+    parentMarkdownBytes: byteLengthOf(parsed.markdown),
+    childInserted: 0,
+    childSkipped: 0,
+    childFailed: 0,
+  }
+}
+
+// ── Telegram (DM text rows) ───────────────────────────────────────────
+
+// Telegram rows arrive in Pending with the message body already in
+// `metadata_json.rawText` (stamped by the webhook ingest). Like WhatsApp,
+// parse is a pure local render + one LLM metadata pass — no remote API to
+// call. Phase 1 produces no children (attachments land in Phase 2).
+async function parseTelegramItem(ctx: ParseContext): Promise<ParseResult> {
+  const meta = ctx.metadataJson
+  const rawText = typeof meta.rawText === "string" ? meta.rawText : ""
+  if (!rawText) {
+    throw new Error(
+      "Telegram message row is missing metadata_json.rawText — re-ingest the message",
+    )
+  }
+  const sender = Array.isArray(meta.senders)
+    ? (meta.senders as unknown[]).find(
+        (s): s is string => typeof s === "string" && s.length > 0,
+      ) ?? "Telegram user"
+    : "Telegram user"
+
+  const parsed = await parseTelegramMessage({
+    rawText,
+    sourceId: ctx.parentNamespacedSourceId,
+    sender,
+    threadId: ctx.threadExternalId,
+    sourceCreatedAt: ctx.sourceCreatedAt
+      ? ctx.sourceCreatedAt.toISOString()
+      : null,
   })
 
   await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)

@@ -47,7 +47,8 @@ function CredentialsCell({
   const needsCreds =
     row.provider === "nylas" ||
     row.provider === "gchat" ||
-    row.provider === "gdrive"
+    row.provider === "gdrive" ||
+    row.provider === "telegram"
   if (!needsCreds) {
     return <span className="text-xs text-muted-foreground">—</span>
   }
@@ -84,14 +85,16 @@ function ConfigCell({
   row: Row
   onEdit: (row: Row) => void
 }) {
-  // Same predicate as CredentialsCell — we only ship non-null
-  // providerConfigSchema for these three. Nylas's schema is empty
-  // (z.object({})) but we still render the Edit button so the user can
-  // see the "nothing to configure" message inside the dialog.
+  // Same predicate as CredentialsCell — providers with a non-null
+  // providerConfigSchema. Nylas's schema is empty (z.object({})) but we
+  // still render the Edit button so the user can see the "nothing to
+  // configure" message inside the dialog. Telegram exposes an optional
+  // botUsername.
   const hasConfigurable =
     row.provider === "nylas" ||
     row.provider === "gchat" ||
-    row.provider === "gdrive"
+    row.provider === "gdrive" ||
+    row.provider === "telegram"
   if (!hasConfigurable) {
     return <span className="text-xs text-muted-foreground">—</span>
   }

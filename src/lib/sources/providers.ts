@@ -20,6 +20,7 @@ import {
   Upload,
   MessageCircle,
   Bot,
+  Send,
   type LucideIcon,
 } from "lucide-react"
 import type { SourceProvider } from "@/db/schema"
@@ -172,6 +173,28 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
       supportsDropoffUpload: false,
       hasRawBytesPersisted: false,
       supportsAutomatedPipeline: false,
+    },
+  },
+  telegram: {
+    provider: "telegram",
+    label: "Telegram",
+    description: "Messages forwarded or DM'd to a per-org Telegram bot.",
+    icon: Send,
+    defaultName: "Telegram Bot",
+    defaultProviderConfig: {},
+    // Telegram is push-ingested via webhook — there is no remote API to
+    // pull from, so `supportsRemoteSync` is false (excluded from
+    // `runFullSync()` / the per-source Sync button). But the items it
+    // pushes DO flow through the parse/upload pipeline, so the automated
+    // pipeline flag is on. The message body is persisted in
+    // `metadata_json.rawText` (like WhatsApp), so Re-parse is supported.
+    defaultAutomatedParsingIsAllowed: true,
+    capabilities: {
+      supportsRemoteSync: false,
+      supportsArchiveUpload: false,
+      supportsDropoffUpload: false,
+      hasRawBytesPersisted: true,
+      supportsAutomatedPipeline: true,
     },
   },
 }

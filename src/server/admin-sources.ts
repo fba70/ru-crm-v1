@@ -268,6 +268,22 @@ export async function updateAdminSourceCredentials(
     .update(source)
     .set({ credentialsRef: ciphertext })
     .where(eq(source.id, sourceId))
+
+  // Telegram: (re)register the bot webhook on save. Best-effort — see the
+  // owner-side note in `updateOwnerOrgSourceCredentials`.
+  if (row.provider === "telegram") {
+    try {
+      const { registerTelegramWebhookForSource } = await import(
+        "@/server/ingest/telegram"
+      )
+      await registerTelegramWebhookForSource(sourceId)
+    } catch (err) {
+      console.error(
+        `[admin-sources] telegram webhook registration failed for ${sourceId}:`,
+        err,
+      )
+    }
+  }
 }
 
 export async function listOrgOptionsForAdmin() {

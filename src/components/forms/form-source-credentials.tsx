@@ -94,6 +94,14 @@ export function FormSourceCredentials({
             onSaved={onSaved}
           />
         )}
+        {provider === "telegram" && (
+          <TelegramFields
+            sourceId={sourceId}
+            endpoint={endpoint}
+            onClose={() => onOpenChange(false)}
+            onSaved={onSaved}
+          />
+        )}
         {(provider === "dropoff" ||
           provider === "whatsapp" ||
           provider === "aichat") && (
@@ -332,6 +340,89 @@ function GdriveFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
           Paste the full JSON file content. The service account must
           have read access to the shared Drive(s) configured for this
           source.
+        </p>
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button type="button" onClick={handleSave} disabled={busy}>
+          {busy ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+function TelegramFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
+  const [botToken, setBotToken] = useState("")
+  const [webhookSecret, setWebhookSecret] = useState("")
+  const [busy, setBusy] = useState(false)
+
+  async function handleSave() {
+    if (!botToken.trim()) {
+      toast.error("Bot token is required")
+      return
+    }
+    if (!webhookSecret.trim()) {
+      toast.error("Webhook secret is required")
+      return
+    }
+    setBusy(true)
+    const out = await submitCredentials({
+      endpoint,
+      sourceId,
+      credentials: {
+        botToken: botToken.trim(),
+        webhookSecret: webhookSecret.trim(),
+      },
+    })
+    setBusy(false)
+    if (!out.ok) {
+      toast.error(formatError(out.error, out.issues))
+      return
+    }
+    toast.success("Credentials saved — webhook registered with Telegram")
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <div className="space-y-4 py-2">
+      <div className="space-y-2">
+        <Label htmlFor="tg-bot-token">Bot token</Label>
+        <Input
+          id="tg-bot-token"
+          value={botToken}
+          onChange={(e) => setBotToken(e.target.value)}
+          placeholder="123456789:AAH..."
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <p className="text-xs text-muted-foreground">
+          The token <strong>@BotFather</strong> gave you when you created the
+          bot (<code className="text-[10px]">/newbot</code>). It grants full
+          control of the bot — treat it as a secret. Each organization runs
+          its own bot, so paste the token for <em>this</em> org&apos;s bot.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="tg-webhook-secret">Webhook secret</Label>
+        <Input
+          id="tg-webhook-secret"
+          value={webhookSecret}
+          onChange={(e) => setWebhookSecret(e.target.value)}
+          placeholder="a high-entropy random string"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <p className="text-xs text-muted-foreground">
+          A random string <em>you</em> generate (e.g.{" "}
+          <code className="text-[10px]">openssl rand -hex 32</code>). Telegram
+          echoes it back on every delivery so we can reject forgeries. Saving
+          here automatically registers the bot&apos;s webhook with Telegram
+          (only chars A–Z, a–z, 0–9, <code className="text-[10px]">_</code>{" "}
+          and <code className="text-[10px]">-</code> are allowed).
         </p>
       </div>
       <DialogFooter>

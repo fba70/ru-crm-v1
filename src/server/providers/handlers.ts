@@ -87,6 +87,29 @@ export const gdriveCredentialsSchema = z.object({
 })
 export type GdriveCredentials = z.infer<typeof gdriveCredentialsSchema>
 
+// Telegram: per-org bot. `botToken` is the BotFather token (full control
+// of the bot — secret). `webhookSecret` is the high-entropy string we
+// hand to Telegram's setWebhook as `secret_token`; Telegram echoes it in
+// the `X-Telegram-Bot-Api-Secret-Token` header on every delivery so the
+// webhook can reject forgeries. Both live in `credentials_ref` so each
+// org runs its own bot with no cross-tenant binding — the bot IS the
+// tenant. The non-secret `botUsername` lives in `provider_config`.
+export const telegramCredentialsSchema = z.object({
+  botToken: z
+    .string()
+    .min(1, "Bot token is required")
+    .regex(/^\d+:[\w-]+$/, "Bot token must look like 123456789:AA…"),
+  webhookSecret: z
+    .string()
+    .min(1, "Webhook secret is required")
+    // Telegram constrains the secret_token to 1-256 chars of A-Z a-z 0-9 _ -
+    .regex(
+      /^[A-Za-z0-9_-]{1,256}$/,
+      "Webhook secret may only contain A-Z, a-z, 0-9, _ and -",
+    ),
+})
+export type TelegramCredentials = z.infer<typeof telegramCredentialsSchema>
+
 // Union over all per-provider credential schemas. `null` for providers
 // that never need credentials (dropoff / whatsapp / aichat).
 export type ProviderCredentialsSchema = z.ZodType | null
@@ -117,6 +140,16 @@ export const gdriveProviderConfigSchema = z.object({
   driveId: z.string().min(1, "driveId is required"),
 })
 export type GdriveProviderConfig = z.infer<typeof gdriveProviderConfigSchema>
+
+// Telegram non-secret routing: the bot's @username (no leading @). Used
+// to detect @-mentions in groups (Phase 3) and to build deep-link URLs.
+// Optional — DM ingestion (Phase 1) doesn't need it.
+export const telegramProviderConfigSchema = z.object({
+  botUsername: z.string().optional(),
+})
+export type TelegramProviderConfig = z.infer<
+  typeof telegramProviderConfigSchema
+>
 
 export type ProviderConfigSchema = z.ZodType | null
 
@@ -176,6 +209,15 @@ export const HANDLERS: Record<SourceProvider, ProviderHandler> = {
     isItemMissing: null,
     credentialsSchema: null,
     providerConfigSchema: null,
+  },
+  telegram: {
+    // No remote sync — Telegram pushes updates to the webhook route, which
+    // writes source_items directly. Calling syncSource for telegram throws
+    // (handled by the dispatcher) since there's no provider API to pull.
+    sync: null,
+    isItemMissing: null,
+    credentialsSchema: telegramCredentialsSchema,
+    providerConfigSchema: telegramProviderConfigSchema,
   },
 }
 

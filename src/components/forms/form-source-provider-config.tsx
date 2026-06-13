@@ -96,6 +96,15 @@ export function FormSourceProviderConfig({
             onSaved={onSaved}
           />
         )}
+        {provider === "telegram" && (
+          <TelegramFields
+            sourceId={sourceId}
+            initialConfig={initialConfig}
+            endpoint={endpoint}
+            onClose={() => onOpenChange(false)}
+            onSaved={onSaved}
+          />
+        )}
         {(provider === "dropoff" ||
           provider === "whatsapp" ||
           provider === "aichat") && (
@@ -233,6 +242,73 @@ function GchatFields({
           Full Google Chat space resource path. Must start with
           <code className="ml-1 px-1 bg-muted rounded text-[11px]">spaces/</code>.
           Find it in the URL when viewing the space, or via the Chat API.
+        </p>
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button type="button" onClick={handleSave} disabled={busy}>
+          {busy ? "Saving…" : "Save"}
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+// Telegram: the only non-secret config is the bot's @username (no leading
+// @), used to detect @-mentions in groups (Phase 3) and to build deep
+// links. Optional — DM ingestion (Phase 1) doesn't need it, so an empty
+// save is allowed (clears the field). The bot token + webhook secret live
+// on the Credentials form, not here.
+function TelegramFields({
+  sourceId,
+  initialConfig,
+  endpoint,
+  onClose,
+  onSaved,
+}: FieldsProps) {
+  const [botUsername, setBotUsername] = useState(
+    typeof initialConfig.botUsername === "string"
+      ? initialConfig.botUsername
+      : "",
+  )
+  const [busy, setBusy] = useState(false)
+
+  async function handleSave() {
+    setBusy(true)
+    const out = await submitConfig({
+      endpoint,
+      sourceId,
+      providerConfig: { botUsername: botUsername.trim().replace(/^@/, "") },
+    })
+    setBusy(false)
+    if (!out.ok) {
+      toast.error(formatError(out.error, out.issues))
+      return
+    }
+    toast.success("Provider config saved")
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <div className="space-y-4 py-2">
+      <div className="space-y-2">
+        <Label htmlFor="telegram-bot-username">Bot username (optional)</Label>
+        <Input
+          id="telegram-bot-username"
+          value={botUsername}
+          onChange={(e) => setBotUsername(e.target.value)}
+          placeholder="truffalo_ingest_bot"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <p className="text-xs text-muted-foreground">
+          The bot&apos;s @username without the leading @. Used to detect
+          @-mentions in groups and to build deep links. Not required for
+          direct-message ingestion. The bot token + webhook secret are set
+          on the Credentials form.
         </p>
       </div>
       <DialogFooter>

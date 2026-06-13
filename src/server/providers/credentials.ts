@@ -21,9 +21,11 @@ import {
   type GchatCredentials,
   type GdriveCredentials,
   type NylasCredentials,
+  type TelegramCredentials,
   gchatCredentialsSchema,
   gdriveCredentialsSchema,
   nylasCredentialsSchema,
+  telegramCredentialsSchema,
 } from "@/server/providers/handlers"
 
 export class MissingCredentialsError extends Error {
@@ -140,4 +142,35 @@ export function getGdriveCredentials(
     "gdrive",
     gdriveCredentialsSchema,
   )
+}
+
+// ── Telegram ─────────────────────────────────────────────────────────
+//
+// Per-source secret: `{ botToken, webhookSecret }`.
+// Env fallback (nylas-style): a single bootstrap bot configured via
+// `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET_TOKEN` so the first bot
+// works before the credentials UI is used. Logs a warning when the
+// fallback fires so production drift is visible. Org owners replace it by
+// pasting their own bot's token in Sources → Configure (per-org isolation).
+export function getTelegramCredentials(
+  sourceId: string,
+  credentialsRef: string | null,
+): TelegramCredentials {
+  if (credentialsRef) {
+    return decryptAndValidate(
+      sourceId,
+      credentialsRef,
+      "telegram",
+      telegramCredentialsSchema,
+    )
+  }
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN
+  if (!botToken || !webhookSecret) {
+    throw new MissingCredentialsError(sourceId, "telegram")
+  }
+  console.warn(
+    `[credentials] telegram source ${sourceId} has no credentials_ref — falling back to TELEGRAM_BOT_TOKEN / TELEGRAM_WEBHOOK_SECRET_TOKEN env. Configure per-org credentials in Sources → Configure.`,
+  )
+  return { botToken, webhookSecret }
 }

@@ -6,11 +6,18 @@ import {
   updateAdminSource,
   type AdminSourceInput,
 } from "@/server/admin-sources"
-import type { SourceProvider, SourceStatus, SourceType } from "@/db/schema"
+import {
+  sourceProvider,
+  type SourceProvider,
+  type SourceStatus,
+  type SourceType,
+} from "@/db/schema"
 
 export { type AdminSource } from "@/server/admin-sources"
 
-const PROVIDERS: SourceProvider[] = ["nylas", "gchat", "gdrive", "dropoff"]
+// Derived from the DB enum so it never drifts when a new provider is added
+// (was a hardcoded subset that silently rejected newer providers).
+const PROVIDERS: SourceProvider[] = [...sourceProvider.enumValues]
 const TYPES: SourceType[] = ["external", "internal"]
 const STATUSES: SourceStatus[] = ["active", "inactive"]
 

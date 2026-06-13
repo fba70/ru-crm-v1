@@ -4,16 +4,15 @@ import {
   createTemplate,
   type TemplateInput,
 } from "@/server/templates"
-import type { SourceProvider, SourceStatus, SourceType } from "@/db/schema"
+import {
+  sourceProvider,
+  type SourceProvider,
+  type SourceStatus,
+  type SourceType,
+} from "@/db/schema"
 
-const PROVIDERS: SourceProvider[] = [
-  "nylas",
-  "gchat",
-  "gdrive",
-  "dropoff",
-  "whatsapp",
-  "aichat",
-]
+// Derived from the DB enum so a new provider never silently fails validation.
+const PROVIDERS: SourceProvider[] = [...sourceProvider.enumValues]
 const TYPES: SourceType[] = ["external", "internal"]
 const STATUSES: SourceStatus[] = ["active", "inactive"]
 
