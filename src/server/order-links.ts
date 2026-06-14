@@ -9,6 +9,7 @@ import {
   client,
   type OrderStatus,
   type OrderLinkStatus,
+  type EntityStatus,
 } from "@/db/schema"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
@@ -293,6 +294,7 @@ export async function getOrderLinkMeta(
 
 export type GuestLineItem = {
   id: string
+  productId: string | null
   productName: string | null
   imageUrl: string | null
   // Product catalog detail surfaced on the client review form. Pulled from the
@@ -368,6 +370,7 @@ export async function resolveOrderLink(
   const items = await db
     .select({
       id: orderItem.id,
+      productId: orderItem.productId,
       productName: product.name,
       imageUrl: product.imageUrl,
       webPageUrl: product.webPageUrl,
@@ -399,6 +402,7 @@ export async function resolveOrderLink(
         const alcohol = i.alcohol?.trim()
         return {
           id: i.id,
+          productId: i.productId,
           productName: i.productName,
           imageUrl: i.imageUrl,
           webPageUrl: i.webPageUrl,
@@ -425,6 +429,67 @@ export async function resolveOrderLink(
       confirmedAt: grant.confirmedAt?.toISOString() ?? null,
       can: capabilitiesFor(gs, o.status),
     },
+  }
+}
+
+// Guest-facing product card detail. Same shape as the operator catalog's
+// `ProductDetail` but **without any stock fields** (no `totalStock`, no
+// per-warehouse `stockMetadata`) — the client must not see our inventory.
+// Authorization is the order token: the product must be a line on the order
+// the token grants, so a guest can only inspect products already in front of
+// them.
+export type GuestProductDetail = {
+  id: string
+  name: string
+  category: string | null
+  webPageUrl: string | null
+  price: number | null
+  imageUrl: string | null
+  accountingMetadata: Record<string, unknown>
+  additionalMetadata: Record<string, unknown>
+  status: EntityStatus
+}
+
+export async function getGuestProductDetail(
+  token: string,
+  productId: string,
+): Promise<GuestProductDetail | null> {
+  const r = await resolveOrderLink(token)
+  if (!r.ok) return null
+  // Token-scoped authorization: only products that are line items on this
+  // order may be inspected (never an arbitrary catalog id).
+  if (!r.view.items.some((i) => i.productId === productId)) return null
+
+  const rows = await db
+    .select({
+      id: product.id,
+      name: product.name,
+      category: product.category,
+      webPageUrl: product.webPageUrl,
+      price: product.price,
+      imageUrl: product.imageUrl,
+      accountingMetadata: product.accountingMetadata,
+      additionalMetadata: product.additionalMetadata,
+      status: product.status,
+    })
+    .from(product)
+    .where(eq(product.id, productId))
+    .limit(1)
+  const p = rows[0]
+  if (!p) return null
+
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    webPageUrl: p.webPageUrl,
+    price: p.price === null ? null : Number(p.price),
+    imageUrl: p.imageUrl,
+    accountingMetadata:
+      (p.accountingMetadata as Record<string, unknown> | null) ?? {},
+    additionalMetadata:
+      (p.additionalMetadata as Record<string, unknown> | null) ?? {},
+    status: p.status,
   }
 }
 

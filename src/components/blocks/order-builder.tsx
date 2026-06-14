@@ -111,7 +111,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   const [saving, setSaving] = useState(false)
   // When on, products without enough catalog stock can't be added and line
   // quantities are capped at available stock. Per-session UI guard (not saved).
-  const [stockOnly, setStockOnly] = useState(false)
+  const [stockOnly, setStockOnly] = useState(true)
 
   const [clientOptions, setClientOptions] = useState<OrderClientOption[]>([])
   const clientsLoaded = useRef(false)
@@ -138,7 +138,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setCurrency("RUB")
     setLines([])
     setLink(null)
-    setStockOnly(false)
+    setStockOnly(true)
   }, [])
 
   const openNew = useCallback(() => {
@@ -156,6 +156,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setDescription(o.description ?? "")
     setCurrency(o.currency)
     setLink(o.link)
+    setStockOnly(true)
     setLines(
       o.items.map((i) => ({
         productId: i.productId,

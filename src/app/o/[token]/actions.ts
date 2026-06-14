@@ -5,6 +5,7 @@ import {
   guestSetQuantity,
   guestRemoveItem,
   guestConfirmOrder,
+  getGuestProductDetail,
 } from "@/server/order-links"
 
 // Thin server-action wrappers around the guest mutations. Each one re-resolves
@@ -32,4 +33,14 @@ export async function confirmOrderAction(token: string) {
   const r = await guestConfirmOrder(token)
   revalidatePath(`/o/${token}`)
   return r
+}
+
+// Read-only product-card lookup for the guest review form. Authorization is
+// the token: the product must be a line on the order it grants. Returns the
+// catalog detail minus any stock fields (see `getGuestProductDetail`).
+export async function getGuestProductDetailAction(
+  token: string,
+  productId: string,
+) {
+  return getGuestProductDetail(token, productId)
 }

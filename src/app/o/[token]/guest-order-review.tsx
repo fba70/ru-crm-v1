@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/hover-card"
 import {
   CheckCircle2,
+  Eye,
   ExternalLink,
   ImageOff,
   Loader,
@@ -31,6 +32,7 @@ import {
 } from "lucide-react"
 import { formatOrderAmount, formatOrderDate } from "@/lib/orders-format"
 import type { GuestOrderView, GuestLineItem } from "@/server/order-links"
+import { GuestProductDialog } from "./guest-product-dialog"
 import {
   setQuantityAction,
   removeItemAction,
@@ -196,6 +198,7 @@ export function GuestOrderReview({
                     </TableHead>
                     <TableHead className="w-36 text-center">Кол-во</TableHead>
                     <TableHead className="w-28 text-right">Сумма</TableHead>
+                    <TableHead className="w-12" />
                     {view.can.removeItem && <TableHead className="w-12" />}
                   </TableRow>
                 </TableHeader>
@@ -203,7 +206,7 @@ export function GuestOrderReview({
                   {view.items.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={view.can.removeItem ? 11 : 10}
+                        colSpan={view.can.removeItem ? 12 : 11}
                         className="h-20 text-center text-sm text-muted-foreground"
                       >
                         В этом заказе нет позиций.
@@ -295,6 +298,24 @@ export function GuestOrderReview({
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {formatOrderAmount(l.positionPrice, view.currency)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {l.productId && (
+                            <GuestProductDialog
+                              token={token}
+                              productId={l.productId}
+                              trigger={
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="Открыть карточку товара"
+                                >
+                                  <Eye className="h-4 w-4 text-muted-foreground" />
+                                </Button>
+                              }
+                            />
+                          )}
                         </TableCell>
                         {view.can.removeItem && (
                           <TableCell className="text-right">
