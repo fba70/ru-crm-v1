@@ -2,7 +2,7 @@
 
 import { db } from "@/db/drizzle"
 import { product, type EntityStatus } from "@/db/schema"
-import { and, asc, count, eq, ilike, or, sql } from "drizzle-orm"
+import { and, asc, count, eq, sql } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 
 // One per-location stock entry (spreadsheet cols AB-AP).
@@ -102,30 +102,12 @@ const ATTR_FILTER_KEYS = {
   rating: "rating",
 } as const
 
-// Free-text search probes the `name` column plus these `additional_metadata`
-// keys by VALUE (`->> 'key' ILIKE …`). Probing named values — rather than
-// casting the whole JSON blob to text — keeps a query like "description" or
-// "color" from matching every row just because those strings appear as JSON
-// *keys*. Add a key here to make its text searchable. Order is irrelevant.
-const SEARCH_TEXT_KEYS = [
-  "taste",
-  "flavour",
-  "gastronomy",
-  "color_details",
-  "description",
-  "color",
-  "country_name",
-  "region",
-  "appelacion",
-  "type",
-  "vendor",
-] as const
-
-// `additional_metadata` keys probed by the bilingual TERM search. Deliberately
-// narrower than SEARCH_TEXT_KEYS — identity/attribute fields only, NOT prose
-// (`description`/`taste`/…) — so a token like "Dry" doesn't score every wine
-// whose tasting notes say "dry". Term matching targets the product's NAME and
-// its defining attributes across both languages.
+// `additional_metadata` keys probed by the ranked TERM search. Deliberately
+// identity/attribute fields only, NOT prose (`description`/`taste`/…) — so a
+// token like "Dry" doesn't score every wine whose tasting notes say "dry", and
+// a brand like "Martini" isn't out-ranked by the ~130 wines whose description
+// merely suggests serving it in a martini. Term matching targets the product's
+// NAME and its defining attributes across both languages.
 const TERM_MATCH_KEYS = [
   "type",
   "country_name",
@@ -180,7 +162,16 @@ function termWeight(t: string): number {
 // drift (e.g. the model writing "Descombes" for catalog "Descombe"), which
 // otherwise drops the actually-requested product out of the ranking entirely.
 const FUZZY_MIN_LEN = 6
-const FUZZY_SIM = 0.6
+// Trigram threshold for a fuzzy name match. 0.7 admits genuine transliteration
+// drift ("Descombes"≈"Descombe" = 0.8) while rejecting coincidental trigram
+// overlap ("Martiena"≈"martini" = 0.625) that has nothing to do with the query.
+const FUZZY_SIM = 0.7
+// A fuzzy name hit scores BELOW an exact substring hit (FIELD_W.name = 3), so
+// every product that literally contains the query term outranks a merely
+// similar name — yet it still beats no match, so a misspelled brand with NO
+// exact match anywhere is still surfaced. (Above category/attribute weights so
+// a near-brand still beats a generic attribute hit.)
+const FUZZY_NAME_W = 2.5
 
 // Ranked-search relevance cutoff. Terms rank rather than filter (so a pure
 // transliteration miss never blanks the catalog — see the WHERE note below),
@@ -248,9 +239,23 @@ export async function listProducts(
   // rep refines via the visible search box. (The catalog is in Latin while
   // clients often write Cyrillic, so a hard score>0 filter would routinely
   // blank the table mid-wizard.)
+  // Manual search box (`q`) and the wizard's `terms` share ONE ranked path: a
+  // free-text `q` is tokenised into terms so NAME hits rank above description /
+  // vendor hits, and a multi-word query ("martini dry") matches by token
+  // coverage instead of as a single contiguous substring. (The old `q` was an
+  // un-ranked OR-filter over name + prose fields sorted alphabetically, which
+  // buried real "Martini …" products under ~130 wines whose *description* just
+  // mentions martini, and made "martini dry" match almost nothing.) Explicit
+  // `terms` from the order-request wizard take precedence when provided.
+  const effectiveTerms =
+    params.terms && params.terms.length > 0
+      ? params.terms
+      : q
+        ? q.split(/\s+/)
+        : []
   const uniqueTerms = [
     ...new Map(
-      (params.terms ?? [])
+      effectiveTerms
         .map((t) => t.trim())
         .filter((t) => t.length >= MIN_TERM_LEN)
         .map((t) => [t.toLowerCase(), t] as const),
@@ -269,7 +274,7 @@ export async function listProducts(
     const nameHit = fuzzy
       ? sql`CASE
             WHEN ${product.name} ILIKE ${like} THEN ${FIELD_W.name}
-            WHEN word_similarity(${t}, ${product.name}) >= ${FUZZY_SIM} THEN ${FIELD_W.name}
+            WHEN word_similarity(${t}, ${product.name}) >= ${FUZZY_SIM} THEN (${FUZZY_NAME_W})::float8
             ELSE 0 END`
       : sql`CASE WHEN ${product.name} ILIKE ${like} THEN ${FIELD_W.name} ELSE 0 END`
     // `w` is a JS float (0.8 / 1.3 / 1.8 / 2.5) sent as an untyped param. In
@@ -309,20 +314,11 @@ export async function listProducts(
     category && category.length > 0
       ? eq(product.category, category)
       : undefined,
-    q && q.length > 0
-      ? or(
-          ilike(product.name, `%${q}%`),
-          ilike(product.category, `%${q}%`),
-          // Accounting ids (code / barCode) — keep the blob match so a
-          // barcode/code lookup still works.
-          sql`${product.accountingMetadata}::text ILIKE ${`%${q}%`}`,
-          // Named text fields, matched by VALUE (not the JSON key names).
-          ...SEARCH_TEXT_KEYS.map(
-            (k) =>
-              sql`${product.additionalMetadata} ->> ${k} ILIKE ${`%${q}%`}`,
-          ),
-        )
-      : undefined,
+    // `q` is NOT a hard filter — it's tokenised into `effectiveTerms` above and
+    // drives the weighted ranking + relevance cutoff, so name/brand hits rank
+    // first and prose-only matches (a description that merely mentions the term)
+    // fall below the cutoff instead of flooding the list. Barcode/code lookups
+    // still work via the `accounting_metadata` field weight in the score.
     attrEq(ATTR_FILTER_KEYS.type, params.type),
     attrEq(ATTR_FILTER_KEYS.color, params.color),
     attrEq(ATTR_FILTER_KEYS.sugar, params.sugar),

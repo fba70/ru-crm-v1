@@ -555,8 +555,10 @@ function SendLinkDialog({
         : "Вернуть заказ клиенту"
 
   const submit = async () => {
-    if (!isValidEmail(email)) {
-      toast.error("Введите корректный email получателя")
+    // Email is optional — the link is shared by copy/paste, no mail is sent.
+    // Only block an obviously-malformed non-empty address before the request.
+    if (email.trim() && !isValidEmail(email)) {
+      toast.error("Введите корректный email или оставьте поле пустым")
       return
     }
     setSending(true)
@@ -627,7 +629,7 @@ function SendLinkDialog({
           <div className="space-y-3">
             <div className="space-y-1">
               <span className="text-xs text-muted-foreground">
-                Email получателя
+                Email получателя (необязательно)
               </span>
               <Input
                 type="email"
@@ -637,8 +639,8 @@ function SendLinkDialog({
                 autoFocus
               />
               <p className="text-xs text-muted-foreground">
-                По умолчанию — email клиента. Заказ нельзя отправить без
-                корректного адреса.
+                Необязательно — ссылку можно скопировать и отправить вручную.
+                По умолчанию подставляется email клиента.
               </p>
             </div>
             <DialogFooter>

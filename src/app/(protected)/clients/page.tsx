@@ -603,11 +603,11 @@ export default function ClientsPage() {
                       Взвешенный объем воронки продаж:
                     </span>
                     <span className="text-xl font-semibold text-orange-300">
-                      €
                       {salesFunnelValue.toLocaleString(undefined, {
                         minimumFractionDigits: 0,
                         maximumFractionDigits: 2,
-                      })}
+                      })}{" "}
+                      ₽
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

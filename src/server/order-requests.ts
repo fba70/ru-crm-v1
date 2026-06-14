@@ -15,6 +15,7 @@ import { getServerSession } from "@/lib/get-session"
 import {
   listProductCategories,
   listProductFilterOptions,
+  listProducts,
 } from "@/server/products"
 import { getGatewayId, DEFAULT_MODEL_KEY } from "@/lib/llm-models"
 import type { OrderRequestItemFilters } from "@/lib/order-request"
@@ -240,23 +241,94 @@ function cleanTerms(terms: string[]): string[] {
   ].slice(0, 16)
 }
 
-// Clean the LLM's sentinel-filled filter object into a sparse one.
-function cleanFilters(f: z.infer<typeof llmFilterSchema>): OrderRequestItemFilters {
+type FilterVocab = {
+  category: string[]
+  type: string[]
+  color: string[]
+  sugar: string[]
+  aging: string[]
+  bottleVolume: string[]
+  countryName: string[]
+}
+
+// Case-insensitively snap a value to the catalog's exact vocabulary, or drop
+// it. The prompt asks the LLM to copy allowed values verbatim, but it drifts:
+// it returns Title-case "Вино" for the catalog's "ВИНО", or INVENTS "Вино" as
+// a `category` when the real categories are "Белое"/"Красное"/… These land as
+// exact-match `eq` filters in the wizard catalog query → zero rows. (This is
+// exactly why a clear "вионье" request found nothing: filters were
+// {category:"Вино", type:"Вино", …} and neither value exists as-is.) Keeping
+// only real values — normalised to the catalog's spelling — means a bad guess
+// degrades to pure term ranking instead of an empty result.
+function snapToVocab(value: string, allowed: string[]): string | undefined {
+  const v = value.trim()
+  if (!v) return undefined
+  return allowed.find((a) => a.toLowerCase() === v.toLowerCase())
+}
+
+// Clean the LLM's sentinel-filled filter object into a sparse one, validated
+// against the real catalog vocabulary (hallucinated / mis-cased values dropped).
+function cleanFilters(
+  f: z.infer<typeof llmFilterSchema>,
+  vocab: FilterVocab,
+): OrderRequestItemFilters {
   const out: OrderRequestItemFilters = {}
-  const s = (v: string) => {
-    const t = v.trim()
-    return t.length ? t : undefined
-  }
-  if (s(f.category)) out.category = s(f.category)
-  if (s(f.type)) out.type = s(f.type)
-  if (s(f.color)) out.color = s(f.color)
-  if (s(f.sugar)) out.sugar = s(f.sugar)
-  if (s(f.aging)) out.aging = s(f.aging)
-  if (s(f.bottleVolume)) out.bottleVolume = s(f.bottleVolume)
-  if (s(f.countryName)) out.countryName = s(f.countryName)
+  const category = snapToVocab(f.category, vocab.category)
+  if (category) out.category = category
+  const type = snapToVocab(f.type, vocab.type)
+  if (type) out.type = type
+  const color = snapToVocab(f.color, vocab.color)
+  if (color) out.color = color
+  const sugar = snapToVocab(f.sugar, vocab.sugar)
+  if (sugar) out.sugar = sugar
+  const aging = snapToVocab(f.aging, vocab.aging)
+  if (aging) out.aging = aging
+  const bottleVolume = snapToVocab(f.bottleVolume, vocab.bottleVolume)
+  if (bottleVolume) out.bottleVolume = bottleVolume
+  const countryName = snapToVocab(f.countryName, vocab.countryName)
+  if (countryName) out.countryName = countryName
   if (Number.isFinite(f.priceMin) && f.priceMin > 0) out.priceMin = f.priceMin
   if (Number.isFinite(f.priceMax) && f.priceMax > 0) out.priceMax = f.priceMax
   return out
+}
+
+// A discovery item's structured filters are applied as a hard AND of exact
+// matches in the catalog query, so a single bad value — the LLM picking a
+// real-but-WRONG `category` (e.g. "Вино" when the Viognier whites live under
+// "Белое") — eliminates EVERY row even for an obviously-satisfiable request.
+// Term ranking is robust; the filters are brittle. So if the filters zero out
+// a request that terms alone CAN match, relax them: drop the redundant kind
+// facets (category/type) first, then every attribute facet, keeping price. The
+// step then falls back to ranked term search instead of an empty catalog.
+async function relaxOverConstrainedFilters(
+  terms: string[],
+  filters: OrderRequestItemFilters,
+): Promise<OrderRequestItemFilters> {
+  const ATTR_KEYS = [
+    "category", "type", "color", "sugar", "aging", "bottleVolume", "countryName",
+  ] as const
+  const hasAttr = ATTR_KEYS.some((k) => filters[k])
+  if (!hasAttr || terms.length === 0) return filters
+
+  const total = async (f: OrderRequestItemFilters) =>
+    (await listProducts({ terms, ...f, limit: 1 })).total
+
+  if ((await total(filters)) > 0) return filters // filters already match
+
+  // Relaxing only helps if terms alone (price kept) are matchable at all.
+  const priceOnly: OrderRequestItemFilters = {}
+  if (filters.priceMin != null) priceOnly.priceMin = filters.priceMin
+  if (filters.priceMax != null) priceOnly.priceMax = filters.priceMax
+  if ((await total(priceOnly)) === 0) return filters
+
+  // Step 1: drop the redundant kind facets, keep the descriptive ones.
+  const rest: OrderRequestItemFilters = { ...filters }
+  delete rest.category
+  delete rest.type
+  if (ATTR_KEYS.some((k) => rest[k]) && (await total(rest)) > 0) return rest
+
+  // Step 2: drop every attribute facet, keep price only.
+  return priceOnly
 }
 
 // Create the request row, run ONE LLM split, persist the resulting intent
@@ -324,29 +396,47 @@ export async function createAndParseOrderRequest(
       }),
     })
 
+    // Validate LLM filters against the FULL catalog vocabulary (not the
+    // 80-value prompt cap) — so a real value the model copied still survives
+    // even when its attribute list was too long to hand it as a closed vocab.
+    const filterVocab: FilterVocab = {
+      category: categories,
+      type: filterOptions.type,
+      color: filterOptions.color,
+      sugar: filterOptions.sugar,
+      aging: filterOptions.aging,
+      bottleVolume: filterOptions.bottleVolume,
+      countryName: filterOptions.countryName,
+    }
+
     const items = output.items.slice(0, MAX_ITEMS)
     if (items.length > 0) {
-      await db.insert(orderRequestItem).values(
-        items.map((it, i) => {
-          const phrase = it.searchPhrase.trim()
-          const qty = it.quantityHint.trim()
-          const label = it.label.trim()
-          const terms = cleanTerms(it.searchTerms ?? [])
-          return {
-            id: randomUUID(),
-            requestId,
-            ordinal: i,
-            rawSnippet: it.rawSnippet.trim() || label || phrase || "—",
-            label: label || phrase || null,
-            mode: it.mode,
-            filters: cleanFilters(it.filters),
-            searchPhrase: phrase || null,
-            searchTerms: terms.length ? terms : null,
-            quantityHint: qty || null,
-            status: "pending" as const,
-          }
-        }),
-      )
+      const values = []
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]
+        const phrase = it.searchPhrase.trim()
+        const qty = it.quantityHint.trim()
+        const label = it.label.trim()
+        const terms = cleanTerms(it.searchTerms ?? [])
+        const filters = await relaxOverConstrainedFilters(
+          terms,
+          cleanFilters(it.filters, filterVocab),
+        )
+        values.push({
+          id: randomUUID(),
+          requestId,
+          ordinal: i,
+          rawSnippet: it.rawSnippet.trim() || label || phrase || "—",
+          label: label || phrase || null,
+          mode: it.mode,
+          filters,
+          searchPhrase: phrase || null,
+          searchTerms: terms.length ? terms : null,
+          quantityHint: qty || null,
+          status: "pending" as const,
+        })
+      }
+      await db.insert(orderRequestItem).values(values)
     }
 
     await db

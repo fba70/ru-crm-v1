@@ -76,7 +76,7 @@ async function revokeActiveGrants(orderId: string) {
 // Mint a fresh active grant (FR-1). Revokes any leftover active grant first
 // so invariant #1 (one active grant per order) always holds. Returns the raw
 // token ONCE — never persisted.
-async function mintGrant(orderId: string, recipientEmail: string) {
+async function mintGrant(orderId: string, recipientEmail: string | null) {
   await revokeActiveGrants(orderId)
   const raw = generateRawToken()
   const now = new Date()
@@ -118,12 +118,12 @@ async function bumpLastAccessed(token: string) {
 export type LinkInfo = {
   url: string
   expiresAt: string
-  recipientEmail: string
+  recipientEmail: string | null
 }
 
 export type HandToClientResult =
   | { ok: true; status: "awaiting_client"; link: LinkInfo }
-  | { ok: false; reason: "email_required" | "invalid_email" | "conflict" }
+  | { ok: false; reason: "invalid_email" | "conflict" }
 
 // Transition `order.status → awaiting_client` from one of `fromStatuses` and
 // mint a fresh link (FR-1 / FR-7 / FR-9). Optimistic guard: zero rows updated
@@ -134,9 +134,11 @@ async function handToClient(
   fromStatuses: OrderStatus[],
 ): Promise<HandToClientResult> {
   const { orgId, clientEmail } = await requireOrgAndOrder(orderId)
+  // Email is OPTIONAL: the link is delivered by copy/paste (no mail is sent),
+  // so a blank address is allowed and mints an anonymous link. Only a
+  // NON-EMPTY but malformed address is rejected to avoid storing garbage.
   const email = (recipientEmail?.trim() || clientEmail || "").trim()
-  if (!email) return { ok: false, reason: "email_required" }
-  if (!isValidEmail(email)) return { ok: false, reason: "invalid_email" }
+  if (email && !isValidEmail(email)) return { ok: false, reason: "invalid_email" }
 
   const updated = await db
     .update(order)
@@ -151,14 +153,14 @@ async function handToClient(
     .returning({ id: order.id })
   if (updated.length === 0) return { ok: false, reason: "conflict" }
 
-  const { raw, expiresAt } = await mintGrant(orderId, email)
+  const { raw, expiresAt } = await mintGrant(orderId, email || null)
   return {
     ok: true,
     status: "awaiting_client",
     link: {
       url: buildOrderLinkUrl(raw),
       expiresAt: expiresAt.toISOString(),
-      recipientEmail: email,
+      recipientEmail: email || null,
     },
   }
 }
