@@ -41,6 +41,7 @@ const STAGE_COLOR: Record<string, string> = {
 const STAGE_DEFAULT = "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
 
 const CURRENCY_SYMBOL: Record<string, string> = {
+  RUB: "₽",
   USD: "$",
   EUR: "€",
   GBP: "£",

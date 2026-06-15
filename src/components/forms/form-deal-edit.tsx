@@ -137,7 +137,7 @@ export default function DealEditDialog({
           funnelStageId: defaultFunnelStageId,
           clientId: deal?.clientId ?? "",
           value: deal?.value ?? "",
-          currency: deal?.currency ?? "EUR",
+          currency: deal?.currency ?? "RUB",
           status: deal?.status ?? "active",
           contactIds: deal?.contacts.map((c) => c.id) ?? [],
         })
@@ -403,7 +403,7 @@ export default function DealEditDialog({
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="EUR"
+                        placeholder="RUB"
                         maxLength={3}
                         className="uppercase"
                       />
