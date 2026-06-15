@@ -2,7 +2,7 @@
 
 import { db } from "@/db/drizzle"
 import { product, type EntityStatus } from "@/db/schema"
-import { and, asc, count, eq, sql } from "drizzle-orm"
+import { and, asc, eq, sql, type SQL } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 
 // One per-location stock entry (spreadsheet cols AB-AP).
@@ -82,6 +82,23 @@ export type ListProductsParams = {
   priceMax?: number
   // Stock presence derived from total_stock (in = >0, out = null/≤0).
   inStock?: ProductInStock
+  // ── Search V2 soft hints (the wizard's LLM-guessed attributes) ──
+  // These BOOST matching products in the ranking but never gate, so a wrong
+  // guess can't zero the result (replaces the deleted snapToVocab/relax logic).
+  // The manual catalog dropdowns above (category/type/color/…) stay HARD filters
+  // — an explicit operator choice should still narrow.
+  catHint?: string
+  colorHint?: string
+  sugarHint?: string
+  countryHint?: string
+  regionHint?: string
+  wantGift?: boolean
+  // ── Search V2 gates ──
+  // Explicit bottle volume in ml (gate, only when a line named a volume).
+  volumeMl?: number
+  // Include non-drink merch (glasses/water/syrups/gift-wrap). Default false →
+  // merch hidden from drink searches.
+  includeMerch?: boolean
   limit?: number
   offset?: number
 }
@@ -102,90 +119,29 @@ const ATTR_FILTER_KEYS = {
   rating: "rating",
 } as const
 
-// `additional_metadata` keys probed by the ranked TERM search. Deliberately
-// identity/attribute fields only, NOT prose (`description`/`taste`/…) — so a
-// token like "Dry" doesn't score every wine whose tasting notes say "dry", and
-// a brand like "Martini" isn't out-ranked by the ~130 wines whose description
-// merely suggests serving it in a martini. Term matching targets the product's
-// NAME and its defining attributes across both languages.
-const TERM_MATCH_KEYS = [
-  "type",
-  "country_name",
-  "color",
-  "sugar",
-  "vendor",
-  "appelacion",
-  "region",
-  "aging",
-] as const
+// ── Search V2 — hybrid retrieval tunables (see refs/search-v2-plan.md) ──
+//
+// The bespoke weighted scorer (termWeight / FIELD_W / KIND_WORDS / FUZZY_* /
+// MIN_SCORE_RATIO) is gone. Ranking is now: normalize the query (cross-script
+// translit + alias expansion, all in SQL) → two retrievers over the gated set
+// (FTS-OR on the weighted tsvector, trigram on name_norm) → fuse by Reciprocal
+// Rank Fusion. The full DDL + the eval harness that tuned these live in
+// scripts/search-v2/ + scripts/eval/.
 
-// Min token length kept for term search — drops single chars / stray digits
-// that would match half the catalog.
-const MIN_TERM_LEN = 2
-
-// Field weights for ranked term search — a hit in the product NAME is a far
-// stronger signal of the right product than a hit in a generic attribute, so
-// the brand word living in the name dominates a category/country match.
-const FIELD_W = { name: 3, category: 2, accounting: 2, attr: 1 } as const
-
-// Generic drink-KIND words (the ones the order-request prompt always asks the
-// model to translate: Вино/Wine, Игристое/Sparkling, Джин/Gin, …). They match
-// huge swathes of the catalog and carry almost no discriminating signal, yet
-// the LLM includes them inconsistently — and a length-based weight rated
-// "Wine"/"Вино" (len 4) at 1.3, enough to reshuffle the ranking when present.
-// Pinning them to a tiny weight makes their presence/absence barely move
-// results, so the brand/grape words decide the ranking. Both languages, plus
-// the few spellings the model emits. Compared lowercased.
-const KIND_WORDS = new Set([
-  "вино", "wine", "игристое", "sparkling", "шампанское", "champagne",
-  "джин", "gin", "водка", "vodka", "виски", "whisky", "whiskey",
-  "текила", "tequila", "ром", "rum", "коньяк", "cognac",
-  "ликёр", "ликер", "liqueur",
-])
-const KIND_WORD_WEIGHT = 0.25
-
-// Per-term distinctiveness weight: rare/long/numeric tokens (brand words,
-// proof/age numbers like "135") discriminate far better than short common
-// kind-words ("Gin", "Dry", "Вино"), so they should dominate the score.
-function termWeight(t: string): number {
-  if (KIND_WORDS.has(t.toLowerCase())) return KIND_WORD_WEIGHT
-  if (/^\d+$/.test(t)) return 2.5
-  if (t.length >= 6) return 1.8
-  if (t.length >= 4) return 1.3
-  return 0.8
-}
-
-// Fuzzy (trigram) brand matching kicks in only for distinctive brand-length
-// tokens — short/common words would match noise. A token this long that ISN'T
-// an exact substring of a product name still counts as a name hit when its
-// pg_trgm word_similarity clears FUZZY_SIM. This rescues brand transliteration
-// drift (e.g. the model writing "Descombes" for catalog "Descombe"), which
-// otherwise drops the actually-requested product out of the ranking entirely.
-const FUZZY_MIN_LEN = 6
-// Trigram threshold for a fuzzy name match. 0.7 admits genuine transliteration
-// drift ("Descombes"≈"Descombe" = 0.8) while rejecting coincidental trigram
-// overlap ("Martiena"≈"martini" = 0.625) that has nothing to do with the query.
-const FUZZY_SIM = 0.7
-// A fuzzy name hit scores BELOW an exact substring hit (FIELD_W.name = 3), so
-// every product that literally contains the query term outranks a merely
-// similar name — yet it still beats no match, so a misspelled brand with NO
-// exact match anywhere is still surfaced. (Above category/attribute weights so
-// a near-brand still beats a generic attribute hit.)
-const FUZZY_NAME_W = 2.5
-
-// Ranked-search relevance cutoff. Terms rank rather than filter (so a pure
-// transliteration miss never blanks the catalog — see the WHERE note below),
-// but without ANY cutoff the result `total` is the whole catalog: every row
-// the structured filters leave in, ranked, even the ones that match no term.
-// To "drop very low probability" matches we keep only rows scoring at least
-// this fraction of the BEST score in the candidate set. A strong multi-term
-// hit (brand in the name + grape) raises the bar so the long tail of rows
-// that matched only one short common word ("Noir" / "Wine") falls away, while
-// genuinely strong matches survive. Applied ONLY when something actually
-// matched (max score > 0); when nothing matches we fall back to the full
-// ranked catalog so the wizard step never shows an empty table. Tunable:
-// higher = tighter/shorter list, lower = more permissive.
-const MIN_SCORE_RATIO = 0.4
+// RRF constant: rrf(d) = Σ 1/(RRF_K + rank_i(d)). ~60 is the standard default;
+// larger flattens the contribution of top ranks, smaller sharpens it.
+const RRF_K = 60
+// Per-retriever candidate cap before fusion. 200 is plenty at 16.8k rows and
+// keeps the fusion set small; raise only if recall@k on the eval set demands it.
+const RETRIEVER_LIMIT = 200
+// Trigram floor for the fuzzy retriever. word_similarity (NOT the GUC-bound `%`
+// operator) ≥ 0.3 admits cross-script near-misses (deskomb≈descombe) while
+// dropping noise. Tuned on the golden set.
+const TRGM_MIN = 0.3
+// Additive soft-boost per matching hint, applied in ORDER BY on top of the RRF
+// score. Comparable to one RRF rank step (1/61 ≈ 0.0164), so a hint nudges
+// ties without overriding a strong retrieval signal.
+const HINT_BOOST = 0.015
 
 export type ListProductsResult = {
   rows: ProductRow[]
@@ -200,14 +156,56 @@ async function requireOrgContext() {
   return { session, activeOrgId }
 }
 
+// Raw row shape returned by the hybrid-search SQL (aliased to camelCase).
+type RawProductRow = {
+  id: string
+  name: string
+  category: string | null
+  webPageUrl: string | null
+  price: string | number | null
+  imageUrl: string | null
+  totalStock: number | string | null
+  status: EntityStatus
+  score: string | number | null
+  total: string | number | null
+}
+
+function mapRawRows(rows: RawProductRow[]): ListProductsResult {
+  return {
+    rows: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      webPageUrl: r.webPageUrl,
+      price: r.price == null ? null : Number(r.price),
+      imageUrl: r.imageUrl,
+      totalStock: r.totalStock == null ? null : Number(r.totalStock),
+      status: r.status,
+      score: r.score == null ? undefined : Number(r.score),
+    })),
+    total: rows.length > 0 ? Number(rows[0].total ?? 0) : 0,
+  }
+}
+
+// neon-http's db.execute resolves to `{ rows }`; normalise either shape.
+async function execRows(query: SQL): Promise<RawProductRow[]> {
+  const res = (await db.execute(query)) as unknown as
+    | { rows?: RawProductRow[] }
+    | RawProductRow[]
+  return (Array.isArray(res) ? res : (res.rows ?? [])) as RawProductRow[]
+}
+
 // Server-side paginated + searched product listing. The catalog is large
-// (tens of thousands of rows), so the page never pulls the full set —
-// every fetch is one page with the current search applied in SQL.
+// (~16.8k rows), so the page never pulls the full set — every fetch is one page
+// with the current gates + ranking applied in SQL.
 //
-// Search is intentionally broad-but-simple for now: a single ILIKE term
-// OR'd across the main columns, the accounting codes, and the full
-// additional-metadata blob cast to text (covers description / country /
-// region / taste / etc.). Precision tuning is a deliberate later step.
+// Search V2 (refs/search-v2-plan.md): the query text (manual `q` OR the wizard's
+// `terms`, joined) is normalised in SQL — Cyrillic→Latin transliteration +
+// brand-alias expansion — then two retrievers run over the GATED set (FTS-OR on
+// the weighted tsvector; trigram on name_norm) and are fused by Reciprocal Rank
+// Fusion. HARD gates (org/status/junk/is_drink/price/in-stock/volume + the
+// manual filter dropdowns) narrow; SOFT hints (the wizard's LLM-guessed
+// attributes) only boost in ORDER BY so a wrong guess can never zero the result.
 export async function listProducts(
   params: ListProductsParams = {},
 ): Promise<ListProductsResult> {
@@ -215,201 +213,136 @@ export async function listProducts(
 
   const limit = Math.min(Math.max(params.limit ?? 25, 1), 100)
   const offset = Math.max(params.offset ?? 0, 0)
-  const q = params.q?.trim()
-  const category = params.category?.trim()
 
-  // Exact-match on an additional_metadata attribute (e.g. type = "ВИНО").
-  const attrEq = (jsonKey: string, val?: string) => {
-    const v = val?.trim()
-    return v && v.length > 0
-      ? sql`${product.additionalMetadata} ->> ${jsonKey} = ${v}`
-      : undefined
-  }
-  const awards = params.awards?.trim()
-
-  // Bilingual ranked search: dedupe terms (case-insensitive), drop too-short
-  // ones, cap the count, and build a WEIGHTED relevance score. Per term, the
-  // best field hit (name > category/accounting > attribute, via GREATEST so a
-  // term counts once) is scaled by the term's distinctiveness weight — so a
-  // rare brand word in the name dominates a common kind-word in an attribute.
-  // Terms RANK, they do NOT filter: ordering is by score desc, then the
-  // shorter name (tighter match) as a coverage tie-break. A request item whose
-  // terms match nothing (e.g. a transliteration the Latin catalog doesn't
-  // carry) therefore still shows the catalog instead of an empty table — the
-  // rep refines via the visible search box. (The catalog is in Latin while
-  // clients often write Cyrillic, so a hard score>0 filter would routinely
-  // blank the table mid-wizard.)
-  // Manual search box (`q`) and the wizard's `terms` share ONE ranked path: a
-  // free-text `q` is tokenised into terms so NAME hits rank above description /
-  // vendor hits, and a multi-word query ("martini dry") matches by token
-  // coverage instead of as a single contiguous substring. (The old `q` was an
-  // un-ranked OR-filter over name + prose fields sorted alphabetically, which
-  // buried real "Martini …" products under ~130 wines whose *description* just
-  // mentions martini, and made "martini dry" match almost nothing.) Explicit
-  // `terms` from the order-request wizard take precedence when provided.
-  const effectiveTerms =
+  // The wizard's bilingual `terms` take precedence over the manual box `q`; both
+  // feed ONE normalised ranking path. Empty → plain (browse/filter) listing.
+  const rawQuery =
     params.terms && params.terms.length > 0
-      ? params.terms
-      : q
-        ? q.split(/\s+/)
-        : []
-  const uniqueTerms = [
-    ...new Map(
-      effectiveTerms
-        .map((t) => t.trim())
-        .filter((t) => t.length >= MIN_TERM_LEN)
-        .map((t) => [t.toLowerCase(), t] as const),
-    ).values(),
-  ].slice(0, 16)
-  const hasTerms = uniqueTerms.length > 0
+      ? params.terms.join(" ").trim()
+      : (params.q?.trim() ?? "")
 
-  const termScore = (t: string) => {
-    const like = `%${t}%`
-    const w = termWeight(t)
-    // Distinctive brand-length tokens get a fuzzy fallback on the NAME: an
-    // exact substring scores FIELD_W.name, but a close trigram match (e.g.
-    // "Descombes" ≈ "Descombe") also counts as a full name hit so a one-letter
-    // transliteration drift no longer hides the requested product.
-    const fuzzy = t.length >= FUZZY_MIN_LEN && !KIND_WORDS.has(t.toLowerCase())
-    const nameHit = fuzzy
-      ? sql`CASE
-            WHEN ${product.name} ILIKE ${like} THEN ${FIELD_W.name}
-            WHEN word_similarity(${t}, ${product.name}) >= ${FUZZY_SIM} THEN (${FUZZY_NAME_W})::float8
-            ELSE 0 END`
-      : sql`CASE WHEN ${product.name} ILIKE ${like} THEN ${FIELD_W.name} ELSE 0 END`
-    // `w` is a JS float (0.8 / 1.3 / 1.8 / 2.5) sent as an untyped param. In
-    // `$param * GREATEST(<int CASEs>)` Postgres resolves `unknown * int4` and
-    // tries to cast the literal to INTEGER → "invalid input syntax for type
-    // integer: 0.8" (every terms query 500s → empty catalog). Cast to float8
-    // so the multiplication stays numeric. (Regression from the ranked-search
-    // rewrite in dc63edf — see PHASE2 / git blame.)
-    return sql`(${w})::float8 * GREATEST(
-      ${nameHit},
-      CASE WHEN ${product.category} ILIKE ${like} THEN ${FIELD_W.category} ELSE 0 END,
-      CASE WHEN ${product.accountingMetadata}::text ILIKE ${like} THEN ${FIELD_W.accounting} ELSE 0 END,
-      ${sql.join(
-        TERM_MATCH_KEYS.map(
-          (k) =>
-            sql`CASE WHEN ${product.additionalMetadata} ->> ${k} ILIKE ${like} THEN ${FIELD_W.attr} ELSE 0 END`,
-        ),
-        sql`, `,
-      )}
-    )`
+  // ── HARD gates (AND) — applied identically in every retriever + the plain
+  // path. Unqualified column names resolve to the single product table in scope.
+  const gateParts: SQL[] = [
+    sql`organization_id = ${activeOrgId}`,
+    sql`status = 'active'`,
+    // Junk header row from the spreadsheet ingest (spec §1.4).
+    sql`name <> 'Название товара'`,
+  ]
+  if (!params.includeMerch) gateParts.push(sql`is_drink`)
+  const hardAttr = (jsonKey: string, val?: string) => {
+    const v = val?.trim()
+    if (v) gateParts.push(sql`additional_metadata ->> ${jsonKey} = ${v}`)
   }
-  const scoreExpr = hasTerms
-    ? sql<number>`(${sql.join(
-        uniqueTerms.map((t) => termScore(t)),
-        sql` + `,
-      )})`
-    : null
+  const category = params.category?.trim()
+  if (category) gateParts.push(sql`category = ${category}`)
+  hardAttr(ATTR_FILTER_KEYS.type, params.type)
+  hardAttr(ATTR_FILTER_KEYS.color, params.color)
+  hardAttr(ATTR_FILTER_KEYS.sugar, params.sugar)
+  hardAttr(ATTR_FILTER_KEYS.year, params.year)
+  hardAttr(ATTR_FILTER_KEYS.aging, params.aging)
+  hardAttr(ATTR_FILTER_KEYS.bottleVolume, params.bottleVolume)
+  hardAttr(ATTR_FILTER_KEYS.countryName, params.countryName)
+  hardAttr(ATTR_FILTER_KEYS.appelacion, params.appelacion)
+  hardAttr(ATTR_FILTER_KEYS.rating, params.rating)
+  const awards = params.awards?.trim()
+  if (awards) gateParts.push(sql`additional_metadata ->> 'awards' ILIKE ${`%${awards}%`}`)
+  if (params.priceMin != null && Number.isFinite(params.priceMin))
+    gateParts.push(sql`price >= ${params.priceMin}`)
+  if (params.priceMax != null && Number.isFinite(params.priceMax))
+    gateParts.push(sql`price <= ${params.priceMax}`)
+  if (params.inStock === "in") gateParts.push(sql`total_stock > 0`)
+  else if (params.inStock === "out")
+    gateParts.push(sql`(total_stock IS NULL OR total_stock <= 0)`)
+  if (params.volumeMl != null && Number.isFinite(params.volumeMl))
+    gateParts.push(sql`additional_metadata ->> 'bottle_volume' = ${String(params.volumeMl)}`)
+  const gates = sql.join(gateParts, sql` AND `)
 
-  const baseWhere = and(
-    eq(product.organizationId, activeOrgId),
-    eq(product.status, "active"),
-    // NOTE: terms intentionally do NOT appear here — they rank (orderBy), not
-    // filter, so an unmatched term never empties the catalog. The relevance
-    // CUTOFF below (relative to the best score) is what trims the long tail;
-    // it's gated on max-score > 0 for the same never-blank reason. See
-    // termScore + MIN_SCORE_RATIO.
-    category && category.length > 0
-      ? eq(product.category, category)
-      : undefined,
-    // `q` is NOT a hard filter — it's tokenised into `effectiveTerms` above and
-    // drives the weighted ranking + relevance cutoff, so name/brand hits rank
-    // first and prose-only matches (a description that merely mentions the term)
-    // fall below the cutoff instead of flooding the list. Barcode/code lookups
-    // still work via the `accounting_metadata` field weight in the score.
-    attrEq(ATTR_FILTER_KEYS.type, params.type),
-    attrEq(ATTR_FILTER_KEYS.color, params.color),
-    attrEq(ATTR_FILTER_KEYS.sugar, params.sugar),
-    attrEq(ATTR_FILTER_KEYS.year, params.year),
-    attrEq(ATTR_FILTER_KEYS.aging, params.aging),
-    attrEq(ATTR_FILTER_KEYS.bottleVolume, params.bottleVolume),
-    attrEq(ATTR_FILTER_KEYS.countryName, params.countryName),
-    attrEq(ATTR_FILTER_KEYS.appelacion, params.appelacion),
-    attrEq(ATTR_FILTER_KEYS.rating, params.rating),
-    awards && awards.length > 0
-      ? sql`${product.additionalMetadata} ->> 'awards' ILIKE ${`%${awards}%`}`
-      : undefined,
-    params.priceMin != null && Number.isFinite(params.priceMin)
-      ? sql`${product.price} >= ${params.priceMin}`
-      : undefined,
-    params.priceMax != null && Number.isFinite(params.priceMax)
-      ? sql`${product.price} <= ${params.priceMax}`
-      : undefined,
-    params.inStock === "in"
-      ? sql`${product.totalStock} > 0`
-      : params.inStock === "out"
-        ? sql`(${product.totalStock} IS NULL OR ${product.totalStock} <= 0)`
-        : undefined,
-  )
+  // Plain (no query): filtered listing ordered by name. Also the never-blank
+  // fallback when a ranked search matches nothing.
+  const plainCols = sql`
+    p.id AS "id", p.name AS "name", p.category AS "category",
+    p.web_page_url AS "webPageUrl", p.price AS "price", p.image_url AS "imageUrl",
+    p.total_stock AS "totalStock", p.status AS "status",
+    NULL::float8 AS "score", count(*) OVER () AS "total"`
+  const runPlain = () =>
+    execRows(sql`
+      SELECT ${plainCols}
+      FROM product p
+      WHERE ${gates}
+      ORDER BY p.name ASC, p.id ASC
+      LIMIT ${limit} OFFSET ${offset}`)
 
-  // Relevance cutoff (only meaningful when terms were supplied). One cheap
-  // aggregate pass over the structured-filtered set finds the best score; we
-  // then keep rows within MIN_SCORE_RATIO of it. Gated on max > 0 so a
-  // transliteration miss (every row scores 0) falls back to the full ranked
-  // catalog instead of an empty table.
-  let where = baseWhere
-  if (hasTerms && scoreExpr) {
-    const maxRow = await db
-      .select({ m: sql<number | null>`MAX(${scoreExpr})` })
-      .from(product)
-      .where(baseWhere)
-    const maxScore = Number(maxRow[0]?.m ?? 0)
-    if (maxScore > 0) {
-      const threshold = maxScore * MIN_SCORE_RATIO
-      where = and(baseWhere, sql`${scoreExpr} >= ${threshold}`)
-    }
-  }
+  if (!rawQuery) return mapRawRows(await runPlain())
 
-  const [rows, totalRows] = await Promise.all([
-    db
-      .select({
-        id: product.id,
-        name: product.name,
-        category: product.category,
-        webPageUrl: product.webPageUrl,
-        price: product.price,
-        imageUrl: product.imageUrl,
-        totalStock: product.totalStock,
-        status: product.status,
-        // Score is null unless terms were supplied; surfaced so the client can
-        // distinguish a real ranked hit from a zero-score filler row.
-        score: scoreExpr ?? sql<number | null>`NULL`,
-      })
-      .from(product)
-      .where(where)
-      .orderBy(
-        ...(scoreExpr
-          ? [sql`${scoreExpr} DESC`, sql`char_length(${product.name}) ASC`]
-          : []),
-        asc(product.name),
-        // Final unique tiebreaker. The catalog has many same-named SKUs that
-        // tie on score AND name; without a stable last key Postgres returns
-        // them in arbitrary, run-varying physical order, so the top row (the
-        // "Best match" badge) and the page-boundary cut shuffled between
-        // identical queries. Ordering by id makes every query reproducible.
-        asc(product.id),
-      )
-      .limit(limit)
-      .offset(offset),
-    db.select({ n: count() }).from(product).where(where),
-  ])
+  // ── SOFT hint boosts (additive, in ORDER BY). COALESCE so a NULL attribute
+  // contributes 0 instead of poisoning the sum.
+  const boostParts: SQL[] = []
+  const hint = (cond: SQL) =>
+    boostParts.push(sql`${HINT_BOOST} * COALESCE((${cond})::int, 0)`)
+  if (params.catHint?.trim()) hint(sql`p.category = ${params.catHint.trim()}`)
+  if (params.colorHint?.trim()) hint(sql`p.additional_metadata ->> 'color' = ${params.colorHint.trim()}`)
+  if (params.sugarHint?.trim()) hint(sql`p.additional_metadata ->> 'sugar' = ${params.sugarHint.trim()}`)
+  if (params.countryHint?.trim()) hint(sql`p.additional_metadata ->> 'country_name' = ${params.countryHint.trim()}`)
+  if (params.regionHint?.trim())
+    hint(sql`p.region_norm ILIKE ('%' || lower(immutable_unaccent(translit_cyr_lat(${params.regionHint.trim()}))) || '%')`)
+  if (params.wantGift) hint(sql`p.is_gift`)
+  const boost = boostParts.length > 0 ? sql` + ${sql.join(boostParts, sql` + `)}` : sql``
 
-  return {
-    rows: rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      webPageUrl: r.webPageUrl,
-      price: r.price === null ? null : Number(r.price),
-      imageUrl: r.imageUrl,
-      totalStock: r.totalStock,
-      status: r.status,
-      score: r.score == null ? undefined : Number(r.score),
-    })),
-    total: totalRows[0]?.n ?? 0,
-  }
+  // Normalised query (translit + unaccent) reused in qexp + the alias lookup.
+  const qNorm = sql`lower(immutable_unaccent(translit_cyr_lat(${rawQuery})))`
+
+  const ranked = await execRows(sql`
+    WITH qx AS (
+      SELECT trim(
+        ${qNorm} || ' ' || coalesce((
+          SELECT string_agg(DISTINCT a.canonical, ' ')
+          FROM product_alias a
+          WHERE a.organization_id = ${activeOrgId}
+            AND a.kind <> 'house'
+            AND position(a.alias_norm in ${qNorm}) > 0
+        ), '')
+      ) AS qexp
+    ),
+    fts AS (
+      SELECT p.id, row_number() OVER (
+        ORDER BY ts_rank_cd(p.search_vector, to_or_tsquery((SELECT qexp FROM qx))) DESC) AS r
+      FROM product p
+      WHERE ${gates}
+        AND p.search_vector @@ to_or_tsquery((SELECT qexp FROM qx))
+      LIMIT ${RETRIEVER_LIMIT}
+    ),
+    trg AS (
+      SELECT p.id, row_number() OVER (
+        ORDER BY word_similarity((SELECT qexp FROM qx), p.name_norm) DESC) AS r
+      FROM product p
+      WHERE ${gates}
+        AND word_similarity((SELECT qexp FROM qx), p.name_norm) >= ${TRGM_MIN}
+      LIMIT ${RETRIEVER_LIMIT}
+    ),
+    ids AS (SELECT id FROM fts UNION SELECT id FROM trg),
+    fused AS (
+      SELECT i.id,
+             COALESCE(1.0/(${RRF_K} + f.r), 0) + COALESCE(1.0/(${RRF_K} + t.r), 0) AS rrf
+      FROM ids i
+      LEFT JOIN fts f USING (id)
+      LEFT JOIN trg t USING (id)
+    )
+    SELECT
+      p.id AS "id", p.name AS "name", p.category AS "category",
+      p.web_page_url AS "webPageUrl", p.price AS "price", p.image_url AS "imageUrl",
+      p.total_stock AS "totalStock", p.status AS "status",
+      fused.rrf AS "score", count(*) OVER () AS "total"
+    FROM fused
+    JOIN product p USING (id)
+    ORDER BY (fused.rrf${boost}) DESC, char_length(p.name) ASC, p.name ASC, p.id ASC
+    LIMIT ${limit} OFFSET ${offset}`)
+
+  // Never-blank: a query that matched nothing (rare post-normalisation) falls
+  // back to the gated catalog so a wizard step never shows an empty table. Score
+  // stays null → the page suppresses the "Best match" badge (nothing matched).
+  if (ranked.length === 0) return mapRawRows(await runPlain())
+  return mapRawRows(ranked)
 }
 
 // Full single-product fetch for the detail pop-up — org-scoped. Returns

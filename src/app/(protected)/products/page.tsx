@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -185,6 +186,9 @@ export default function ProductsPage() {
   const [priceMinInput, setPriceMinInput] = useState("")
   const [priceMaxInput, setPriceMaxInput] = useState("")
   const [awardsInput, setAwardsInput] = useState("")
+  // Search V2: non-drink merch (glasses / water / syrups / gift-wrap) is hidden
+  // from the catalog by default; this opts back in. Resets to page 1 on toggle.
+  const [includeMerch, setIncludeMerch] = useState(false)
 
   const [categories, setCategories] = useState<string[]>([])
   const [options, setOptions] = useState<ProductFilterOptions>(EMPTY_OPTIONS)
@@ -234,6 +238,7 @@ export default function ProductsPage() {
     setPriceMinInput("")
     setPriceMaxInput("")
     setAwardsInput("")
+    setIncludeMerch(false)
     setFilters(EMPTY_FILTERS)
     setPage(1)
   }, [])
@@ -254,7 +259,8 @@ export default function ProductsPage() {
     filters.countryName !== ALL ||
     filters.appelacion !== ALL ||
     filters.rating !== ALL ||
-    filters.inStock !== ALL
+    filters.inStock !== ALL ||
+    includeMerch
 
   // Controlled tab + order-builder session. The builder lives at the page
   // level so it survives tab switches and the catalog table can feed
@@ -352,16 +358,13 @@ export default function ProductsPage() {
     setPriceMinInput(min)
     setPriceMaxInput(max)
     setAwardsInput("")
+    // Search V2: the LLM's attribute guesses are NO LONGER pushed into the hard
+    // dropdown filters — they ride as SOFT hints in `load()` (boosts that can't
+    // zero the step). Only the price ceiling/floor stays a real gate here; the
+    // wizard strip still shows the applied-attribute chips from item.filters.
     setFilters({
       ...EMPTY_FILTERS,
       q: phrase,
-      category: f.category ?? ALL,
-      type: f.type ?? ALL,
-      color: f.color ?? ALL,
-      sugar: f.sugar ?? ALL,
-      aging: f.aging ?? ALL,
-      bottleVolume: f.bottleVolume ?? ALL,
-      countryName: f.countryName ?? ALL,
       priceMin: min,
       priceMax: max,
     })
@@ -551,6 +554,15 @@ export default function ProductsPage() {
         ? (wizard?.items[wizard.index]?.searchTerms ?? [])
         : []
       if (wizardTerms.length > 0) params.set("terms", wizardTerms.join(","))
+      // The wizard runs PURE text search now (terms above) — the LLM's catalog
+      // attributes (category/type/color/…) are deliberately NOT sent as filters
+      // OR hints: the source data mis-attributes them (e.g. category="Вино" is a
+      // near-empty bucket), so they only zeroed/contaminated results. Price IS
+      // still applied (a reliable client-stated ceiling) via filters.priceMin/Max
+      // above; the rep adds a kind/colour facet by hand from the dropdowns.
+      // Merch (glasses / water / syrups / gift-wrap) is hidden from the catalog
+      // by default; the toggle opts back in.
+      if (includeMerch) params.set("includeMerch", "1")
       const res = await fetch(`/api/products?${params.toString()}`)
       const data: ListProductsResult = await res.json()
       if (reqId !== reqIdRef.current) return
@@ -559,7 +571,7 @@ export default function ProductsPage() {
     } finally {
       if (reqId === reqIdRef.current) setLoading(false)
     }
-  }, [page, pageSize, filters, wizard, wizardSearch, builder.stockOnly])
+  }, [page, pageSize, filters, wizard, wizardSearch, builder.stockOnly, includeMerch])
 
   useEffect(() => {
     load()
@@ -777,6 +789,16 @@ export default function ProductsPage() {
                       ? "Нет товаров"
                       : `${rangeStart}–${rangeEnd} из ${total.toLocaleString()} товаров`}
                   </div>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                    <Checkbox
+                      checked={includeMerch}
+                      onCheckedChange={(v) => {
+                        setIncludeMerch(v === true)
+                        setPage(1)
+                      }}
+                    />
+                    Показывать не-напитки (бокалы, вода, аксессуары)
+                  </label>
                 </div>
 
                 <div className="rounded-md border">

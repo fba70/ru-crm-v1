@@ -741,7 +741,60 @@ export const product = pgTable(
   ],
 )
 
+// Search V2 — DB-managed generated columns NOT represented above on purpose.
+//
+// `scripts/search-v2/01-foundation.ts` adds these GENERATED ALWAYS … STORED
+// columns + their indexes to the `product` table:
+//   • name_norm     text     — lower(immutable_unaccent(translit_cyr_lat(name)))
+//   • region_norm   text     — same over additional_metadata->>'region'
+//   • is_drink      boolean  — false for merch categories (glasses/water/…)
+//   • is_gift       boolean  — gift_packaging='Да' OR name ~ подароч/деревян
+//   • search_vector tsvector — weighted 'simple' FTS (A name/vendor, C cat/type, D country/region)
+// The hybrid retriever in src/server/products.ts reads them via raw `sql`.
+//
+// They are intentionally absent from this schema object: mirroring a generated
+// expression that doesn't byte-match Drizzle's introspection would make
+// `drizzle-kit push` drop + recreate them on every push (a full table rewrite).
+// That migration script is the single source of truth for their definitions —
+// edit translit/search_vector there, then DROP COLUMN + re-add to rebuild.
+
 export type Product = typeof product.$inferSelect
+
+// Search V2 — brand / kind / house alias map (org-scoped). Bridges the
+// transliteration divergences that normalization alone can't close: a customer
+// writes «грей гуз» (normalizes to `grey guz`) but the catalog name is
+// `Grey Goose` (`grey goose`) — trigram 0.625, FTS misses entirely. An alias row
+// {alias_norm:'grey guz', canonical:'grey goose'} lets normalizeQuery() append
+// the catalog-true token so FTS + trigram both fire.
+//   • alias_norm — the customer spelling AFTER full normalization
+//     (lower(immutable_unaccent(translit_cyr_lat(...)))), so it compares against
+//     a normalized query directly.
+//   • canonical  — the catalog-true token(s), also normalized.
+//   • kind       — 'brand' (default) | 'kind' (low-selectivity drink word → soft
+//     boost, never a gate) | 'house' (house-pour placeholder «Х»/«хаус»; resolved
+//     per category in a later phase, not via search).
+// Seeded by scripts/search-v2/seed-aliases.ts from the corpus + 42 sample requests.
+export const productAlias = pgTable(
+  "product_alias",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    aliasNorm: text("alias_norm").notNull(),
+    canonical: text("canonical").notNull(),
+    kind: text("kind").notNull().default("brand"),
+  },
+  (table) => [
+    uniqueIndex("product_alias_org_alias_uniq").on(
+      table.organizationId,
+      table.aliasNorm,
+    ),
+    index("product_alias_org_idx").on(table.organizationId),
+  ],
+)
+
+export type ProductAlias = typeof productAlias.$inferSelect
 
 // ── Orders ───────────────────────────────────────────────────────────
 //

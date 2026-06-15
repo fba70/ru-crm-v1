@@ -15,7 +15,6 @@ import { getServerSession } from "@/lib/get-session"
 import {
   listProductCategories,
   listProductFilterOptions,
-  listProducts,
 } from "@/server/products"
 import { getGatewayId, DEFAULT_MODEL_KEY } from "@/lib/llm-models"
 import type { OrderRequestItemFilters } from "@/lib/order-request"
@@ -178,18 +177,21 @@ function buildParsePrompt(opts: {
     "  may also add a Russian `searchPhrase` for nuance not covered by",
     "  filters. `quantityHint` only if a quantity was stated.",
     "",
-    "For EVERY item also produce `searchTerms`: 3–10 short tokens used to FIND",
-    "the product in a catalog whose names MIX Russian and English. The search",
-    "matches ANY token and ranks products by how many tokens hit, so include",
-    "tokens in BOTH languages and do NOT worry about word order or exact",
-    "spelling. Build them from each meaningful word of the product (NOT",
-    "greetings, quantities, or units like «бут»/«л»/«шт»): keep the original",
-    "word AND add its English translation/transliteration. ALWAYS translate the",
-    "drink-kind word: Джин→Gin, Водка→Vodka, Вино→Wine, Виски→Whisky,",
-    "Текила→Tequila, Ром→Rum, Коньяк→Cognac, Ликёр→Liqueur,",
-    "Шампанское→Champagne, Игристое→Sparkling. Keep numbers that are part of",
-    "the name (135, 12). Example: «Джин хиога драй 135» →",
-    '["Джин","Gin","хиога","Hyoga","драй","Dry","135"]. Deduplicate.',
+    "For EVERY item also produce `searchTerms`: the DISTINCTIVE tokens used to",
+    "FIND the product in a catalog whose names MIX Russian and English. Matching",
+    "is text-only and order-independent, so include each distinctive word in BOTH",
+    "languages — the original word AND its English translation/transliteration.",
+    "Build them from the BRAND / PRODUCER / GRAPE / variant words and any",
+    "name-numbers (135, 12). Example: «Пино нуар дескомб» →",
+    '["Пино","нуар","Pinot","Noir","дескомб","Descombe"]; «хиога драй 135» →',
+    '["хиога","Hyoga","драй","Dry","135"].',
+    "",
+    "CRITICAL — do NOT include the generic drink-KIND word in `searchTerms`",
+    "(вино/wine, игристое/sparkling, шампанское/champagne, джин/gin, водка/vodka,",
+    "виски/whisky, текила/tequila, ром/rum, коньяк/cognac, ликёр/liqueur, etc.).",
+    "Those words match almost every product of that kind and DROWN OUT the real",
+    "brand match. Also exclude greetings, quantities, and units (бут/л/шт).",
+    "Deduplicate.",
     "",
     "Allowed catalog values — filter values MUST be copied EXACTLY from these",
     "lists (they are Russian, UPPERCASE for attributes). If nothing fits an",
@@ -228,107 +230,60 @@ const TERM_STOPWORDS = new Set([
   "де", "ля", "ле", "ла", "лос", "лас", "дель", "ди", "да", "по", "на",
 ])
 
-// Dedupe (case-insensitive) + trim search tokens, drop too-short ones +
-// connector stopwords, cap the count.
+// Generic DRINK-KIND words (both languages + the spellings the model emits).
+// These are POISON for the wizard's text search: they FTS-match nearly every
+// product of that kind, so the RRF ranking floats unrelated «…Wine…» / «…Gin…»
+// rows ABOVE a weak fuzzy brand match — e.g. «мюленхоф Muelenhof Вино Wine»
+// surfaced random «Vino Nobile» / «… Perry Wine» and buried the real Weingut
+// Meulenhof Riesling, while «мюленхоф Muelenhof» alone nails it. The brand /
+// grape / product tokens carry the match; the kind word never discriminates.
+// So they're dropped from the search-term bag (the kind is the rep's manual
+// filter, not a search keyword). Lowercased compare.
+const KIND_STOPWORDS = new Set([
+  "вино", "wine", "игристое", "sparkling", "шампанское", "champagne",
+  "джин", "gin", "водка", "vodka", "виски", "whisky", "whiskey",
+  "текила", "tequila", "ром", "rum", "коньяк", "cognac",
+  "ликёр", "ликер", "liqueur", "бренди", "brandy", "граппа", "grappa",
+  "вермут", "vermouth", "портвейн", "port",
+])
+
+// Dedupe (case-insensitive) + trim search tokens, drop too-short ones,
+// connector stopwords, AND generic drink-kind words, cap the count.
 function cleanTerms(terms: string[]): string[] {
   return [
     ...new Map(
       terms
         .map((t) => t.trim())
-        .filter((t) => t.length >= 2 && !TERM_STOPWORDS.has(t.toLowerCase()))
+        .filter(
+          (t) =>
+            t.length >= 2 &&
+            !TERM_STOPWORDS.has(t.toLowerCase()) &&
+            !KIND_STOPWORDS.has(t.toLowerCase()),
+        )
         .map((t) => [t.toLowerCase(), t] as const),
     ).values(),
   ].slice(0, 16)
 }
 
-type FilterVocab = {
-  category: string[]
-  type: string[]
-  color: string[]
-  sugar: string[]
-  aging: string[]
-  bottleVolume: string[]
-  countryName: string[]
-}
-
-// Case-insensitively snap a value to the catalog's exact vocabulary, or drop
-// it. The prompt asks the LLM to copy allowed values verbatim, but it drifts:
-// it returns Title-case "Вино" for the catalog's "ВИНО", or INVENTS "Вино" as
-// a `category` when the real categories are "Белое"/"Красное"/… These land as
-// exact-match `eq` filters in the wizard catalog query → zero rows. (This is
-// exactly why a clear "вионье" request found nothing: filters were
-// {category:"Вино", type:"Вино", …} and neither value exists as-is.) Keeping
-// only real values — normalised to the catalog's spelling — means a bad guess
-// degrades to pure term ranking instead of an empty result.
-function snapToVocab(value: string, allowed: string[]): string | undefined {
-  const v = value.trim()
-  if (!v) return undefined
-  return allowed.find((a) => a.toLowerCase() === v.toLowerCase())
-}
-
-// Clean the LLM's sentinel-filled filter object into a sparse one, validated
-// against the real catalog vocabulary (hallucinated / mis-cased values dropped).
+// Reduce the LLM's filter object to PRICE ONLY. The catalog's structured
+// attributes (category / type / color / sugar / aging / bottleVolume /
+// countryName) are deliberately DISCARDED for the wizard: the source data
+// mis-attributes them (e.g. `category = "Вино"` is a near-empty bucket — real
+// wines live under Белое/Красное/Розовое), so using them as filters zeroed
+// obviously-satisfiable requests, and using them as keywords/hints only added
+// noise. The wizard now matches PURELY on the text-search tokens (original +
+// translation/transliteration) — which work as well as manual search — plus
+// price as a real numeric gate (clients state explicit ceilings like «до 1000»).
+// The rep applies a kind/colour facet via the manual catalog dropdowns when they
+// actually want one. (This is why category/type/color are no longer surfaced as
+// wizard chips either — the page reads only price + searchTerms off the item.)
 function cleanFilters(
   f: z.infer<typeof llmFilterSchema>,
-  vocab: FilterVocab,
 ): OrderRequestItemFilters {
   const out: OrderRequestItemFilters = {}
-  const category = snapToVocab(f.category, vocab.category)
-  if (category) out.category = category
-  const type = snapToVocab(f.type, vocab.type)
-  if (type) out.type = type
-  const color = snapToVocab(f.color, vocab.color)
-  if (color) out.color = color
-  const sugar = snapToVocab(f.sugar, vocab.sugar)
-  if (sugar) out.sugar = sugar
-  const aging = snapToVocab(f.aging, vocab.aging)
-  if (aging) out.aging = aging
-  const bottleVolume = snapToVocab(f.bottleVolume, vocab.bottleVolume)
-  if (bottleVolume) out.bottleVolume = bottleVolume
-  const countryName = snapToVocab(f.countryName, vocab.countryName)
-  if (countryName) out.countryName = countryName
   if (Number.isFinite(f.priceMin) && f.priceMin > 0) out.priceMin = f.priceMin
   if (Number.isFinite(f.priceMax) && f.priceMax > 0) out.priceMax = f.priceMax
   return out
-}
-
-// A discovery item's structured filters are applied as a hard AND of exact
-// matches in the catalog query, so a single bad value — the LLM picking a
-// real-but-WRONG `category` (e.g. "Вино" when the Viognier whites live under
-// "Белое") — eliminates EVERY row even for an obviously-satisfiable request.
-// Term ranking is robust; the filters are brittle. So if the filters zero out
-// a request that terms alone CAN match, relax them: drop the redundant kind
-// facets (category/type) first, then every attribute facet, keeping price. The
-// step then falls back to ranked term search instead of an empty catalog.
-async function relaxOverConstrainedFilters(
-  terms: string[],
-  filters: OrderRequestItemFilters,
-): Promise<OrderRequestItemFilters> {
-  const ATTR_KEYS = [
-    "category", "type", "color", "sugar", "aging", "bottleVolume", "countryName",
-  ] as const
-  const hasAttr = ATTR_KEYS.some((k) => filters[k])
-  if (!hasAttr || terms.length === 0) return filters
-
-  const total = async (f: OrderRequestItemFilters) =>
-    (await listProducts({ terms, ...f, limit: 1 })).total
-
-  if ((await total(filters)) > 0) return filters // filters already match
-
-  // Relaxing only helps if terms alone (price kept) are matchable at all.
-  const priceOnly: OrderRequestItemFilters = {}
-  if (filters.priceMin != null) priceOnly.priceMin = filters.priceMin
-  if (filters.priceMax != null) priceOnly.priceMax = filters.priceMax
-  if ((await total(priceOnly)) === 0) return filters
-
-  // Step 1: drop the redundant kind facets, keep the descriptive ones.
-  const rest: OrderRequestItemFilters = { ...filters }
-  delete rest.category
-  delete rest.type
-  if (ATTR_KEYS.some((k) => rest[k]) && (await total(rest)) > 0) return rest
-
-  // Step 2: drop every attribute facet, keep price only.
-  return priceOnly
 }
 
 // Create the request row, run ONE LLM split, persist the resulting intent
@@ -396,19 +351,6 @@ export async function createAndParseOrderRequest(
       }),
     })
 
-    // Validate LLM filters against the FULL catalog vocabulary (not the
-    // 80-value prompt cap) — so a real value the model copied still survives
-    // even when its attribute list was too long to hand it as a closed vocab.
-    const filterVocab: FilterVocab = {
-      category: categories,
-      type: filterOptions.type,
-      color: filterOptions.color,
-      sugar: filterOptions.sugar,
-      aging: filterOptions.aging,
-      bottleVolume: filterOptions.bottleVolume,
-      countryName: filterOptions.countryName,
-    }
-
     const items = output.items.slice(0, MAX_ITEMS)
     if (items.length > 0) {
       const values = []
@@ -418,10 +360,8 @@ export async function createAndParseOrderRequest(
         const qty = it.quantityHint.trim()
         const label = it.label.trim()
         const terms = cleanTerms(it.searchTerms ?? [])
-        const filters = await relaxOverConstrainedFilters(
-          terms,
-          cleanFilters(it.filters, filterVocab),
-        )
+        // Soft hints downstream — no vocab-snap, no relaxation (Search V2).
+        const filters = cleanFilters(it.filters)
         values.push({
           id: randomUUID(),
           requestId,

@@ -87,6 +87,16 @@ export async function GET(request: NextRequest) {
       priceMin: num("priceMin"),
       priceMax: num("priceMax"),
       inStock,
+      // Search V2 soft hints (wizard's LLM-guessed attributes → ranking boosts).
+      catHint: str("catHint"),
+      colorHint: str("colorHint"),
+      sugarHint: str("sugarHint"),
+      countryHint: str("countryHint"),
+      regionHint: str("regionHint"),
+      wantGift: searchParams.get("wantGift") === "1",
+      // Search V2 gates.
+      volumeMl: num("volumeMl"),
+      includeMerch: searchParams.get("includeMerch") === "1",
       limit: Number.isFinite(limitRaw) ? limitRaw : 25,
       offset: Number.isFinite(offsetRaw) ? offsetRaw : 0,
     })

@@ -147,9 +147,13 @@ export function NewOrderDialog({
         <div className="space-y-3">
           <div className="space-y-1">
             <span className="text-xs text-muted-foreground">Клиент</span>
-            <Select value={clientId} onValueChange={setClientId} disabled={submitting}>
+            <Select
+              value={clientId}
+              onValueChange={setClientId}
+              disabled={submitting}
+            >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Выберите клиента (необязательно для ручного создания)" />
+                <SelectValue placeholder="Выберите клиента" />
               </SelectTrigger>
               <SelectContent>
                 {clientOptions.map((c) => (
