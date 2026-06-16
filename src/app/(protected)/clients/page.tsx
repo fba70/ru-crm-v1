@@ -38,12 +38,31 @@ import { DealCard } from "@/components/blocks/deal-card"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
 import { dealStageLabel } from "@/lib/deal-funnel"
+import { authClient } from "@/lib/auth-client"
 
 const PAGE_SIZE = 6
 // Clients + Contacts share one merged tab with two stacked grids; 3 cards
 // per row, one row visible each, so both sections fit on one screen.
 const CLIENT_CONTACT_PAGE_SIZE = 3
 const ALL = "__all__"
+
+// Deal-card "last update time" range filter (filters on deal.updatedAt).
+const DEAL_UPDATED_ALL = "all"
+const DEAL_UPDATED_RANGES = ["all", "week", "month"] as const
+const DEAL_UPDATED_RANGE_LABEL: Record<string, string> = {
+  all: "За всё время",
+  week: "За неделю",
+  month: "За месяц",
+}
+const DEAL_UPDATED_RANGE_DAYS: Record<string, number | null> = {
+  all: null,
+  week: 7,
+  month: 30,
+}
+// Per-sub-tab pagination size options. The grid is 3 columns, so 3 / 6 / 12
+// render as 1 / 2 / 4 rows respectively.
+const DEAL_PAGE_SIZE_OPTIONS = [3, 6, 12] as const
+const DEAL_DEFAULT_PAGE_SIZE = 6
 
 // `deleted` is a soft-delete (test/garbage records, excluded from discovery).
 // It's selectable here so operators can view/restore them, but hidden under
@@ -157,6 +176,10 @@ export default function ClientsPage() {
   const [contactEmailFilter, setContactEmailFilter] = useState("")
   const [contactStatusFilter, setContactStatusFilter] = useState<string>(ALL)
 
+  // Current user — drives the "Мои клиенты" filter (deals attributed to me).
+  const { data: session } = authClient.useSession()
+  const currentUserId = session?.user?.id ?? null
+
   // Deals filters: text spans name+description, client narrows by id.
   // includeCancelled / includeDeleted default off so both soft-deleted sets
   // stay out of view (server returns them; these are client-side toggles).
@@ -164,6 +187,11 @@ export default function ClientsPage() {
   const [dealClientFilter, setDealClientFilter] = useState<string>(ALL)
   const [dealIncludeCancelled, setDealIncludeCancelled] = useState(false)
   const [dealIncludeDeleted, setDealIncludeDeleted] = useState(false)
+  // "Мои клиенты": only deals attributed to the current user (deal.userId).
+  const [dealMineOnly, setDealMineOnly] = useState(false)
+  // Last-update-time range over deal.updatedAt (all time / week / month).
+  const [dealUpdatedRange, setDealUpdatedRange] =
+    useState<string>(DEAL_UPDATED_ALL)
 
   const loadClients = useCallback(async () => {
     const res = await fetch("/api/clients")
@@ -264,9 +292,21 @@ export default function ClientsPage() {
 
   const filteredDeals = useMemo(() => {
     const q = dealQueryFilter.trim().toLowerCase()
+    const rangeDays = DEAL_UPDATED_RANGE_DAYS[dealUpdatedRange] ?? null
+    const updatedCutoff =
+      rangeDays === null ? null : Date.now() - rangeDays * 24 * 60 * 60 * 1000
     return deals.filter((d) => {
       if (!dealIncludeCancelled && d.status === "cancelled") return false
       if (!dealIncludeDeleted && d.status === "deleted") return false
+      // "Мои клиенты" — keep only deals attributed to the current user.
+      if (dealMineOnly && d.userId !== currentUserId) return false
+      // Last-update-time range over deal.updatedAt.
+      if (
+        updatedCutoff !== null &&
+        new Date(d.updatedAt).getTime() < updatedCutoff
+      ) {
+        return false
+      }
       if (dealClientFilter !== ALL && d.clientId !== dealClientFilter) {
         return false
       }
@@ -283,6 +323,9 @@ export default function ClientsPage() {
     dealClientFilter,
     dealIncludeCancelled,
     dealIncludeDeleted,
+    dealMineOnly,
+    dealUpdatedRange,
+    currentUserId,
   ])
 
   const dealsByStage = useMemo(() => {
@@ -351,7 +394,9 @@ export default function ClientsPage() {
     dealQueryFilter.trim() !== "" ||
     dealClientFilter !== ALL ||
     dealIncludeCancelled ||
-    dealIncludeDeleted
+    dealIncludeDeleted ||
+    dealMineOnly ||
+    dealUpdatedRange !== DEAL_UPDATED_ALL
 
   const clearClientFilters = () => {
     setClientNameFilter("")
@@ -369,6 +414,8 @@ export default function ClientsPage() {
     setDealClientFilter(ALL)
     setDealIncludeCancelled(false)
     setDealIncludeDeleted(false)
+    setDealMineOnly(false)
+    setDealUpdatedRange(DEAL_UPDATED_ALL)
   }
 
   return (
@@ -656,6 +703,28 @@ export default function ClientsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <Select
+                    value={dealUpdatedRange}
+                    onValueChange={setDealUpdatedRange}
+                  >
+                    <SelectTrigger className="w-fit">
+                      <SelectValue placeholder="Период обновления" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DEAL_UPDATED_RANGES.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {DEAL_UPDATED_RANGE_LABEL[r]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                    <Checkbox
+                      checked={dealMineOnly}
+                      onCheckedChange={(v) => setDealMineOnly(Boolean(v))}
+                    />
+                    Мои клиенты
+                  </label>
                   <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
                     <Checkbox
                       checked={dealIncludeCancelled}
@@ -746,7 +815,9 @@ function DealStageBucket({
   onChanged: () => void
   emptyLabel: string
 }) {
-  const paged = usePaged(deals)
+  // Per-sub-tab page size (3 / 6 / 12). Each stage bucket keeps its own.
+  const [pageSize, setPageSize] = useState<number>(DEAL_DEFAULT_PAGE_SIZE)
+  const paged = usePaged(deals, pageSize)
 
   if (deals.length === 0) {
     return <EmptyState label={emptyLabel} />
@@ -759,12 +830,34 @@ function DealStageBucket({
           <DealCard key={d.id} deal={d} stages={stages} onChanged={onChanged} />
         ))}
       </div>
-      <div className="flex justify-center">
+      {/* Bottom row: page-size selector pinned bottom-left, pager centered. */}
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 items-center gap-2">
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            Карточек на странице:
+          </span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => setPageSize(Number(v))}
+          >
+            <SelectTrigger size="sm" className="w-fit shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DEAL_PAGE_SIZE_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <PagerNav
           page={paged.page}
           totalPages={paged.totalPages}
           setPage={paged.setPage}
         />
+        <div className="flex-1" />
       </div>
     </div>
   )

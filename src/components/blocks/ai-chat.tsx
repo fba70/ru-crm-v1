@@ -101,11 +101,7 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
-import { FoundSourcesCard } from "@/components/blocks/found-sources-card"
-import {
-  EntityCandidatesCard,
-  type EntityType,
-} from "@/components/blocks/entity-candidates-card"
+import { SearchResultsCard } from "@/components/blocks/search-results-card"
 import { MODELS } from "@/lib/llm-models"
 
 // ---------------------------------------------------------------------------
@@ -205,18 +201,6 @@ export function AIChat({ className }: { className?: string }) {
       })
     },
     [sendMessage],
-  )
-
-  // Fired when the user clicks an entity candidate card — sends a
-  // follow-up message asking the assistant to summarize that entity from
-  // its sources (drives the getXContent → getSourceItemContent → summary
-  // step). Ignored while a response is in flight.
-  const handleEntitySelect = useCallback(
-    (prompt: string) => {
-      if (status === "submitted" || status === "streaming") return
-      sendMessage({ text: prompt })
-    },
-    [sendMessage, status],
   )
 
   const handleSpeechTranscription = useCallback(
@@ -430,8 +414,6 @@ export function AIChat({ className }: { className?: string }) {
                 key={message.id}
                 message={message}
                 isStreaming={isStreaming}
-                isBusy={isLoading}
-                onEntitySelect={handleEntitySelect}
               />
             ))
           )}
@@ -484,16 +466,27 @@ export function AIChat({ className }: { className?: string }) {
 function ChatMessage({
   message,
   isStreaming,
-  isBusy,
-  onEntitySelect,
 }: {
   message: UIMessage
   isStreaming: boolean
-  isBusy: boolean
-  onEntitySelect: (prompt: string) => void
 }) {
   const isAssistant = message.role === "assistant"
   const isLastAssistant = isAssistant && isStreaming
+
+  // The `searchEverything` tool result drives a sectioned results view
+  // rendered AFTER the assistant's prose summary (regardless of tool-call
+  // order), so the summary always reads first. Extracted here and skipped
+  // in the inline part map below.
+  const searchPart = message.parts.find((p) => {
+    if (!isToolUIPart(p)) return false
+    const name =
+      p.type === "dynamic-tool"
+        ? (p as { toolName: string }).toolName
+        : p.type.replace("tool-", "")
+    return name === "searchEverything"
+  }) as
+    | { state: string; output?: unknown; errorText?: string }
+    | undefined
 
   // json-render: extract spec from message parts
   const { spec, hasSpec } = useJsonRenderMessage(message.parts)
@@ -580,75 +573,21 @@ function ChatMessage({
                   ? (part as { toolName: string }).toolName
                   : part.type.replace("tool-", "")
 
-                // Custom rendering for the internal-source tools.
+                // Internal-search tool rendering:
                 //
-                // `findClients` / `findContacts` / `findDeals` render as a
-                // list of clickable entity-info cards — clicking one sends
-                // a follow-up message that asks the assistant to summarize
-                // that entity from its sources (it does NOT open a panel).
-                //
-                // `searchSourceItems` and the three `getXContent` tools all
-                // return the same hit shape, so they share the "Found
-                // Source(s)" card render (a card per source + per-card
-                // Preview / Open-in-panel buttons).
+                // `searchEverything` is rendered separately (below the prose
+                // summary) via <SearchResultsCard>, so it's skipped here to
+                // keep "summary first, results below" regardless of when the
+                // model called the tool.
                 //
                 // `getSourceItemContent` calls the model makes for grounding
                 // are hidden entirely — content display is user-driven via
-                // the source cards' buttons. Everything else (google_search,
+                // the result cards' buttons. Everything else (google_search,
                 // future tools) falls through to the generic Tool render.
-                const entityFindType: EntityType | null =
-                  toolName === "findClients"
-                    ? "client"
-                    : toolName === "findContacts"
-                      ? "contact"
-                      : toolName === "findDeals"
-                        ? "deal"
-                        : null
-                if (entityFindType) {
-                  return (
-                    <EntityCandidatesCard
-                      key={key}
-                      entityType={entityFindType}
-                      state={part.state}
-                      output={
-                        part.state === "output-available"
-                          ? (part as { output?: unknown }).output
-                          : undefined
-                      }
-                      errorText={
-                        part.state === "output-error"
-                          ? (part as { errorText?: string }).errorText
-                          : undefined
-                      }
-                      onSelect={onEntitySelect}
-                      disabled={isBusy}
-                    />
-                  )
-                }
                 if (
-                  toolName === "searchSourceItems" ||
-                  toolName === "getClientContent" ||
-                  toolName === "getContactContent" ||
-                  toolName === "getDealContent"
+                  toolName === "searchEverything" ||
+                  toolName === "getSourceItemContent"
                 ) {
-                  return (
-                    <FoundSourcesCard
-                      key={key}
-                      state={part.state}
-                      output={
-                        part.state === "output-available"
-                          ? (part as { output?: unknown }).output
-                          : undefined
-                      }
-                      errorText={
-                        part.state === "output-error"
-                          ? (part as { errorText?: string }).errorText
-                          : undefined
-                      }
-                    />
-                  )
-                }
-                if (toolName === "getSourceItemContent") {
                   return null
                 }
 
@@ -697,6 +636,25 @@ function ChatMessage({
               return null
           }
         })}
+
+        {/* Search results (count header + Clients/Contacts/Deals/Sources
+            sections) render below the prose summary, so the summary reads
+            first even though the tool runs before the text streams. */}
+        {searchPart && (
+          <SearchResultsCard
+            state={searchPart.state}
+            output={
+              searchPart.state === "output-available"
+                ? (searchPart as { output?: unknown }).output
+                : undefined
+            }
+            errorText={
+              searchPart.state === "output-error"
+                ? (searchPart as { errorText?: string }).errorText
+                : undefined
+            }
+          />
+        )}
 
         {/* Render json-render spec if present */}
         {hasSpec && spec && (

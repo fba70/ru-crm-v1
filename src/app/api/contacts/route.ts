@@ -25,6 +25,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ options })
     }
     const contacts = await listContacts()
+    // ?id= → single contact for the AI-chat result card's detail panel.
+    // listContacts() is already org-scoped, so filtering it can't leak
+    // cross-tenant rows.
+    const id = searchParams.get("id")
+    if (id) {
+      const contact = contacts.find((c) => c.id === id)
+      if (!contact) {
+        return NextResponse.json({ error: "Contact not found" }, { status: 404 })
+      }
+      return NextResponse.json({ contact })
+    }
     return NextResponse.json({ contacts })
   } catch (error) {
     return errorResponse(error)
