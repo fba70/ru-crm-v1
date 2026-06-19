@@ -9,6 +9,8 @@ import { TableStoredContent } from "@/components/tables/table-stored-content"
 import { DropoffUploadDialog } from "@/components/blocks/dropoff-upload-dialog"
 import { WhatsAppArchiveDialog } from "@/components/blocks/whatsapp-archive-dialog"
 import { SyncActionBar } from "@/components/blocks/sync-action-bar"
+import { ProcessRunBar } from "@/components/blocks/process-controls"
+import { useProcessRun } from "@/components/blocks/use-process-run"
 import { WorkflowStatistics } from "@/components/blocks/workflow-statistics"
 import type { SourceSummary } from "@/server/sources"
 
@@ -133,10 +135,11 @@ export function SourcesPageShell({
   )
 }
 
-// Org sources view — action bar + Pending + Processed. The underlying
-// table component still accepts a `scope` prop ("org" | "system") for
-// future template-management surfaces; here we always pass "org" since
-// org members never see system rows directly.
+// Org sources view — one action bar + one unified table. The single
+// `useProcessRun` instance is shared by the per-source "Синхронизировать
+// и обработать" buttons AND the table's "Обработать все" control, so
+// only one parse→upload run is ever in flight and both feed the same
+// progress bar.
 function SourcesScope({
   sources,
   refreshKey,
@@ -150,6 +153,8 @@ function SourcesScope({
   onOpenDropoffUpload: () => void
   onOpenWhatsAppUpload: () => void
 }) {
+  const proc = useProcessRun({ onRefresh: onBumpRefresh })
+
   if (sources.length === 0) {
     return (
       <Card>
@@ -165,36 +170,31 @@ function SourcesScope({
       <SyncActionBar
         sources={sources}
         onSynced={onBumpRefresh}
+        onProcessSource={(sourceId, label) =>
+          proc.run({ scope: "org", sourceId }, { label })
+        }
+        processRunning={proc.running}
         onOpenDropoffUpload={onOpenDropoffUpload}
         onOpenWhatsAppUpload={onOpenWhatsAppUpload}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">В очереди</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <TableSourceItems
-            status="pending"
-            scope="org"
-            sources={sources}
-            refreshKey={refreshKey}
-            onActionComplete={onBumpRefresh}
-          />
-        </CardContent>
-      </Card>
+      <ProcessRunBar
+        progress={proc.progress}
+        onCancel={proc.cancel}
+        cancelRequested={proc.cancelRequested.current}
+      />
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Обработано</CardTitle>
+          <CardTitle className="text-base">Материалы источников</CardTitle>
         </CardHeader>
         <CardContent>
           <TableSourceItems
-            status="processed"
-            scope="org"
             sources={sources}
             refreshKey={refreshKey}
             onActionComplete={onBumpRefresh}
+            processRunning={proc.running}
+            onRunAll={proc.run}
           />
         </CardContent>
       </Card>

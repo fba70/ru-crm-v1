@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Table,
   TableBody,
@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -24,14 +23,13 @@ import {
   ChevronRight,
   Loader,
   Sparkles,
-  CloudUpload,
   Eye,
   RefreshCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 import { ParsedMarkdownDialog } from "@/components/blocks/parsed-markdown-dialog"
-import { R2BatchUploadControl } from "@/components/blocks/r2-batch-upload-control"
-import { ParseBatchControl } from "@/components/blocks/parse-batch-control"
+import { ProcessAllButton } from "@/components/blocks/process-controls"
+import type { ProcessRunFilters } from "@/components/blocks/use-process-run"
 import type { SourceSummary, SystemSource } from "@/server/sources"
 import { getProvider } from "@/lib/sources/providers"
 
@@ -68,10 +66,27 @@ type SourceItemRow = {
   markdownR2SizeBytes: number | null
 }
 
-const PAGE_SIZE = 5
+type SourceItemView = "needs_work" | "done" | "errors" | "all"
+
+const PAGE_SIZE = 10
 const ALL_SOURCES = "__all__"
 
-// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
+const VIEW_LABELS: Record<SourceItemView, string> = {
+  needs_work: "Требуют обработки",
+  done: "Готово",
+  errors: "Ошибки",
+  all: "Все",
+}
+const VIEW_ORDER: SourceItemView[] = ["needs_work", "done", "errors", "all"]
+
+// 'done' / 'all' grow unbounded, so they get a default date window
+// (today) to keep the COUNT + page query cheap. 'needs_work' / 'errors'
+// drain to zero, so they're shown unbounded.
+const DATE_BOUNDED_VIEWS: ReadonlySet<SourceItemView> = new Set([
+  "done",
+  "all",
+])
+
 function plural(n: number, forms: [string, string, string]): string {
   const mod10 = n % 10
   const mod100 = n % 100
@@ -80,18 +95,6 @@ function plural(n: number, forms: [string, string, string]): string {
   return forms[2]
 }
 
-// The Processed table can grow without bound — every parsed item ever
-// stays there. Both the LIMIT/OFFSET select AND the COUNT(*) total
-// would scan the whole table without a date filter, so we always pin a
-// minimum range (default = today). Presets cover the three windows we
-// expect to be useful; manual From/To inputs still allow custom picks
-// for one-off investigations. Pending is naturally bounded (it drains
-// to zero each cron run) and keeps no default range.
-const PROCESSED_DEFAULT_DAYS_BACK = 0 // = today only
-
-// Returns YYYY-MM-DD for `today - days` in UTC. Matches the WorkflowStatistics
-// card's preset handling so users see consistent date semantics across
-// the page.
 function daysBackToInputDate(days: number): string {
   const d = new Date()
   d.setUTCDate(d.getUTCDate() - days)
@@ -111,10 +114,6 @@ function formatDate(iso: string | null): string {
   })
 }
 
-// Pull a sensible "title" out of metadataJson for each item kind. The
-// shapes are set by the per-provider sync functions in src/server/sync/
-// (Google Chat uses `text`; WhatsApp groups use `rawText` with a
-// markdown-formatted multi-message transcript).
 function itemTitle(row: SourceItemRow): string {
   const m = row.metadataJson
   if (row.externalType === "email") {
@@ -140,11 +139,6 @@ function itemTitle(row: SourceItemRow): string {
   return row.filename ?? row.externalId
 }
 
-// First non-header line from a WhatsApp transcript. The transcript
-// format is `**TIMESTAMP** · **AUTHOR**\n\nBODY\n\n…` (see
-// renderGroupTranscript in src/server/parsers/whatsapp.ts), so we
-// skip the bolded header lines and the `_attachments: …_` markers
-// to find the first piece of actual user-typed content.
 function previewFromRawText(rawText: string): string {
   const lines = rawText.split("\n")
   for (const line of lines) {
@@ -180,47 +174,13 @@ function itemAuthor(row: SourceItemRow): string {
   return "—"
 }
 
-function attachmentCount(row: SourceItemRow): number {
-  const v = row.metadataJson.attachmentCount
-  return typeof v === "number" ? v : 0
-}
+// ── Status badges (one per sub-process) ──────────────────────────────
 
-// ── Status badges ────────────────────────────────────────────────────
+type Tone = "amber" | "red" | "blue" | "gray" | "green"
 
-function StatusBadge({ row }: { row: SourceItemRow }) {
-  const { parseStatus: ps, r2UploadStatus: rs } = row
-  if (ps === "failed") {
-    return <Badge tone="red">Ошибка разбора</Badge>
-  }
-  if (ps === "processing") {
-    return <Badge tone="blue">Разбор…</Badge>
-  }
-  if (ps === "skipped") {
-    return <Badge tone="gray">Пропущено</Badge>
-  }
-  if (ps !== "complete") {
-    return <Badge tone="amber">Нужен разбор</Badge>
-  }
-  // ps === complete → look at upload
-  if (rs === "failed") {
-    return <Badge tone="red">Ошибка загрузки</Badge>
-  }
-  if (rs !== "complete") {
-    return <Badge tone="amber">Нужна загрузка</Badge>
-  }
-  return <Badge tone="green">Готово</Badge>
-}
-
-function Badge({
-  children,
-  tone,
-}: {
-  children: React.ReactNode
-  tone: "amber" | "red" | "blue" | "gray" | "green"
-}) {
-  const palette: Record<typeof tone, string> = {
-    amber:
-      "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
+function Badge({ children, tone }: { children: React.ReactNode; tone: Tone }) {
+  const palette: Record<Tone, string> = {
+    amber: "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200",
     red: "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-200",
     blue: "bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-200",
     gray: "bg-muted text-muted-foreground",
@@ -236,68 +196,78 @@ function Badge({
   )
 }
 
+function ParseBadge({ row }: { row: SourceItemRow }) {
+  switch (row.parseStatus) {
+    case "failed":
+      return <Badge tone="red">Ошибка</Badge>
+    case "processing":
+      return <Badge tone="blue">Разбор…</Badge>
+    case "skipped":
+      return <Badge tone="gray">Пропущено</Badge>
+    case "complete":
+      return <Badge tone="green">Готово</Badge>
+    default:
+      return <Badge tone="amber">В очереди</Badge>
+  }
+}
+
+function UploadBadge({ row }: { row: SourceItemRow }) {
+  // Upload only matters once parsed. Skipped rows produce no markdown,
+  // so upload is genuinely N/A.
+  if (row.parseStatus === "skipped") return <Badge tone="gray">—</Badge>
+  if (row.parseStatus !== "complete")
+    return <span className="text-xs text-muted-foreground">—</span>
+  switch (row.r2UploadStatus) {
+    case "failed":
+      return <Badge tone="red">Ошибка</Badge>
+    case "complete":
+      return <Badge tone="green">Готово</Badge>
+    default:
+      return <Badge tone="amber">В очереди</Badge>
+  }
+}
+
 // ── Component ────────────────────────────────────────────────────────
 
 export function TableSourceItems({
-  status,
-  scope,
   sources,
   refreshKey,
   onActionComplete,
+  processRunning,
+  onRunAll,
 }: {
-  status: "pending" | "processed"
-  // Tenant scope. "org" → caller's active org (the default for every
-  // tab the user actually uses). "system" → null-org rows attached to
-  // is_system sources (currently empty). The value is passed through to
-  // /api/sources/items via `?scope=` so the listing matches the source
-  // dictionary the table is rendering.
-  scope: "org" | "system"
   sources: SourceSummary[]
-  // Bumped by the parent's Sync action bar after a successful sync —
-  // this re-runs the fetch effect so the freshly-synced rows appear.
+  // Bumped by the parent on sync / completed batch runs.
   refreshKey: number
-  // Called after a per-row action (Parse/Upload/Re-parse) succeeds so
-  // the sibling table can refresh too — Parse moves rows from Pending
-  // to Processed; Re-parse moves them back.
-  onActionComplete?: () => void
+  // Called after a per-row action so the parent can re-poll counts.
+  onActionComplete: () => void
+  // True while a shared batch/sync run is in flight — disables per-row
+  // actions so a single row can't fight the batch loop.
+  processRunning: boolean
+  // Hands the table's current filter context to the shared runner.
+  onRunAll: (filters: ProcessRunFilters, opts: { slow: boolean }) => void
 }) {
   const [rows, setRows] = useState<SourceItemRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Default range is per-table: Processed pins a minimum window (see
-  // PROCESSED_DEFAULT_DAYS_BACK comment) so the count + select stay
-  // bounded; Pending starts unfiltered.
-  const defaultDateFrom =
-    status === "processed"
-      ? daysBackToInputDate(PROCESSED_DEFAULT_DAYS_BACK)
-      : ""
-  const defaultDateTo = ""
-
+  const [view, setView] = useState<SourceItemView>("needs_work")
   const [sourceFilter, setSourceFilter] = useState<string>(ALL_SOURCES)
   const [q, setQ] = useState("")
-  const [dateFrom, setDateFrom] = useState<string>(defaultDateFrom)
-  const [dateTo, setDateTo] = useState<string>(defaultDateTo)
-  // Processed-only refinement: when on, hide rows already in R2 (and
-  // skipped rows). Useful for working through the upload backlog
-  // without scrolling past finished items. Server enforces the
-  // narrower clause via `?only_needs_upload=1`.
-  const [onlyNeedsUpload, setOnlyNeedsUpload] = useState(false)
+  const [dateFrom, setDateFrom] = useState<string>("")
+  const [dateTo, setDateTo] = useState<string>("")
   const [page, setPage] = useState(1)
 
-  // Per-row in-flight tracking for action buttons. Single map keyed on
-  // row id with the action name so a row can only have one action at a
-  // time (no parallel parse + reparse on the same row).
+  const dateBounded = DATE_BOUNDED_VIEWS.has(view)
+
+  // Per-row in-flight tracking.
   const [actionInFlight, setActionInFlight] = useState<
-    Record<string, "parse" | "upload" | "reparse" | undefined>
+    Record<string, "process" | "reparse" | undefined>
   >({})
 
-  // Show modal state.
   const [showItemId, setShowItemId] = useState<string | null>(null)
   const [showItemTitle, setShowItemTitle] = useState<string>("")
-
-  // Local refresh — re-fetch the current page after an action completes.
   const [localBump, setLocalBump] = useState(0)
 
   const fetchPage = useCallback(async () => {
@@ -305,19 +275,13 @@ export function TableSourceItems({
     setError(null)
     try {
       const params = new URLSearchParams()
-      params.set("status", status)
-      // System tab queries the null-org bucket; default (omitted) is
-      // the caller's active org as derived server-side from the session.
-      if (scope === "system") params.set("scope", "system")
+      params.set("view", view)
       params.set("limit", String(PAGE_SIZE))
       params.set("offset", String((page - 1) * PAGE_SIZE))
       if (sourceFilter !== ALL_SOURCES) params.set("sourceId", sourceFilter)
       if (q.trim()) params.set("q", q.trim())
-      if (dateFrom) params.set("date_from", dateFrom)
-      if (dateTo) params.set("date_to", dateTo)
-      if (status === "processed" && onlyNeedsUpload) {
-        params.set("only_needs_upload", "1")
-      }
+      if (dateBounded && dateFrom) params.set("date_from", dateFrom)
+      if (dateBounded && dateTo) params.set("date_to", dateTo)
       const res = await fetch(`/api/sources/items?${params.toString()}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Не удалось загрузить элементы")
@@ -329,62 +293,67 @@ export function TableSourceItems({
     } finally {
       setLoading(false)
     }
-  }, [status, scope, sourceFilter, q, dateFrom, dateTo, onlyNeedsUpload, page])
+  }, [view, dateBounded, sourceFilter, q, dateFrom, dateTo, page])
 
   useEffect(() => {
     fetchPage()
   }, [fetchPage, refreshKey, localBump])
 
-  async function runAction(
-    rowId: string,
-    action: "parse" | "upload" | "reparse",
-    label: string,
-  ) {
-    setActionInFlight((m) => ({ ...m, [rowId]: action }))
+  // When switching into a date-bounded view, seed today's window; when
+  // switching to an unbounded (work-queue) view, clear it so the whole
+  // backlog is visible.
+  useEffect(() => {
+    if (DATE_BOUNDED_VIEWS.has(view)) {
+      setDateFrom((f) => f || daysBackToInputDate(0))
+    } else {
+      setDateFrom("")
+      setDateTo("")
+    }
+  }, [view])
+
+  useEffect(() => {
+    setPage(1)
+  }, [view, sourceFilter, q, dateFrom, dateTo])
+
+  async function runProcess(rowId: string) {
+    setActionInFlight((m) => ({ ...m, [rowId]: "process" }))
     try {
-      const url =
-        action === "parse"
-          ? `/api/sources/items/${rowId}/parse`
-          : action === "reparse"
-            ? `/api/sources/items/${rowId}/reparse`
-            : `/api/sources/r2/save`
-      const init: RequestInit = {
+      const res = await fetch(`/api/sources/items/${rowId}/process`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-      }
-      if (action === "upload") {
-        init.body = JSON.stringify({ sourceItemId: rowId })
-      }
-      const res = await fetch(url, init)
+      })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || `${label}: ошибка`)
-      // parseSourceItem returns HTTP 200 with `parentStatus: 'failed'`
-      // on parser errors (see ParseResult). Treat that as a failure
-      // toast — otherwise a silent LLM failure looks like success.
-      if (action === "parse" && data?.parentStatus === "failed") {
-        throw new Error(
-          data?.parentParseError ||
-            "Ошибка разбора; см. сообщение об ошибке в строке",
-        )
+      if (!res.ok) throw new Error(data.error || "Ошибка обработки")
+      if (data?.ok === false) {
+        throw new Error(data?.error || "Обработка завершилась с ошибкой")
       }
-      // 'skipped' parents (filtered email, deleted at provider, etc.)
-      // are an expected outcome — keep the success toast but mention
-      // the reason so the user knows the row didn't produce content.
-      if (action === "parse" && data?.parentStatus === "skipped") {
-        toast.message(
-          `${label} пропущен: ${data?.parentParseError ?? "причина неизвестна"}`,
-        )
-      } else {
-        toast.success(`${label}: успешно`)
-      }
-      // Bump both this table AND the sibling Pending↔Processed table —
-      // a parse moves rows across the boundary, so the parent's
-      // refreshKey is the right cross-table signal.
+      toast.success("Обработано")
       setLocalBump((n) => n + 1)
-      onActionComplete?.()
+      onActionComplete()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
-      toast.error(`${label}: ${msg}`)
+      toast.error(err instanceof Error ? err.message : "Неизвестная ошибка")
+      setLocalBump((n) => n + 1)
+    } finally {
+      setActionInFlight((m) => {
+        const next = { ...m }
+        delete next[rowId]
+        return next
+      })
+    }
+  }
+
+  async function runReparse(rowId: string) {
+    setActionInFlight((m) => ({ ...m, [rowId]: "reparse" }))
+    try {
+      const res = await fetch(`/api/sources/items/${rowId}/reparse`, {
+        method: "POST",
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Ошибка повторного разбора")
+      toast.success("Сброшено для повторной обработки")
+      setLocalBump((n) => n + 1)
+      onActionComplete()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Неизвестная ошибка")
     } finally {
       setActionInFlight((m) => {
         const next = { ...m }
@@ -399,82 +368,68 @@ export function TableSourceItems({
     setShowItemTitle(itemTitle(row))
   }
 
-  // Reset to page 1 whenever a filter changes, since the existing page
-  // index is meaningless against the new result set.
-  useEffect(() => {
-    setPage(1)
-  }, [sourceFilter, q, dateFrom, dateTo, onlyNeedsUpload, status])
-
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  const showProcessedColumns = status === "processed"
-
-  // "Filtered" relative to the table's defaults — for Processed that
-  // means the date range has been moved off `today`, not just any date
-  // input being non-empty.
   const filtersActive =
+    view !== "needs_work" ||
     sourceFilter !== ALL_SOURCES ||
-    q.trim().length > 0 ||
-    dateFrom !== defaultDateFrom ||
-    dateTo !== defaultDateTo ||
-    onlyNeedsUpload
+    q.trim().length > 0
 
   function clearFilters() {
+    setView("needs_work")
     setSourceFilter(ALL_SOURCES)
     setQ("")
-    setDateFrom(defaultDateFrom)
-    setDateTo(defaultDateTo)
-    setOnlyNeedsUpload(false)
-  }
-
-  function setProcessedRange(daysBack: number) {
-    setDateFrom(daysBackToInputDate(daysBack))
+    setDateFrom("")
     setDateTo("")
   }
 
+  // Memoised so the child count-poll effect doesn't re-run every render
+  // (the object identity would otherwise change on each parent render).
+  const runFilters: ProcessRunFilters = useMemo(
+    () => ({
+      scope: "org",
+      sourceId: sourceFilter !== ALL_SOURCES ? sourceFilter : undefined,
+      filenameSearch: q.trim() || undefined,
+      dateFromIso: dateBounded && dateFrom ? dateFrom : undefined,
+      dateToIso: dateBounded && dateTo ? dateTo : undefined,
+    }),
+    [sourceFilter, q, dateBounded, dateFrom, dateTo],
+  )
+
   return (
     <div className="space-y-3">
-      {/* Batch parse — only on the Pending table. Hides itself when
-          no rows are eligible. Targets `parseStatus = 'pending'` only;
-          'failed' rows stay manual via the per-row Re-parse button. */}
-      {status === "pending" && (
-        <ParseBatchControl
-          filters={{
-            scope,
-            sourceId: sourceFilter !== ALL_SOURCES ? sourceFilter : undefined,
-            filenameSearch: q.trim() || undefined,
-            dateFromIso: dateFrom || undefined,
-            dateToIso: dateTo || undefined,
-          }}
-          refreshKey={refreshKey + localBump}
-          onActionComplete={() => {
-            setLocalBump((n) => n + 1)
-            onActionComplete?.()
-          }}
-        />
-      )}
-
-      {/* Batch R2 upload — only meaningful on the Processed table.
-          The control hides itself when no rows are eligible. */}
-      {status === "processed" && (
-        <R2BatchUploadControl
-          filters={{
-            scope,
-            sourceId: sourceFilter !== ALL_SOURCES ? sourceFilter : undefined,
-            filenameSearch: q.trim() || undefined,
-            dateFromIso: dateFrom || undefined,
-            dateToIso: dateTo || undefined,
-          }}
-          refreshKey={refreshKey + localBump}
-          onActionComplete={() => {
-            setLocalBump((n) => n + 1)
-            onActionComplete?.()
-          }}
-        />
-      )}
+      {/* "Обработать все" — uses the table's current filter context.
+          Delegates to the shared runner so it can't conflict with a
+          sync-triggered run. */}
+      <ProcessAllButton
+        filters={runFilters}
+        running={processRunning}
+        refreshKey={refreshKey + localBump}
+        onRun={onRunAll}
+      />
 
       {/* Filter row */}
       <div className="flex flex-wrap gap-2 items-end">
+        <div className="min-w-44">
+          <label className="text-xs text-muted-foreground mb-1 block">
+            Состояние
+          </label>
+          <Select
+            value={view}
+            onValueChange={(v) => setView(v as SourceItemView)}
+          >
+            <SelectTrigger className="h-8 w-full justify-between text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VIEW_ORDER.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {VIEW_LABELS[v]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="min-w-44">
           <label className="text-xs text-muted-foreground mb-1 block">
             Источник
@@ -504,59 +459,30 @@ export function TableSourceItems({
             className="h-8 text-sm"
           />
         </div>
-        <div>
-          <label className="text-xs text-muted-foreground mb-1 block">
-            С
-          </label>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground mb-1 block">По</label>
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="h-8 text-sm"
-          />
-        </div>
-        {status === "processed" && (
+        {dateBounded && (
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => setProcessedRange(0)}
-            >
-              За день
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => setProcessedRange(6)}
-            >
-              За неделю
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => setProcessedRange(29)}
-            >
-              За месяц
-            </Button>
-            <label className="flex items-center gap-2 h-8 text-xs text-muted-foreground select-none cursor-pointer">
-              <Checkbox
-                checked={onlyNeedsUpload}
-                onCheckedChange={(v) => setOnlyNeedsUpload(v === true)}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">
+                С
+              </label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-8 text-sm"
               />
-              Только требующие загрузки
-            </label>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">
+                По
+              </label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
           </>
         )}
         <Button
@@ -573,7 +499,7 @@ export function TableSourceItems({
       <div className="text-xs text-muted-foreground">
         {loading
           ? "Загрузка…"
-          : `${total} ${plural(total, ["элемент", "элемента", "элементов"])}${filtersActive ? " (отфильтровано)" : ""}`}
+          : `${total} ${plural(total, ["элемент", "элемента", "элементов"])}`}
       </div>
 
       <div className="rounded-md border overflow-hidden">
@@ -581,22 +507,18 @@ export function TableSourceItems({
           <TableHeader>
             <TableRow>
               <TableHead className="w-40">Дата</TableHead>
-              <TableHead className="w-32">Источник</TableHead>
-              <TableHead className="w-36">Автор</TableHead>
+              <TableHead className="w-28">Источник</TableHead>
+              <TableHead className="w-28">Автор</TableHead>
               <TableHead>Элемент</TableHead>
-              <TableHead className="w-28">Статус</TableHead>
-              {showProcessedColumns && (
-                <TableHead className="w-36">Разобрано</TableHead>
-              )}
-              <TableHead className={status === "pending" ? "w-32" : "w-40"}>
-                Действия
-              </TableHead>
+              <TableHead className="w-24">Разбор</TableHead>
+              <TableHead className="w-24">Загрузка</TableHead>
+              <TableHead className="w-28">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={showProcessedColumns ? 7 : 6}>
+                <TableCell colSpan={7}>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
                     <Loader className="h-4 w-4 animate-spin" />
                     Загрузка элементов…
@@ -605,7 +527,7 @@ export function TableSourceItems({
               </TableRow>
             ) : error ? (
               <TableRow>
-                <TableCell colSpan={showProcessedColumns ? 7 : 6}>
+                <TableCell colSpan={7}>
                   <p className="text-sm text-destructive py-6 text-center">
                     {error}
                   </p>
@@ -613,11 +535,11 @@ export function TableSourceItems({
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showProcessedColumns ? 7 : 6}>
+                <TableCell colSpan={7}>
                   <p className="text-sm text-muted-foreground py-6 text-center">
-                    {status === "pending"
-                      ? "Нет элементов в очереди. Нажмите «Синхронизировать» выше, чтобы получить новые."
-                      : "Пока нет обработанных элементов."}
+                    {view === "needs_work"
+                      ? "Всё обработано. Нажмите «Синхронизировать» выше, чтобы получить новые материалы."
+                      : "Нет элементов по заданным фильтрам."}
                   </p>
                 </TableCell>
               </TableRow>
@@ -656,32 +578,20 @@ export function TableSourceItems({
                         <span className="text-muted-foreground mr-1">↳</span>
                       )}
                       {itemTitle(row)}
-                      {!isChild &&
-                        status === "pending" &&
-                        attachmentCount(row) > 0 && (
-                          <span className="text-xs text-muted-foreground ml-2">
-                            ({attachmentCount(row)} вл.)
-                          </span>
-                        )}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge row={row} />
+                      <ParseBadge row={row} />
                     </TableCell>
-                    {showProcessedColumns && (
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {formatDate(row.parsedAt)}
-                      </TableCell>
-                    )}
+                    <TableCell>
+                      <UploadBadge row={row} />
+                    </TableCell>
                     <TableCell>
                       <RowActions
                         row={row}
-                        status={status}
                         inFlight={inFlight}
-                        onParse={() => runAction(row.id, "parse", "Разбор")}
-                        onUpload={() => runAction(row.id, "upload", "Загрузка")}
-                        onReparse={() =>
-                          runAction(row.id, "reparse", "Повторный разбор")
-                        }
+                        disabled={processRunning}
+                        onProcess={() => runProcess(row.id)}
+                        onReparse={() => runReparse(row.id)}
                         onShow={() => openShow(row)}
                       />
                     </TableCell>
@@ -733,109 +643,83 @@ export function TableSourceItems({
 }
 
 // ── Per-row actions ──────────────────────────────────────────────────
+//
+// One smart «Обработать» button whose effect depends on state (parse →
+// upload, or just upload), plus Show (when parsed) and Re-parse (roots
+// with persisted bytes). Skipped rows are terminal — only Show/—.
 
 function RowActions({
   row,
-  status,
   inFlight,
-  onParse,
-  onUpload,
+  disabled,
+  onProcess,
   onReparse,
   onShow,
 }: {
   row: SourceItemRow
-  status: "pending" | "processed"
-  inFlight: "parse" | "upload" | "reparse" | undefined
-  onParse: () => void
-  onUpload: () => void
+  inFlight: "process" | "reparse" | undefined
+  disabled: boolean
+  onProcess: () => void
   onReparse: () => void
   onShow: () => void
 }) {
   const isRoot = row.parentSourceItemId === null
   const ps = row.parseStatus
   const rs = row.r2UploadStatus
-  const isChild = !isRoot
-  // Re-parse needs raw bytes to re-feed the parser. Drop-off discards
-  // bytes after the upload-time parse; AI Chat sessions are created
-  // from in-memory chat state at Save time. Both have
-  // `hasRawBytesPersisted: false` in the registry, so the same flag
-  // covers any future provider with no re-fetchable source.
   const canReparse =
     isRoot && getProvider(row.sourceProvider).capabilities.hasRawBytesPersisted
+  const canShow = ps === "complete"
+  // Needs work = not yet parsed, OR parsed-but-unshipped.
+  const needsWork =
+    ps === "pending" ||
+    ps === "failed" ||
+    (ps === "complete" && rs !== "complete")
+  const isProcessingServerSide = ps === "processing"
 
-  if (status === "pending") {
-    // Pending shows only roots — see listSourceItems filter. Defensively
-    // hide actions if a child somehow lands here.
-    if (isChild) return <span className="text-xs text-muted-foreground">—</span>
-    if (ps === "processing") {
-      return (
-        <span className="inline-flex items-center text-xs text-muted-foreground">
-          <Loader className="h-3.5 w-3.5 mr-1 animate-spin" />
-          разбор
-        </span>
-      )
-    }
-    return (
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 px-2 text-xs"
-        disabled={inFlight === "parse"}
-        onClick={onParse}
-        title={ps === "failed" ? (row.parseError ?? undefined) : undefined}
-      >
-        {inFlight === "parse" ? (
-          <Loader className="h-3.5 w-3.5 mr-1 animate-spin" />
-        ) : (
-          <Sparkles className="h-3.5 w-3.5 mr-1" />
-        )}
-        {ps === "failed" ? "Повторить" : "Разобрать"}
-      </Button>
-    )
-  }
-
-  // Processed table.
-  // - skipped row → no actions, just badge handled by Status column
-  // - complete + uploaded → Show + Re-parse (root only)
-  // - complete + not uploaded → Upload + Show + Re-parse (root only)
-  // - complete + upload failed → Upload (retry) + Show + Re-parse (root)
-  if (ps === "skipped") {
-    return <span className="text-xs text-muted-foreground">—</span>
-  }
-  const showUpload = ps === "complete" && rs !== "complete"
   return (
     <div className="flex items-center gap-1">
-      {showUpload && (
+      {isProcessingServerSide ? (
+        <span className="inline-flex items-center text-xs text-muted-foreground">
+          <Loader className="h-3.5 w-3.5 mr-1 animate-spin" />
+          обработка
+        </span>
+      ) : needsWork ? (
         <Button
           variant="outline"
           size="sm"
           className="h-7 px-2 text-xs"
-          disabled={inFlight === "upload"}
-          onClick={onUpload}
+          disabled={disabled || inFlight === "process"}
+          onClick={onProcess}
+          title={ps === "failed" ? (row.parseError ?? undefined) : undefined}
         >
-          {inFlight === "upload" ? (
+          {inFlight === "process" ? (
             <Loader className="h-3.5 w-3.5 mr-1 animate-spin" />
           ) : (
-            <CloudUpload className="h-3.5 w-3.5 mr-1" />
+            <Sparkles className="h-3.5 w-3.5 mr-1" />
           )}
-          {rs === "failed" ? "Повторить" : "Загрузить"}
+          {ps === "failed" || rs === "failed" ? "Повторить" : "Обработать"}
+        </Button>
+      ) : ps === "skipped" ? (
+        <span className="text-xs text-muted-foreground">—</span>
+      ) : null}
+
+      {canShow && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={onShow}
+          title="Показать разобранный текст"
+        >
+          <Eye className="h-3.5 w-3.5" />
         </Button>
       )}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0"
-        onClick={onShow}
-        title="Показать разобранный текст"
-      >
-        <Eye className="h-3.5 w-3.5" />
-      </Button>
       {canReparse && (
         <Button
           variant="ghost"
           size="sm"
           className="h-7 w-7 p-0"
-          disabled={inFlight === "reparse"}
+          disabled={disabled || inFlight === "reparse"}
           onClick={onReparse}
           title="Повторный разбор (удаляет дочерние элементы и строку R2, заново из очереди)"
         >

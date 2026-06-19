@@ -123,7 +123,11 @@ export function DealCard({
   onChanged: () => void
 }) {
   const stageClass = STAGE_COLOR[deal.funnelStageName] ?? STAGE_DEFAULT
-  const amount = formatAmount(deal.value, deal.currency)
+  // Display deal amounts in RUB (₽) regardless of the row's stored
+  // currency — the business operates in roubles (orders already default
+  // to RUB), and legacy deals carry an EUR/USD default we don't want to
+  // surface on the card.
+  const amount = formatAmount(deal.value, "RUB")
   const [isPending, startTransition] = useTransition()
   // Both soft-delete states dim the card; each gets its own badge.
   const isSoftDeleted = deal.status === "cancelled" || deal.status === "deleted"

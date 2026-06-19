@@ -31,11 +31,19 @@ function plural(n: number, forms: [string, string, string]): string {
 export function SyncActionBar({
   sources,
   onSynced,
+  onProcessSource,
+  processRunning,
   onOpenDropoffUpload,
   onOpenWhatsAppUpload,
 }: {
   sources: SystemSource[]
   onSynced: () => void
+  // Called after a successful sync/fetch to chain into the parse→upload
+  // run scoped to that source (label shown in the shared progress bar).
+  onProcessSource: (sourceId: string, label: string) => void
+  // True while a shared process run is in flight — disables sync buttons
+  // so a second run can't be stacked on top.
+  processRunning: boolean
   onOpenDropoffUpload: () => void
   onOpenWhatsAppUpload: () => void
 }) {
@@ -55,12 +63,24 @@ export function SyncActionBar({
         {sources
           .filter((s) => getProvider(s.provider).capabilities.supportsRemoteSync)
           .map((s) => (
-            <SyncButton key={s.id} source={s} onSynced={onSynced} />
+            <SyncButton
+              key={s.id}
+              source={s}
+              onSynced={onSynced}
+              onProcessSource={onProcessSource}
+              processRunning={processRunning}
+            />
           ))}
         {sources
           .filter((s) => getProvider(s.provider).capabilities.supportsManualFetch)
           .map((s) => (
-            <TelegramFetchButton key={s.id} source={s} onSynced={onSynced} />
+            <TelegramFetchButton
+              key={s.id}
+              source={s}
+              onSynced={onSynced}
+              onProcessSource={onProcessSource}
+              processRunning={processRunning}
+            />
           ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -92,9 +112,13 @@ export function SyncActionBar({
 function SyncButton({
   source,
   onSynced,
+  onProcessSource,
+  processRunning,
 }: {
   source: SystemSource
   onSynced: () => void
+  onProcessSource: (sourceId: string, label: string) => void
+  processRunning: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const ProviderIcon = getProvider(source.provider).icon
@@ -118,6 +142,10 @@ function SyncButton({
         `${source.name}: синхронизировано — получено ${fetched} (${inserted} новых, ${updated} обновлено)`,
       )
       onSynced()
+      // Chain straight into parse → upload for this source's backlog
+      // (incl. the rows we just fetched). The run shows its own progress
+      // bar + toasts; no-ops cleanly if there's nothing to process.
+      onProcessSource(source.id, source.name)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
       toast.error(`Синхронизация ${source.name}: ${msg}`)
@@ -132,14 +160,14 @@ function SyncButton({
       size="sm"
       className="h-8"
       onClick={handleClick}
-      disabled={busy}
+      disabled={busy || processRunning}
     >
       {busy ? (
         <Loader className="h-4 w-4 mr-2 animate-spin" />
       ) : (
         <ProviderIcon className="h-4 w-4 mr-2" />
       )}
-      Синхронизировать {source.name}
+      {source.name}
     </Button>
   )
 }
@@ -153,9 +181,13 @@ function SyncButton({
 function TelegramFetchButton({
   source,
   onSynced,
+  onProcessSource,
+  processRunning,
 }: {
   source: SystemSource
   onSynced: () => void
+  onProcessSource: (sourceId: string, label: string) => void
+  processRunning: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const ProviderIcon = getProvider(source.provider).icon
@@ -186,6 +218,10 @@ function TelegramFetchButton({
         )
       }
       onSynced()
+      // Drain the fetched messages through parse → upload. Safe even
+      // when the webhook is active (the work-set is just whatever is
+      // pending) — no-ops if there's nothing to do.
+      onProcessSource(source.id, source.name)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
       toast.error(`Получение ${source.name}: ${msg}`)
@@ -200,14 +236,14 @@ function TelegramFetchButton({
       size="sm"
       className="h-8"
       onClick={handleClick}
-      disabled={busy}
+      disabled={busy || processRunning}
     >
       {busy ? (
         <Loader className="h-4 w-4 mr-2 animate-spin" />
       ) : (
         <ProviderIcon className="h-4 w-4 mr-2" />
       )}
-      Получить {source.name}
+      {source.name}
     </Button>
   )
 }

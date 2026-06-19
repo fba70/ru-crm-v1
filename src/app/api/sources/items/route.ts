@@ -3,7 +3,10 @@ import { getServerSession } from "@/lib/get-session"
 import {
   listSourceItems,
   type SourceItemListStatus,
+  type SourceItemView,
 } from "@/server/source-items"
+
+const VIEWS: SourceItemView[] = ["needs_work", "done", "errors", "all"]
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession()
@@ -13,14 +16,29 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
+
+  // Unified table sends `view`; the legacy pending/processed split sends
+  // `status`. Exactly one is required.
+  const viewParam = searchParams.get("view")
   const statusParam = searchParams.get("status")
-  if (statusParam !== "pending" && statusParam !== "processed") {
+  let view: SourceItemView | undefined
+  let status: SourceItemListStatus | undefined
+  if (viewParam) {
+    if (!VIEWS.includes(viewParam as SourceItemView)) {
+      return NextResponse.json(
+        { error: "view must be one of needs_work | done | errors | all" },
+        { status: 400 },
+      )
+    }
+    view = viewParam as SourceItemView
+  } else if (statusParam === "pending" || statusParam === "processed") {
+    status = statusParam
+  } else {
     return NextResponse.json(
-      { error: "status must be 'pending' or 'processed'" },
+      { error: "provide `view` or `status` (pending|processed)" },
       { status: 400 },
     )
   }
-  const status = statusParam as SourceItemListStatus
 
   const sourceId = searchParams.get("sourceId") ?? undefined
   const q = searchParams.get("q") ?? undefined
@@ -45,6 +63,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await listSourceItems({
       status,
+      view,
       organizationId,
       sourceId,
       q,
