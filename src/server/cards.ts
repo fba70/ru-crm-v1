@@ -4,8 +4,10 @@ import { db } from "@/db/drizzle"
 import {
   card,
   cardClient,
+  cardContact,
   cardUser,
   client,
+  contact,
   member,
   rule,
   sourceItem,
@@ -25,10 +27,18 @@ export type CardMessage = {
   // the card's "Create order" button can prefill the New Order dialog's
   // request field unchanged. Absent on every other category.
   orderRequest?: string
+  // Short (3-5 word) action-oriented task title summarised from the card
+  // context by the generation LLM. Used to prefill the task name when the
+  // operator clicks "Принять". Absent on cards generated before this field
+  // existed — the UI falls back to the category label.
+  taskTitle?: string
 }
 
 export type CardClientRef = { id: string; name: string }
 export type CardUserRef = { id: string; name: string; email: string }
+// `clientId` lets the dashboard pair the contact with its owning client when
+// prefilling the create-task dialog (the task form scopes contacts by client).
+export type CardContactRef = { id: string; name: string; clientId: string | null }
 
 export type CardRow = {
   id: string
@@ -44,6 +54,7 @@ export type CardRow = {
   ruleName: string | null
   clients: CardClientRef[]
   users: CardUserRef[]
+  contacts: CardContactRef[]
   createdAt: string
   updatedAt: string
 }
@@ -112,6 +123,23 @@ async function assertClientIdsInOrg(ids: string[], organizationId: string) {
   }
 }
 
+async function assertContactIdsInOrg(ids: string[], organizationId: string) {
+  if (ids.length === 0) return
+  const unique = Array.from(new Set(ids))
+  const rows = await db
+    .select({ id: contact.id, organizationId: contact.organizationId })
+    .from(contact)
+    .where(inArray(contact.id, unique))
+  if (rows.length !== unique.length) {
+    throw new Error("Invalid contact reference")
+  }
+  for (const r of rows) {
+    if (r.organizationId !== organizationId) {
+      throw new Error("Invalid contact reference")
+    }
+  }
+}
+
 async function assertUserIdsInOrg(ids: string[], organizationId: string) {
   if (ids.length === 0) return
   const unique = Array.from(new Set(ids))
@@ -142,6 +170,9 @@ function normaliseMessage(raw: unknown): CardMessage {
     ...(typeof obj.orderRequest === "string" && obj.orderRequest.length > 0
       ? { orderRequest: obj.orderRequest }
       : {}),
+    ...(typeof obj.taskTitle === "string" && obj.taskTitle.trim().length > 0
+      ? { taskTitle: obj.taskTitle.trim() }
+      : {}),
   }
 }
 
@@ -165,7 +196,7 @@ export async function listCards(): Promise<CardRow[]> {
 
   const cardIds = cardRows.map((r) => r.card.id)
 
-  const [clientLinks, userLinks] = await Promise.all([
+  const [clientLinks, userLinks, contactLinks] = await Promise.all([
     db
       .select({
         cardId: cardClient.cardId,
@@ -185,6 +216,16 @@ export async function listCards(): Promise<CardRow[]> {
       .from(cardUser)
       .innerJoin(user, eq(cardUser.userId, user.id))
       .where(inArray(cardUser.cardId, cardIds)),
+    db
+      .select({
+        cardId: cardContact.cardId,
+        contactId: contact.id,
+        contactName: contact.name,
+        contactClientId: contact.clientId,
+      })
+      .from(cardContact)
+      .innerJoin(contact, eq(cardContact.contactId, contact.id))
+      .where(inArray(cardContact.cardId, cardIds)),
   ])
 
   const clientsByCard = new Map<string, CardClientRef[]>()
@@ -201,6 +242,13 @@ export async function listCards(): Promise<CardRow[]> {
     usersByCard.set(l.cardId, arr)
   }
 
+  const contactsByCard = new Map<string, CardContactRef[]>()
+  for (const l of contactLinks) {
+    const arr = contactsByCard.get(l.cardId) ?? []
+    arr.push({ id: l.contactId, name: l.contactName, clientId: l.contactClientId })
+    contactsByCard.set(l.cardId, arr)
+  }
+
   return cardRows.map((r) => ({
     id: r.card.id,
     organizationId: r.card.organizationId,
@@ -215,6 +263,7 @@ export async function listCards(): Promise<CardRow[]> {
     ruleName: r.ruleName,
     clients: clientsByCard.get(r.card.id) ?? [],
     users: usersByCard.get(r.card.id) ?? [],
+    contacts: contactsByCard.get(r.card.id) ?? [],
     createdAt: r.card.createdAt.toISOString(),
     updatedAt: r.card.updatedAt.toISOString(),
   }))
@@ -240,7 +289,7 @@ export async function getCard(cardId: string): Promise<CardRow | null> {
   // forbidden so existence isn't leaked.
   if (row.card.organizationId !== activeOrgId) return null
 
-  const [clientLinks, userLinks] = await Promise.all([
+  const [clientLinks, userLinks, contactLinks] = await Promise.all([
     db
       .select({
         clientId: client.id,
@@ -258,6 +307,15 @@ export async function getCard(cardId: string): Promise<CardRow | null> {
       .from(cardUser)
       .innerJoin(user, eq(cardUser.userId, user.id))
       .where(eq(cardUser.cardId, cardId)),
+    db
+      .select({
+        contactId: contact.id,
+        contactName: contact.name,
+        contactClientId: contact.clientId,
+      })
+      .from(cardContact)
+      .innerJoin(contact, eq(cardContact.contactId, contact.id))
+      .where(eq(cardContact.cardId, cardId)),
   ])
 
   return {
@@ -278,6 +336,11 @@ export async function getCard(cardId: string): Promise<CardRow | null> {
       name: l.userName,
       email: l.userEmail,
     })),
+    contacts: contactLinks.map((l) => ({
+      id: l.contactId,
+      name: l.contactName,
+      clientId: l.contactClientId,
+    })),
     createdAt: row.card.createdAt.toISOString(),
     updatedAt: row.card.updatedAt.toISOString(),
   }
@@ -291,6 +354,7 @@ export async function createCard(data: {
   ruleId?: string | null
   clientIds?: string[]
   userIds?: string[]
+  contactIds?: string[]
 }) {
   const { activeOrgId } = await requireOrgContext()
   if (!data.category) throw new Error("Category is required")
@@ -300,8 +364,10 @@ export async function createCard(data: {
   await assertRuleIfProvided(data.ruleId, activeOrgId)
   const clientIds = data.clientIds ?? []
   const userIds = data.userIds ?? []
+  const contactIds = data.contactIds ?? []
   await assertClientIdsInOrg(clientIds, activeOrgId)
   await assertUserIdsInOrg(userIds, activeOrgId)
+  await assertContactIdsInOrg(contactIds, activeOrgId)
 
   const id = randomUUID()
   await db.insert(card).values({
@@ -323,6 +389,11 @@ export async function createCard(data: {
       .insert(cardUser)
       .values(userIds.map((userId) => ({ cardId: id, userId })))
   }
+  if (contactIds.length > 0) {
+    await db
+      .insert(cardContact)
+      .values(contactIds.map((contactId) => ({ cardId: id, contactId })))
+  }
   return { id }
 }
 
@@ -336,6 +407,7 @@ export async function updateCard(
     ruleId?: string | null
     clientIds?: string[]
     userIds?: string[]
+    contactIds?: string[]
   },
 ) {
   const { activeOrgId } = await requireOrgContext()
@@ -352,6 +424,9 @@ export async function updateCard(
   }
   if (data.userIds !== undefined) {
     await assertUserIdsInOrg(data.userIds, activeOrgId)
+  }
+  if (data.contactIds !== undefined) {
+    await assertContactIdsInOrg(data.contactIds, activeOrgId)
   }
 
   await db
@@ -385,6 +460,14 @@ export async function updateCard(
       await db
         .insert(cardUser)
         .values(data.userIds.map((userId) => ({ cardId, userId })))
+    }
+  }
+  if (data.contactIds !== undefined) {
+    await db.delete(cardContact).where(eq(cardContact.cardId, cardId))
+    if (data.contactIds.length > 0) {
+      await db
+        .insert(cardContact)
+        .values(data.contactIds.map((contactId) => ({ cardId, contactId })))
     }
   }
 }

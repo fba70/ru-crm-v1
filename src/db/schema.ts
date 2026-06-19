@@ -685,6 +685,27 @@ export const cardUser = pgTable(
   ],
 )
 
+// Many-to-many: contacts identified by the analysis (the external
+// sender of the source item, matched to an org contact by email at
+// generation time). Drives the "Принять" → create-task prefill so the
+// spawned task carries the related contact. Composite PK doubles as the
+// dedup index on (cardId, contactId); cascades on either side.
+export const cardContact = pgTable(
+  "card_contact",
+  {
+    cardId: text("card_id")
+      .notNull()
+      .references(() => card.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.cardId, table.contactId] }),
+    index("card_contact_contactId_idx").on(table.contactId),
+  ],
+)
+
 // ── Product catalog ──────────────────────────────────────────────────
 //
 // Org-scoped catalog of sellable items (wine/spirits catalog for the
@@ -1587,6 +1608,7 @@ export type SourceItem = typeof sourceItem.$inferSelect
 export type Card = typeof card.$inferSelect
 export type CardClient = typeof cardClient.$inferSelect
 export type CardUser = typeof cardUser.$inferSelect
+export type CardContact = typeof cardContact.$inferSelect
 
 export const ruleRelations = relations(rule, ({ one }) => ({
   user: one(user, {
@@ -1744,6 +1766,18 @@ export const cardRelations = relations(card, ({ one, many }) => ({
   }),
   clients: many(cardClient),
   users: many(cardUser),
+  contacts: many(cardContact),
+}))
+
+export const cardContactRelations = relations(cardContact, ({ one }) => ({
+  card: one(card, {
+    fields: [cardContact.cardId],
+    references: [card.id],
+  }),
+  contact: one(contact, {
+    fields: [cardContact.contactId],
+    references: [contact.id],
+  }),
 }))
 
 export const cardClientRelations = relations(cardClient, ({ one }) => ({
@@ -1790,4 +1824,5 @@ export const schema = {
   card,
   cardClient,
   cardUser,
+  cardContact,
 }

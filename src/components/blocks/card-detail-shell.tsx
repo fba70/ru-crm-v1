@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   Building2,
   Check,
+  Contact,
   FileText,
   Link2,
   ShoppingCart,
@@ -242,6 +243,7 @@ export function CardDetailShell({ card }: { card: CardRow }) {
           )}
 
           {(card.clients.length > 0 ||
+            card.contacts.length > 0 ||
             card.users.length > 0 ||
             card.ruleName ||
             card.sourceItemTitle) && (
@@ -251,6 +253,18 @@ export function CardDetailShell({ card }: { card: CardRow }) {
                   <Building2 className="h-4 w-4 shrink-0 mt-0.5" />
                   <div className="flex flex-wrap gap-1">
                     {card.clients.map((c) => (
+                      <Badge key={c.id} variant="outline" className="font-normal">
+                        {c.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {card.contacts.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <Contact className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1">
+                    {card.contacts.map((c) => (
                       <Badge key={c.id} variant="outline" className="font-normal">
                         {c.name}
                       </Badge>

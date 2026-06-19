@@ -23,6 +23,7 @@ import {
 import {
   Building2,
   Check,
+  Contact,
   FileText,
   ShoppingCart,
   Users,
@@ -199,21 +200,40 @@ export function DashboardCard({
   const analysis = card.message?.analysis ?? ""
   const recommendation = card.message?.recommendation ?? ""
 
-  // Accepting a card spawns a task prefilled from it: name = category label,
+  // Accepting a card spawns a task prefilled from it: name = the LLM-summarised
+  // task title (falls back to the category label on older cards),
   // description = recommendation, priority high→high / normal→medium, status
-  // "to do", due today. Assignee defaults to the current user (the task
-  // dialog seeds it from the first org member); client/contact stay empty
-  // since cards don't resolve those yet. Memoized so the dialog's reset
-  // effect keeps a stable reference.
-  const taskInitialValues = useMemo(
-    () => ({
-      name: CATEGORY_LABEL[card.category],
+  // "to do", due today. Assignee defaults to the current user (the task dialog
+  // seeds it from the first org member). Client + contact come from the card's
+  // identified links: the contact's owning client is preferred so the task
+  // form's client-scoped contact picker keeps the contact selected; otherwise
+  // the first linked client is used (contact left empty, since the form would
+  // drop a contact that doesn't belong to the chosen client). Memoized so the
+  // dialog's reset effect keeps a stable reference.
+  const taskInitialValues = useMemo(() => {
+    const linkedContact = card.contacts[0] ?? null
+    const clientId =
+      linkedContact?.clientId ?? card.clients[0]?.id ?? undefined
+    const contactId =
+      linkedContact && linkedContact.clientId === clientId
+        ? linkedContact.id
+        : undefined
+    return {
+      name: card.message?.taskTitle?.trim() || CATEGORY_LABEL[card.category],
       description: recommendation,
       priority: (card.priority === "high" ? "high" : "medium") as TaskPriority,
       status: "todo" as TaskStatus,
-    }),
-    [card.category, card.priority, recommendation],
-  )
+      ...(clientId ? { clientId } : {}),
+      ...(contactId ? { contactId } : {}),
+    }
+  }, [
+    card.category,
+    card.priority,
+    card.message?.taskTitle,
+    card.clients,
+    card.contacts,
+    recommendation,
+  ])
 
   return (
     <Card
@@ -298,6 +318,7 @@ export function DashboardCard({
         )}
 
         {(card.clients.length > 0 ||
+          card.contacts.length > 0 ||
           card.users.length > 0 ||
           card.sourceItemTitle) && (
           <div className="space-y-1.5 text-xs text-muted-foreground pt-1 border-t border-border/40">
@@ -306,6 +327,18 @@ export function DashboardCard({
                 <Building2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <div className="flex flex-wrap gap-1">
                   {card.clients.map((c) => (
+                    <Badge key={c.id} variant="outline" className="font-normal">
+                      {c.name}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {card.contacts.length > 0 && (
+              <div className="flex items-start gap-2">
+                <Contact className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <div className="flex flex-wrap gap-1">
+                  {card.contacts.map((c) => (
                     <Badge key={c.id} variant="outline" className="font-normal">
                       {c.name}
                     </Badge>
