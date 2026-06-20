@@ -488,6 +488,25 @@ export const discoveryBlocklist = pgTable(
   ],
 )
 
+// Append-only audit of admin "source teardown" runs (see refs/source-teardown.md).
+// Records the blast radius of each hard-delete so the destructive op is
+// traceable. Never read by app logic. `source_id` / `source_name` are stored
+// flat (no FK) so the log survives even if the source is later removed.
+export const teardownLog = pgTable("teardown_log", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  sourceId: text("source_id").notNull(),
+  sourceName: text("source_name").notNull(),
+  adminUserId: text("admin_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  // { sourceItems, r2Objects, cards, clients, contacts, deals, tasks }
+  counts: jsonb("counts").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
 export const taskType = pgEnum("task_type", [
   "meet",
   "call",

@@ -1,5 +1,10 @@
 import "server-only"
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
+import {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3"
 
 // R2 is S3-compatible. The endpoint can be either the global form
 // (`https://<account>.r2.cloudflarestorage.com`) or a jurisdictional one
@@ -45,6 +50,28 @@ export async function putMarkdownToR2(
     }),
   )
   return { key, sizeBytes: body.byteLength }
+}
+
+// Batch-delete objects by key. Used by the admin source-teardown tool to
+// remove the parsed-markdown blobs of the items it hard-deletes. S3's
+// DeleteObjects caps at 1000 keys per call, so we chunk. Idempotent: deleting
+// a missing key is a no-op (S3 returns success for absent keys). Empty input
+// short-circuits. Returns the count of keys requested for deletion.
+export async function deleteFromR2(keys: string[]): Promise<number> {
+  const cleaned = keys.filter((k) => typeof k === "string" && k.length > 0)
+  if (cleaned.length === 0) return 0
+  if (!bucketName) throw new Error("R2_BUCKET_NAME is not configured")
+  const client = getClient()
+  for (let i = 0; i < cleaned.length; i += 1000) {
+    const chunk = cleaned.slice(i, i + 1000)
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucketName,
+        Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true },
+      }),
+    )
+  }
+  return cleaned.length
 }
 
 export async function getMarkdownFromR2(key: string): Promise<string> {
