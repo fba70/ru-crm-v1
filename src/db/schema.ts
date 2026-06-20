@@ -1349,6 +1349,22 @@ export const r2UploadStatus = pgEnum("r2_upload_status", [
 
 export type R2UploadStatus = (typeof r2UploadStatus.enumValues)[number]
 
+// Parse-time authorship classification of a source item (see
+// refs/org-attribution.md). `own_org` = authored BY the owning org (a teammate
+// sender, or our own no-sender document); `external` = an outside party;
+// `unknown` = undetermined (the default, so existing rows fill on migration
+// with no backfill). Directionality: only the SENDER/author side counts —
+// recipients of an inbound client email never make it ours. The full evidence
+// `{ value, confidence, matchedOn, reason }` lives in
+// `metadata_json.orgAttribution`; this column is the queryable projection.
+export const orgAttribution = pgEnum("org_attribution", [
+  "own_org",
+  "external",
+  "unknown",
+])
+
+export type OrgAttribution = (typeof orgAttribution.enumValues)[number]
+
 export const sourceItem = pgTable(
   "source_item",
   {
@@ -1391,6 +1407,12 @@ export const sourceItem = pgTable(
     parseStatus: parseStatus("parse_status").notNull().default("pending"),
     parsedAt: timestamp("parsed_at"),
     parseError: text("parse_error"),
+    // Parse-time authorship verdict (refs/org-attribution.md). Default
+    // 'unknown'; recomputed on every (re)parse. Evidence lives in
+    // metadata_json.orgAttribution.
+    orgAttribution: orgAttribution("org_attribution")
+      .notNull()
+      .default("unknown"),
     // Bumped when a parser's prompt / schema / pipeline changes — lets the
     // re-parse job find rows produced by older versions.
     parserVersion: text("parser_version"),
@@ -1467,6 +1489,11 @@ export const sourceItem = pgTable(
     index("source_item_r2UploadStatus_pending_idx")
       .on(table.r2UploadStatus)
       .where(sql`${table.r2UploadStatus} in ('pending', 'failed')`),
+    // First-party lookups (AI-chat company-knowledge scoping, internal-doc
+    // filters) stay tiny regardless of table size.
+    index("source_item_org_attribution_own_idx")
+      .on(table.organizationId)
+      .where(sql`${table.orgAttribution} = 'own_org'`),
   ],
 )
 

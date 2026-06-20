@@ -1,13 +1,14 @@
 import "server-only"
 
 import { db } from "@/db/drizzle"
-import { organization } from "@/db/schema"
+import { organization, member, user } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { companyMatchKey } from "@/lib/translit-ru"
 import {
   domainMatches,
   extractEmailDomain,
   extractWebsiteDomain,
+  isFreemailDomain,
 } from "@/lib/email-domain"
 
 /**
@@ -86,4 +87,99 @@ export async function loadOwnOrgIdentity(
     },
     isOwnCompanyKey: (key: string) => !!key && companyKeys.has(key),
   }
+}
+
+// ── Org identity for authorship attribution (refs/org-attribution.md) ──
+//
+// Distinct from OwnOrgIdentity above: this resolves WHO COUNTS AS "US" for the
+// parse-time author classifier — the org's human-member emails + the
+// non-freemail domains it owns. Same `organization` source as OwnOrgIdentity
+// (different consumer), but it also reads the `member` → `user` join, so it
+// gets its own ~5-min in-process memo: a batch parse of many items for one org
+// loads it once. `invalidateOrgIdentity(orgId)` drops the entry (wire it to
+// member/profile mutations to recognise a new teammate before the TTL).
+export type OrgIdentity = {
+  organizationId: string
+  name: string | null
+  url: string | null
+  address: string | null
+  // Non-freemail domains owned by the org (member domains + website + contact).
+  emailDomains: string[]
+  // Lowercased human-member emails (agent service accounts excluded).
+  memberEmails: Set<string>
+}
+
+const IDENTITY_TTL_MS = 5 * 60 * 1000
+const identityCache = new Map<
+  string,
+  { value: OrgIdentity | null; expires: number }
+>()
+
+export function invalidateOrgIdentity(orgId: string): void {
+  identityCache.delete(orgId)
+}
+
+export async function getOrgIdentity(
+  orgId: string,
+): Promise<OrgIdentity | null> {
+  const now = Date.now()
+  const cached = identityCache.get(orgId)
+  if (cached && cached.expires > now) return cached.value
+
+  const orgRows = await db
+    .select({
+      id: organization.id,
+      name: organization.name,
+      webUrl: organization.webUrl,
+      email: organization.email,
+      address: organization.address,
+    })
+    .from(organization)
+    .where(eq(organization.id, orgId))
+    .limit(1)
+  const org = orgRows[0]
+  if (!org) {
+    identityCache.set(orgId, { value: null, expires: now + IDENTITY_TTL_MS })
+    return null
+  }
+
+  // Member emails — every member → user email, lowercased. Synthetic agent
+  // service accounts (`user.role === 'agent'`) are excluded so their address
+  // never reads as "us".
+  const memberRows = await db
+    .select({ email: user.email, role: user.role })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(eq(member.organizationId, orgId))
+
+  const memberEmails = new Set<string>()
+  const emailDomains = new Set<string>()
+  for (const m of memberRows) {
+    if (m.role === "agent") continue
+    const email = (m.email ?? "").trim().toLowerCase()
+    if (!email || !email.includes("@")) continue
+    memberEmails.add(email)
+    const domain = extractEmailDomain(email)
+    // A member on @gmail.com must NOT contribute gmail.com as an owned domain.
+    if (domain && !isFreemailDomain(domain)) emailDomains.add(domain)
+  }
+
+  // Plus the org website host + declared contact-email domain (freemail-guarded).
+  const webDomain = org.webUrl ? extractWebsiteDomain(org.webUrl) : ""
+  if (webDomain && !isFreemailDomain(webDomain)) emailDomains.add(webDomain)
+  const contactDomain = org.email ? extractEmailDomain(org.email) : ""
+  if (contactDomain && !isFreemailDomain(contactDomain)) {
+    emailDomains.add(contactDomain)
+  }
+
+  const value: OrgIdentity = {
+    organizationId: org.id,
+    name: org.name ?? null,
+    url: org.webUrl ?? null,
+    address: org.address ?? null,
+    emailDomains: [...emailDomains],
+    memberEmails,
+  }
+  identityCache.set(orgId, { value, expires: now + IDENTITY_TTL_MS })
+  return value
 }

@@ -8,9 +8,19 @@ import {
   sourceItem,
   type ParseStatus,
   type SourceItemKind,
+  type OrgAttribution,
 } from "@/db/schema"
 import type { MetadataAnalysis } from "@/server/parsers/_shared"
-import { loadOwnOrgIdentity, type OwnOrgIdentity } from "@/server/org-identity"
+import {
+  loadOwnOrgIdentity,
+  getOrgIdentity,
+  type OwnOrgIdentity,
+} from "@/server/org-identity"
+import {
+  extractAuthorEmails,
+  resolveOrgAttribution,
+  type OrgAttributionResult,
+} from "@/server/parsers/org-attribution"
 import { companyMatchKey } from "@/lib/translit-ru"
 import { extractWebsiteDomain } from "@/lib/email-domain"
 import nylas from "@/lib/nylas"
@@ -117,6 +127,9 @@ export async function reparseSourceItem(itemId: string): Promise<void> {
       r2UploadedAt: null,
       markdownR2Key: null,
       markdownR2SizeBytes: null,
+      // Reset authorship so the next parse recomputes from scratch
+      // (refs/org-attribution.md).
+      orgAttribution: "unknown",
       // Re-parsing produces fresh metadata. Clear the unified discovery
       // stamp so the next applyDiscovery() run re-considers this row.
       discoveryScannedAt: null,
@@ -180,6 +193,11 @@ type ParseContext = {
   // consumers (discovery, cards, deals, chat search) never see the owner's own
   // org as if it were a client. No-op when the org profile has no website/email.
   ownOrg: OwnOrgIdentity
+  // The parent's org-attribution verdict, computed by `markParsed` and read by
+  // `insertParsedChild` so children inherit it (an attachment of our own email
+  // is ours). Mutated in-place during the parent's `markParsed`; children are
+  // always inserted afterwards, so it's set by the time they read it.
+  orgAttributionValue?: OrgAttribution
 }
 
 export async function parseSourceItem(itemId: string): Promise<ParseResult> {
@@ -401,7 +419,7 @@ async function parseNylasItem(ctx: ParseContext): Promise<ParseResult> {
   const parsed = await parseEmailMessage(ctx.externalId, creds)
 
   // Parent row → complete with markdown.
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   let inserted = 0
   let skipped = 0
@@ -557,7 +575,7 @@ async function parseImapItem(ctx: ParseContext): Promise<ParseResult> {
   })
 
   // Parent row → complete with markdown.
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   let inserted = 0
   let skipped = 0
@@ -674,7 +692,7 @@ async function parseGoogleChatItem(ctx: ParseContext): Promise<ParseResult> {
   // sync stores the same in externalId.
   const parsed = await parseChatMessage(ctx.externalId, creds)
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   let inserted = 0
   let skipped = 0
@@ -788,7 +806,7 @@ async function parseWhatsAppItem(ctx: ParseContext): Promise<ParseResult> {
     endTimestamp,
   })
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   return {
     parentStatus: "complete",
@@ -829,7 +847,7 @@ async function parseTelegramItem(ctx: ParseContext): Promise<ParseResult> {
       : null,
   })
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   return {
     parentStatus: "complete",
@@ -852,7 +870,7 @@ async function parseGoogleDriveItem(ctx: ParseContext): Promise<ParseResult> {
   }
 
   const bodyBlock = parsed.blocks[0]
-  await markParsed(ctx.itemId, bodyBlock.markdown, bodyBlock.analysis, ctx.ownOrg)
+  await markParsed(ctx, bodyBlock.markdown, bodyBlock.analysis)
 
   let inserted = 0
   for (let i = 1; i < parsed.blocks.length; i++) {
@@ -1087,17 +1105,43 @@ async function classifyAndInsertChildError(args: {
 
 // ── DB writes ────────────────────────────────────────────────────────
 
+// Parents only — classify authorship (refs/org-attribution.md). Bails to
+// `unknown` with no org. The deterministic path short-circuits for email/chat
+// with a resolvable sender; only ambiguous documents reach the LLM judge.
+async function computeOrgAttribution(
+  ctx: ParseContext,
+  markdown: string,
+): Promise<OrgAttributionResult> {
+  if (!ctx.organizationId) {
+    return { value: "unknown", confidence: "low", matchedOn: [], reason: "No organization" }
+  }
+  const orgIdentity = await getOrgIdentity(ctx.organizationId)
+  const authorEmails = extractAuthorEmails(ctx.metadataJson, ctx.provider)
+  return resolveOrgAttribution({
+    authorEmails,
+    contentHaystack: markdown,
+    orgIdentity,
+    organizationId: ctx.organizationId,
+    // WhatsApp transcripts are conversational — authorship is meaningless, so
+    // never pay for the judge there.
+    enableLlmJudge: ctx.provider !== "whatsapp",
+  })
+}
+
 async function markParsed(
-  itemId: string,
+  ctx: ParseContext,
   markdown: string,
   analysis: MetadataAnalysis,
-  ownOrg: OwnOrgIdentity,
 ): Promise<void> {
-  const cleaned = filterAnalysisOwnOrg(analysis, ownOrg)
-  // Merge the LLM analysis into the existing metadata_json (which holds
-  // provider-shape sync fields like subject/snippet/from/to). jsonb `||`
-  // is right-biased so analysis keys overwrite any colliding sync keys
-  // (none today, but defensive against future additions).
+  const cleaned = filterAnalysisOwnOrg(analysis, ctx.ownOrg)
+  const attribution = await computeOrgAttribution(ctx, markdown)
+  // Children created after this read inherit the verdict via ctx.
+  ctx.orgAttributionValue = attribution.value
+  // Merge the LLM analysis (+ the attribution evidence) into the existing
+  // metadata_json (which holds provider-shape sync fields like
+  // subject/snippet/from/to). jsonb `||` is right-biased so analysis keys
+  // overwrite any colliding sync keys (none today, but defensive).
+  const merged = { ...cleaned, orgAttribution: attribution }
   await db
     .update(sourceItem)
     .set({
@@ -1106,9 +1150,10 @@ async function markParsed(
       parserModel: PARSER_MODEL,
       parsedMarkdown: markdown,
       parseError: null,
-      metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(cleaned)}::jsonb`,
+      orgAttribution: attribution.value,
+      metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(merged)}::jsonb`,
     })
-    .where(eq(sourceItem.id, itemId))
+    .where(eq(sourceItem.id, ctx.itemId))
 }
 
 async function insertParsedChild(args: {
@@ -1144,6 +1189,9 @@ async function insertParsedChild(args: {
       parsedAt: now,
       parserModel: PARSER_MODEL,
       parsedMarkdown: args.markdown,
+      // Children inherit the parent's authorship verdict (set on ctx during the
+      // parent's markParsed, which always runs before children are inserted).
+      orgAttribution: args.ctx.orgAttributionValue ?? "unknown",
       metadataJson: cleaned,
     })
     .onConflictDoUpdate({
@@ -1157,6 +1205,7 @@ async function insertParsedChild(args: {
         filename: args.meta.fileName,
         mimeType: args.meta.contentType,
         sizeBytes: args.meta.byteSize || null,
+        orgAttribution: args.ctx.orgAttributionValue ?? "unknown",
         metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(cleaned)}::jsonb`,
       },
     })
