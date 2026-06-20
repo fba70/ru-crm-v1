@@ -15,6 +15,7 @@
 
 import {
   Mail,
+  Inbox,
   MessageSquare,
   HardDrive,
   Upload,
@@ -92,6 +93,24 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
     icon: Mail,
     defaultName: "Emails",
     defaultProviderConfig: {},
+    defaultAutomatedParsingIsAllowed: true,
+    capabilities: {
+      supportsRemoteSync: true,
+      supportsArchiveUpload: false,
+      supportsDropoffUpload: false,
+      hasRawBytesPersisted: true,
+      supportsAutomatedPipeline: true,
+      supportsManualFetch: false,
+    },
+  },
+  imap: {
+    provider: "imap",
+    label: "Email (IMAP)",
+    description:
+      "Email messages synced directly from an IMAP mailbox (no Nylas).",
+    icon: Inbox,
+    defaultName: "Emails",
+    defaultProviderConfig: { mailbox: "INBOX" },
     defaultAutomatedParsingIsAllowed: true,
     capabilities: {
       supportsRemoteSync: true,

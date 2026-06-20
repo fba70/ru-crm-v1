@@ -20,10 +20,12 @@ import { decryptCredentials } from "@/lib/credentials-crypto"
 import {
   type GchatCredentials,
   type GdriveCredentials,
+  type ImapCredentials,
   type NylasCredentials,
   type TelegramCredentials,
   gchatCredentialsSchema,
   gdriveCredentialsSchema,
+  imapCredentialsSchema,
   nylasCredentialsSchema,
   telegramCredentialsSchema,
 } from "@/server/providers/handlers"
@@ -108,6 +110,23 @@ export function getNylasCredentials(
     `[credentials] nylas source ${sourceId} has no credentials_ref — falling back to NYLAS_GRANT_ID env. Run migrate-credentials-to-db to seed the row.`,
   )
   return { grantId: envGrantId }
+}
+
+// ── IMAP ─────────────────────────────────────────────────────────────
+//
+// Per-source secret: `{ host, port, secure, user, password }`.
+// NO env fallback — IMAP is strictly per-org. Throws MissingCredentialsError
+// if `credentialsRef` is null (mirrors gchat/gdrive, NOT nylas).
+export function getImapCredentials(
+  sourceId: string,
+  credentialsRef: string | null,
+): ImapCredentials {
+  return decryptAndValidate(
+    sourceId,
+    credentialsRef,
+    "imap",
+    imapCredentialsSchema,
+  )
 }
 
 // ── Google Chat ──────────────────────────────────────────────────────

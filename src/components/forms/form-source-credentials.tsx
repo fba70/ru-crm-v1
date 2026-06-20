@@ -34,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "sonner"
 import type { SourceProvider } from "@/db/schema"
 
@@ -72,6 +73,14 @@ export function FormSourceCredentials({
 
         {provider === "nylas" && (
           <NylasFields
+            sourceId={sourceId}
+            endpoint={endpoint}
+            onClose={() => onOpenChange(false)}
+            onSaved={onSaved}
+          />
+        )}
+        {provider === "imap" && (
+          <ImapFields
             sourceId={sourceId}
             endpoint={endpoint}
             onClose={() => onOpenChange(false)}
@@ -201,6 +210,137 @@ function NylasFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
           <code className="text-[10px]">NYLAS_API_KEY</code> /{" "}
           <code className="text-[10px]">NYLAS_API_URI</code> общие для всех
           источников в рамках одного приложения Nylas и здесь не настраиваются.
+        </p>
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
+          Отмена
+        </Button>
+        <Button type="button" onClick={handleSave} disabled={busy}>
+          {busy ? "Сохранение…" : "Сохранить"}
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+function ImapFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
+  const [host, setHost] = useState("")
+  const [port, setPort] = useState("993")
+  const [secure, setSecure] = useState(true)
+  const [user, setUser] = useState("")
+  const [password, setPassword] = useState("")
+  const [busy, setBusy] = useState(false)
+
+  async function handleSave() {
+    if (!host.trim()) {
+      toast.error("Укажите хост IMAP-сервера")
+      return
+    }
+    if (!user.trim()) {
+      toast.error("Укажите имя пользователя")
+      return
+    }
+    if (!password.trim()) {
+      toast.error("Укажите пароль")
+      return
+    }
+    const portNum = Number.parseInt(port, 10)
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      toast.error("Порт должен быть числом от 1 до 65535")
+      return
+    }
+    setBusy(true)
+    const out = await submitCredentials({
+      endpoint,
+      sourceId,
+      credentials: {
+        host: host.trim(),
+        port: portNum,
+        secure,
+        user: user.trim(),
+        password,
+      },
+    })
+    setBusy(false)
+    if (!out.ok) {
+      toast.error(formatError(out.error, out.issues))
+      return
+    }
+    toast.success("Учётные данные сохранены")
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <div className="space-y-4 py-2">
+      <div className="space-y-2">
+        <Label htmlFor="imap-host">Хост IMAP-сервера</Label>
+        <Input
+          id="imap-host"
+          value={host}
+          onChange={(e) => setHost(e.target.value)}
+          placeholder="напр. imap.gmail.com"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="imap-port">Порт</Label>
+          <Input
+            id="imap-port"
+            inputMode="numeric"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="993"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Шифрование</Label>
+          <label className="flex items-center gap-2 h-9 cursor-pointer text-sm">
+            <Checkbox
+              checked={secure}
+              onCheckedChange={(v) => setSecure(v === true)}
+            />
+            <span>Неявный TLS (порт 993)</span>
+          </label>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Отметьте «Неявный TLS» для подключения по протоколу SSL/TLS (обычно
+        порт 993). Снимите отметку для STARTTLS (обычно порт 143) — так
+        подключаются некоторые сервисы, отличные от Gmail.
+      </p>
+      <div className="space-y-2">
+        <Label htmlFor="imap-user">Пользователь</Label>
+        <Input
+          id="imap-user"
+          value={user}
+          onChange={(e) => setUser(e.target.value)}
+          placeholder="напр. sales@yourdomain.com"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="imap-password">Пароль</Label>
+        <Input
+          id="imap-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="пароль или пароль приложения"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <p className="text-xs text-muted-foreground">
+          Пароль почтового ящика. Для Gmail и многих провайдеров с двухфакторной
+          аутентификацией нужен <strong>пароль приложения</strong>, а не обычный
+          пароль от аккаунта. Учётные данные хранятся в зашифрованном виде и
+          используются только для чтения почты.
         </p>
       </div>
       <DialogFooter>

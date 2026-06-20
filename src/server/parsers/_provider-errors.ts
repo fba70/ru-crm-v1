@@ -53,6 +53,38 @@ export function isNylasItemMissing(err: unknown): boolean {
   return false
 }
 
+// ── IMAP ──────────────────────────────────────────────────────────────
+
+// Thrown by the IMAP parser when the message can't be fetched any more:
+// the UID is gone from the mailbox, OR the mailbox's UIDVALIDITY changed
+// since sync (which invalidates every stored UID — see the parser). The
+// parse pipeline maps this to `parse_status='skipped'` rather than
+// `'failed'`, so a since-deleted email isn't retried forever.
+export class ImapMessageMissingError extends Error {
+  constructor(reason: string) {
+    super(`IMAP message no longer available: ${reason}`)
+    this.name = "ImapMessageMissingError"
+  }
+}
+
+export function isImapItemMissing(err: unknown): boolean {
+  if (err instanceof ImapMessageMissingError) return true
+  const e = asAnyErr(err)
+  if (!e) return false
+  // imapflow surfaces a server "no such message" as code NONEXISTENT.
+  const code = typeof e.code === "string" ? e.code.toUpperCase() : ""
+  if (code === "NONEXISTENT") return true
+  const msg = messageOf(e)
+  if (
+    msg.includes("not found") ||
+    msg.includes("does not exist") ||
+    msg.includes("no such message")
+  ) {
+    return true
+  }
+  return false
+}
+
 // ── Google Chat ──────────────────────────────────────────────────────
 
 export function isGoogleChatItemMissing(err: unknown): boolean {

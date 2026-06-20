@@ -21,6 +21,7 @@ import {
   type NylasAttachmentRef,
   type InlineBodyImage,
 } from "@/server/parsers/text"
+import { parseImapMessage, type ImapAttachment } from "@/server/parsers/imap"
 import { parseChatMessage, type ChatAttachmentRef } from "@/server/parsers/chat"
 import { parseWhatsAppGroup } from "@/server/parsers/whatsapp"
 import { parseTelegramMessage } from "@/server/parsers/telegram"
@@ -62,9 +63,11 @@ import {
 } from "@/server/parsers/_provider-errors"
 import {
   getNylasCredentials,
+  getImapCredentials,
   getGchatCredentials,
   getGdriveCredentials,
 } from "@/server/providers/credentials"
+import { imapProviderConfigSchema } from "@/server/providers/handlers"
 import type {
   GchatCredentials,
   NylasCredentials,
@@ -150,6 +153,7 @@ type ParseContext = {
   externalId: string
   provider:
     | "nylas"
+    | "imap"
     | "gchat"
     | "gdrive"
     | "dropoff"
@@ -191,6 +195,8 @@ export async function parseSourceItem(itemId: string): Promise<ParseResult> {
     switch (ctx.provider) {
       case "nylas":
         return await parseNylasItem(ctx)
+      case "imap":
+        return await parseImapItem(ctx)
       case "gchat":
         return await parseGoogleChatItem(ctx)
       case "gdrive":
@@ -292,6 +298,9 @@ async function loadParseContext(itemId: string): Promise<ParseContext> {
     switch (row.provider) {
       case "nylas":
         return `nylas:${row.externalId}`
+      case "imap":
+        // externalId is "<uidValidity>:<uid>".
+        return `imap:${row.externalId}`
       case "gchat": {
         // externalId is full "spaces/X/messages/Y"; the message id is the
         // trailing segment.
@@ -316,6 +325,8 @@ async function loadParseContext(itemId: string): Promise<ParseContext> {
   const sourceSystemLabel = (() => {
     switch (row.provider) {
       case "nylas":
+        return "Email"
+      case "imap":
         return "Email"
       case "gchat":
         return "Google Chat"
@@ -493,6 +504,131 @@ async function parseNylasInlineImage(
   ctx: ParseContext,
 ): Promise<ChildOutcome> {
   const sid = `nylas-inline:${ctx.externalId}:${index}`
+  const meta = {
+    fileName: img.filename,
+    contentType: img.mediaType,
+    byteSize: img.bytes.byteLength,
+  }
+  try {
+    const result = await parseImageBytes({
+      bytes: img.bytes,
+      fileName: img.filename,
+      mediaType: img.mediaType,
+      sourceId: sid,
+      parentSourceId: ctx.parentNamespacedSourceId,
+      sourceSystem: ctx.sourceSystemLabel,
+      threadId: ctx.threadExternalId,
+      sourceCreatedAt: isoOrNull(ctx.sourceCreatedAt),
+      sourceReceivedAt: isoOrNull(ctx.sourceCreatedAt),
+    })
+    await insertParsedChild({
+      ctx,
+      externalId: sid,
+      externalType: "inline_image",
+      meta,
+      markdown: result.markdown,
+      analysis: result.analysis,
+    })
+    return { inserted: 1, skipped: 0, failed: 0 }
+  } catch (err) {
+    return classifyAndInsertChildError({
+      ctx,
+      externalId: sid,
+      externalType: "inline_image",
+      meta,
+      err,
+    })
+  }
+}
+
+// ── IMAP (email) ──────────────────────────────────────────────────────
+
+async function parseImapItem(ctx: ParseContext): Promise<ParseResult> {
+  const creds = getImapCredentials(ctx.sourceId, ctx.credentialsRef)
+  // The mailbox folder is denormalised onto each item's metadata_json at
+  // sync time (defaults to INBOX if absent on an old row).
+  const { mailbox } = imapProviderConfigSchema.parse(ctx.metadataJson)
+
+  const parsed = await parseImapMessage({
+    externalId: ctx.externalId,
+    mailbox,
+    namespacedSourceId: ctx.parentNamespacedSourceId,
+    creds,
+  })
+
+  // Parent row → complete with markdown.
+  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+
+  let inserted = 0
+  let skipped = 0
+  let failed = 0
+
+  // Real attachments — bytes already in hand (mailparser), so no per-file
+  // download (unlike Nylas).
+  for (let i = 0; i < parsed.attachments.length; i++) {
+    const result = await parseImapAttachment(parsed.attachments[i], i, ctx)
+    inserted += result.inserted
+    skipped += result.skipped
+    failed += result.failed
+  }
+
+  // Inline (cid:) images that mailparser folded into the HTML as data: URIs.
+  for (let i = 0; i < parsed.bodyInlineImages.length; i++) {
+    const result = await parseImapInlineImage(parsed.bodyInlineImages[i], i, ctx)
+    inserted += result.inserted
+    skipped += result.skipped
+    failed += result.failed
+  }
+
+  return {
+    parentStatus: "complete",
+    parentMarkdownBytes: byteLengthOf(parsed.markdown),
+    childInserted: inserted,
+    childSkipped: skipped,
+    childFailed: failed,
+  }
+}
+
+async function parseImapAttachment(
+  att: ImapAttachment,
+  index: number,
+  ctx: ParseContext,
+): Promise<ChildOutcome> {
+  const attSourceId = `imap-att:${ctx.externalId}:${index}`
+  const meta = {
+    fileName: att.filename,
+    contentType: att.contentType,
+    byteSize: att.bytes.byteLength,
+  }
+
+  const kind = detectAttachmentKind(att.contentType, att.filename)
+  if (!kind) {
+    await insertSkippedChild({
+      ctx,
+      externalId: attSourceId,
+      externalType: "attachment",
+      meta,
+      reason: "unsupported type",
+    })
+    return { inserted: 0, skipped: 1, failed: 0 }
+  }
+
+  return runAttachmentParser({
+    ctx,
+    kind,
+    bytes: att.bytes,
+    attSourceId,
+    externalType: "attachment",
+    meta,
+  })
+}
+
+async function parseImapInlineImage(
+  img: InlineBodyImage,
+  index: number,
+  ctx: ParseContext,
+): Promise<ChildOutcome> {
+  const sid = `imap-inline:${ctx.externalId}:${index}`
   const meta = {
     fileName: img.filename,
     contentType: img.mediaType,

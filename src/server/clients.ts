@@ -7,8 +7,9 @@ import {
   user,
   type FunnelPhase,
   type EntityStatus,
+  type ClientLookupCandidateJson,
 } from "@/db/schema"
-import { and, eq, desc } from "drizzle-orm"
+import { and, eq, desc, isNull, or, count, inArray } from "drizzle-orm"
 import { generateText, Output, stepCountIs } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
@@ -470,4 +471,219 @@ Based on the research notes, extract up to 3 candidate companies that could be t
     sources,
     notes: extracted.notes.trim(),
   }
+}
+
+// ── Batch web enrichment (refs/enrich-clients.md) ────────────────────
+//
+// Orchestration layer over `lookupClientOnWeb`: a browser-driven loop POSTs
+// one client at a time; each client's `enrichment_status` is committed as it
+// finishes, so re-running processes ONLY what's still NULL (unprocessed or
+// previously failed). All org-scoped + IDOR-guarded via assertClientInOrg.
+
+const ENRICH_FILLABLE = ["webUrl", "email", "phone", "address"] as const
+type EnrichFillable = (typeof ENRICH_FILLABLE)[number]
+
+type EnrichTarget = {
+  webUrl: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+}
+
+// True when at least one fillable field is currently blank — the gate that
+// keeps us from spending LLM calls on already-complete records.
+function hasBlankFillable(target: EnrichTarget): boolean {
+  return ENRICH_FILLABLE.some((f) => !(target[f] ?? "").trim())
+}
+
+// Fill-blanks-only patch: never overwrites a value a human (or earlier run)
+// already set. Compute once, reuse for both the DB write and the report.
+function candidatePatch(
+  target: EnrichTarget,
+  candidate: ClientLookupCandidateJson,
+): Partial<Record<EnrichFillable, string>> {
+  const patch: Partial<Record<EnrichFillable, string>> = {}
+  for (const field of ENRICH_FILLABLE) {
+    const current = (target[field] ?? "").trim()
+    const incoming = (candidate[field] ?? "").trim()
+    if (!current && incoming) patch[field] = incoming
+  }
+  return patch
+}
+
+// 2.1 — the worklist + count for the button.
+export async function listPendingEnrichIds(
+  limit = 200,
+): Promise<{ ids: string[]; total: number }> {
+  const { activeOrgId } = await requireOrgContext()
+  const cap = Math.min(limit, 500)
+
+  const blankFillable = or(
+    isNull(client.webUrl),
+    eq(client.webUrl, ""),
+    isNull(client.email),
+    eq(client.email, ""),
+    isNull(client.phone),
+    eq(client.phone, ""),
+    isNull(client.address),
+    eq(client.address, ""),
+  )
+  const where = and(
+    eq(client.organizationId, activeOrgId),
+    isNull(client.enrichmentStatus),
+    inArray(client.status, ["active", "initial"]),
+    blankFillable,
+  )
+
+  const idRows = await db
+    .select({ id: client.id })
+    .from(client)
+    .where(where)
+    .orderBy(desc(client.updatedAt))
+    .limit(cap)
+  const totalRows = await db
+    .select({ c: count() })
+    .from(client)
+    .where(where)
+
+  return { ids: idRows.map((r) => r.id), total: totalRows[0]?.c ?? 0 }
+}
+
+export type EnrichClientResult = {
+  outcome: "enriched" | "review" | "no_match" | "skipped"
+  filledFields: EnrichFillable[]
+  candidateCount: number
+}
+
+// 2.2 — process ONE client. Never catches the lookup error: on a throw the
+// row stays NULL so the next run retries only it (the whole resumability
+// guarantee depends on this).
+export async function enrichClientFromWeb(
+  clientId: string,
+): Promise<EnrichClientResult> {
+  const { activeOrgId } = await requireOrgContext()
+  const target = await assertClientInOrg(clientId, activeOrgId)
+
+  // Raced to complete between the worklist snapshot and now → stamp + skip.
+  if (!hasBlankFillable(target)) {
+    await db
+      .update(client)
+      .set({ enrichmentStatus: "enriched", enrichmentCandidates: null })
+      .where(eq(client.id, clientId))
+    return { outcome: "skipped", filledFields: [], candidateCount: 0 }
+  }
+
+  const { candidates } = await lookupClientOnWeb(clientId)
+
+  if (candidates.length === 0) {
+    await db
+      .update(client)
+      .set({ enrichmentStatus: "no_match", enrichmentCandidates: null })
+      .where(eq(client.id, clientId))
+    return { outcome: "no_match", filledFields: [], candidateCount: 0 }
+  }
+
+  // Auto-apply ONLY the unambiguous case: a single high-confidence candidate.
+  // Anything else (>1 candidate, or a lone medium/low) goes to the human queue.
+  if (candidates.length === 1 && candidates[0].confidence === "high") {
+    const patch = candidatePatch(target, candidates[0])
+    await db
+      .update(client)
+      .set({ ...patch, enrichmentStatus: "enriched", enrichmentCandidates: null })
+      .where(eq(client.id, clientId))
+    return {
+      outcome: "enriched",
+      filledFields: Object.keys(patch) as EnrichFillable[],
+      candidateCount: 1,
+    }
+  }
+
+  await db
+    .update(client)
+    .set({ enrichmentStatus: "review", enrichmentCandidates: candidates })
+    .where(eq(client.id, clientId))
+  return { outcome: "review", filledFields: [], candidateCount: candidates.length }
+}
+
+export type EnrichReviewRow = {
+  id: string
+  name: string
+  webUrl: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  candidates: ClientLookupCandidateJson[]
+}
+
+// 2.3 — the manual disambiguation queue (status='review') + its count.
+export async function listEnrichReview(): Promise<EnrichReviewRow[]> {
+  const { activeOrgId } = await requireOrgContext()
+  const rows = await db
+    .select({
+      id: client.id,
+      name: client.name,
+      webUrl: client.webUrl,
+      email: client.email,
+      phone: client.phone,
+      address: client.address,
+      candidates: client.enrichmentCandidates,
+    })
+    .from(client)
+    .where(
+      and(
+        eq(client.organizationId, activeOrgId),
+        eq(client.enrichmentStatus, "review"),
+      ),
+    )
+    .orderBy(desc(client.updatedAt))
+  return rows.map((r) => ({ ...r, candidates: r.candidates ?? [] }))
+}
+
+export async function countEnrichReview(): Promise<number> {
+  const { activeOrgId } = await requireOrgContext()
+  const rows = await db
+    .select({ c: count() })
+    .from(client)
+    .where(
+      and(
+        eq(client.organizationId, activeOrgId),
+        eq(client.enrichmentStatus, "review"),
+      ),
+    )
+  return rows[0]?.c ?? 0
+}
+
+export type ResolveEnrichmentChoice =
+  | { candidateIndex: number }
+  | { skip: true }
+
+// 2.4 — apply a human's pick (or dismiss) for a parked client. No new web
+// call — replays the candidates stored during the batch.
+export async function resolveEnrichment(
+  clientId: string,
+  choice: ResolveEnrichmentChoice,
+): Promise<{ outcome: "enriched" | "no_match"; filledFields: EnrichFillable[] }> {
+  const { activeOrgId } = await requireOrgContext()
+  const target = await assertClientInOrg(clientId, activeOrgId)
+
+  if ("skip" in choice && choice.skip) {
+    await db
+      .update(client)
+      .set({ enrichmentStatus: "no_match", enrichmentCandidates: null })
+      .where(eq(client.id, clientId))
+    return { outcome: "no_match", filledFields: [] }
+  }
+
+  const candidateIndex = "candidateIndex" in choice ? choice.candidateIndex : -1
+  const candidates = (target.enrichmentCandidates ??
+    []) as ClientLookupCandidateJson[]
+  const chosen = candidates[candidateIndex]
+  if (!chosen) throw new Error("Candidate not found")
+
+  const patch = candidatePatch(target, chosen)
+  await db
+    .update(client)
+    .set({ ...patch, enrichmentStatus: "enriched", enrichmentCandidates: null })
+    .where(eq(client.id, clientId))
+  return { outcome: "enriched", filledFields: Object.keys(patch) as EnrichFillable[] }
 }

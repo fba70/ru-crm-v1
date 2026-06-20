@@ -49,6 +49,14 @@ export type MetadataAnalysis = {
   // list). Drives client dedup-by-alias, web-URL attribution and contact↔
   // client linking in discovery. See filterOrganizations.
   organizations?: OrganizationDetail[]
+  // Authoritative participant roster recovered from a calendar (.ics) invite
+  // carried by the email (organizer + attendees). Only the email parsers
+  // populate this, and only when the message has a real VEVENT; all other
+  // rows omit the key. Discovery's `extractParticipants` already reads
+  // `metadata_json.participants: [{email,name}]` and dedups it against the
+  // Nylas envelope — folding an invite's roster in needs no discovery change.
+  // See refs/calendar-invites.md.
+  participants?: { email: string; name: string }[]
 }
 
 // An organization the LLM identified in a source item, enriched beyond the

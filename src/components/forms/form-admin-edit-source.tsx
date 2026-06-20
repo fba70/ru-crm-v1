@@ -40,6 +40,7 @@ import { FormSourceProviderConfig } from "@/components/forms/form-source-provide
 
 const PROVIDERS: { value: SourceProvider; label: string }[] = [
   { value: "nylas", label: "Nylas (Email)" },
+  { value: "imap", label: "Email (IMAP)" },
   { value: "gchat", label: "Google Chat" },
   { value: "gdrive", label: "Google Drive" },
   { value: "dropoff", label: "Files Drop Off" },
@@ -74,6 +75,7 @@ type OrgOption = { id: string; name: string }
 // "Configure credentials" button visibility in edit mode.
 const PROVIDERS_WITH_CREDENTIALS = new Set<SourceProvider>([
   "nylas",
+  "imap",
   "gchat",
   "gdrive",
   "telegram",

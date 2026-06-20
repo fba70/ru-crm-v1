@@ -36,6 +36,7 @@ import { ClientCard } from "@/components/blocks/client-card"
 import { ContactCard } from "@/components/blocks/contact-card"
 import { DealCard } from "@/components/blocks/deal-card"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
+import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import { authClient } from "@/lib/auth-client"
@@ -446,6 +447,10 @@ export default function ClientsPage() {
                     Найти в источниках
                   </Button>
                 }
+              />
+              <ClientEnrichControl
+                refreshKey={clients.length}
+                onChanged={refreshAll}
               />
               <ClientEditDialog
                 mode="create"

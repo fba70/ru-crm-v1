@@ -302,6 +302,33 @@ export const dealStatus = pgEnum("deal_status", [
 
 export type DealStatus = (typeof dealStatus.enumValues)[number]
 
+// Batch web-enrichment state for a client (see refs/enrich-clients.md).
+// NULL = never processed OR last run failed → the batch worklist (NULL is the
+// resumability anchor). `enriched` = a match was applied (auto or via review),
+// terminal. `review` = the name matched several companies → parked in the
+// manual queue, with the options stored in `enrichment_candidates`. `no_match`
+// = web search found nothing usable, terminal.
+export const enrichmentStatus = pgEnum("enrichment_status", [
+  "enriched",
+  "review",
+  "no_match",
+])
+
+export type EnrichmentStatus = (typeof enrichmentStatus.enumValues)[number]
+
+// Local mirror of `ClientLookupCandidate` (src/server/clients.ts) so the
+// schema module has no dependency on the server/LLM module. Stored in
+// `client.enrichment_candidates` so the review dialog needs no new web call.
+export type ClientLookupCandidateJson = {
+  name: string
+  email: string
+  phone: string
+  address: string
+  webUrl: string
+  confidence: "high" | "medium" | "low"
+  whyMatch: string
+}
+
 export const client = pgTable(
   "client",
   {
@@ -331,6 +358,13 @@ export const client = pgTable(
     aliases: text("aliases").array(),
     funnelPhase: funnelPhase("funnel_phase").notNull().default("awareness"),
     status: entityStatus("status").notNull().default("active"),
+    // Batch web-enrichment bookkeeping (refs/enrich-clients.md). NULL =
+    // unprocessed/failed (the worklist). Candidates are parked here only while
+    // status='review' so the manual disambiguation dialog needs no new web call.
+    enrichmentStatus: enrichmentStatus("enrichment_status"),
+    enrichmentCandidates: jsonb("enrichment_candidates").$type<
+      ClientLookupCandidateJson[]
+    >(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -347,6 +381,7 @@ export const client = pgTable(
     index("client_organizationId_idx").on(table.organizationId),
     index("client_userId_idx").on(table.userId),
     index("client_status_idx").on(table.status),
+    index("client_enrichmentStatus_idx").on(table.enrichmentStatus),
   ],
 )
 
@@ -1055,6 +1090,12 @@ export type SourceType = (typeof sourceType.enumValues)[number]
 // a separate migration step.
 export const sourceProvider = pgEnum("source_provider", [
   "nylas",
+  // Email over a raw IMAP mailbox (no Nylas). Per-org credentials
+  // (host/port/secure/user/password) in `credentials_ref`; the mailbox
+  // folder lives in `provider_config`. Envelope-only incremental sync
+  // (cursor + UIDVALIDITY-stamped external_id); the body is fetched lazily
+  // at parse time and reuses the Nylas email LLM pipeline verbatim.
+  "imap",
   "gchat",
   "gdrive",
   "dropoff",
