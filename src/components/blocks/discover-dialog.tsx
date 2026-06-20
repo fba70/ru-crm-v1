@@ -21,6 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
+  Ban,
   Building2,
   ChevronDown,
   Link2,
@@ -79,10 +80,13 @@ function linkKey(p: LinkProposal): string {
 export function DiscoverDialog({
   trigger,
   onApplied,
+  canBlock = false,
 }: {
   trigger: React.ReactNode
   /** Called after a successful apply so the parent can refresh its lists. */
   onApplied: () => void
+  /** When true (owner), each candidate gets a per-row "Block" action. */
+  canBlock?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>("idle")
@@ -304,6 +308,51 @@ export function DiscoverDialog({
     [preview, clientChecked, contactChecked, contactNameOverrides, linkChecked, onApplied, reset],
   )
 
+  // Per-candidate block (owner only). Posts the derived {kind,value} and
+  // optimistically drops the candidate from the live preview. The next scan
+  // re-aggregates from metadata_json and won't surface it again.
+  const blockCandidate = useCallback(
+    async (kind: "company" | "email", value: string, which: "client" | "contact", id: string) => {
+      try {
+        const res = await fetch("/api/blocklist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind, value }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          toast.error(data.error || "Не удалось заблокировать")
+          return
+        }
+        setPreview((prev) =>
+          prev
+            ? {
+                ...prev,
+                clientCandidates:
+                  which === "client"
+                    ? prev.clientCandidates.filter((c) => c.normalisedKey !== id)
+                    : prev.clientCandidates,
+                contactCandidates:
+                  which === "contact"
+                    ? prev.contactCandidates.filter((c) => c.email !== id)
+                    : prev.contactCandidates,
+              }
+            : prev,
+        )
+        const swept = (data.sweptClients ?? 0) + (data.sweptContacts ?? 0)
+        toast.success(
+          swept > 0
+            ? `Добавлено в список блокировки · скрыто записей: ${swept}`
+            : "Добавлено в список блокировки",
+        )
+        onApplied()
+      } catch {
+        toast.error("Ошибка сети")
+      }
+    },
+    [onApplied],
+  )
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -423,6 +472,17 @@ export function DiscoverDialog({
                         [c.normalisedKey]: v,
                       }))
                     }
+                    onBlock={
+                      canBlock
+                        ? () =>
+                            blockCandidate(
+                              "company",
+                              c.displayName,
+                              "client",
+                              c.normalisedKey,
+                            )
+                        : undefined
+                    }
                   />
                 ))}
               </Section>
@@ -459,6 +519,11 @@ export function DiscoverDialog({
                         ...prev,
                         [c.email]: name,
                       }))
+                    }
+                    onBlock={
+                      canBlock
+                        ? () => blockCandidate("email", c.email, "contact", c.email)
+                        : undefined
                     }
                   />
                 ))}
@@ -616,10 +681,12 @@ function ClientRow({
   candidate,
   checked,
   onToggle,
+  onBlock,
 }: {
   candidate: ClientCandidate
   checked: boolean
   onToggle: (next: boolean) => void
+  onBlock?: () => void
 }) {
   return (
     <div className="flex items-start gap-3 py-2 px-2">
@@ -648,7 +715,24 @@ function ClientRow({
           </Badge>
         )}
       </div>
+      {onBlock && <BlockCandidateButton onBlock={onBlock} />}
     </div>
+  )
+}
+
+// Per-candidate "Block" action in the discovery preview (owner only).
+function BlockCandidateButton({ onBlock }: { onBlock: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+      aria-label="Добавить в список блокировки"
+      title="Добавить в список блокировки"
+      onClick={onBlock}
+    >
+      <Ban className="h-3.5 w-3.5" />
+    </Button>
   )
 }
 
@@ -658,12 +742,14 @@ function ContactRow({
   nameOverride,
   onToggle,
   onNameChange,
+  onBlock,
 }: {
   candidate: ContactCandidate
   checked: boolean
   nameOverride: string | undefined
   onToggle: (next: boolean) => void
   onNameChange: (next: string) => void
+  onBlock?: () => void
 }) {
   const value =
     nameOverride !== undefined ? nameOverride : candidate.displayName
@@ -700,6 +786,7 @@ function ContactRow({
           </Badge>
         )}
       </div>
+      {onBlock && <BlockCandidateButton onBlock={onBlock} />}
     </div>
   )
 }

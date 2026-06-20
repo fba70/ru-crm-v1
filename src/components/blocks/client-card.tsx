@@ -16,6 +16,7 @@ import {
 import type { ClientRow } from "@/app/api/clients/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
+import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 
 // `initial` is the auto-discovered state — give it a distinct accent so
 // it stands out for review. `suspended` stays muted (archived). `deleted`
@@ -25,6 +26,7 @@ const STATUS_COLOR: Record<string, string> = {
   initial: "bg-orange-500/15 text-orange-600 dark:text-orange-300",
   suspended: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
   deleted: "bg-red-500/15 text-red-600 dark:text-red-400",
+  blocked: "bg-rose-600/15 text-rose-700 dark:text-rose-300",
 }
 
 // UI display labels for the status badge (DB enum values stay English).
@@ -33,14 +35,18 @@ const STATUS_LABEL: Record<string, string> = {
   initial: "Новый",
   suspended: "Приостановлен",
   deleted: "Удалён",
+  blocked: "Заблокирован",
 }
 
 export function ClientCard({
   client,
   onChanged,
+  canBlock = false,
 }: {
   client: ClientRow
   onChanged: () => void
+  // When true (owner), show the "add to blocklist" action.
+  canBlock?: boolean
 }) {
   const preview = client.contacts.slice(0, 2)
   const moreCount = Math.max(0, client.contacts.length - preview.length)
@@ -48,7 +54,9 @@ export function ClientCard({
   return (
     <Card
       className={`flex flex-col dark:border-gray-600 ${
-        client.status === "deleted" ? "opacity-60" : ""
+        client.status === "deleted" || client.status === "blocked"
+          ? "opacity-60"
+          : ""
       }`}
     >
       <CardHeader className="flex flex-row items-start justify-between gap-2">
@@ -97,6 +105,14 @@ export function ClientCard({
               </Button>
             }
           />
+          {canBlock && client.status !== "blocked" && (
+            <BlacklistEntityButton
+              entityType="client"
+              id={client.id}
+              name={client.name}
+              onBlocked={onChanged}
+            />
+          )}
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col space-y-3 text-sm">

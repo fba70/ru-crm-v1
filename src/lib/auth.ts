@@ -52,6 +52,16 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day (every 1 day the session expiration is updated)
     freshAge: 0, // 5 minutes, 0 to disable freshness checks
+    // Serve the session from a short-lived signed cookie instead of hitting
+    // the DB on every request. Without this, every navigation does a fresh
+    // Neon lookup, and a single transient serverless blip makes getSession()
+    // return null → the (protected) layout redirects to /sign-in, which reads
+    // as a random mid-session logout. The cookie is refreshed from the DB
+    // every 5 min (and on sign-in / sign-out), so it stays current.
+    cookieCache: {
+      enabled: true,
+      maxAge: 5 * 60, // 5 minutes
+    },
     additionalFields: {
       activeOrganizationId: {
         type: "string",

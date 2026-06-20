@@ -59,7 +59,16 @@ const FUNNEL_PHASES: FunnelPhase[] = [
 // `deleted` is a soft-delete: marking a client deleted hides it from the
 // lists by default AND drops it from discovery dedup, so a re-scan can re-
 // create it. Flip back to `active` here to restore.
-const STATUSES: EntityStatus[] = ["active", "suspended", "initial", "deleted"]
+// `blocked` is the blocklist suppression — flip back to `active` here to
+// reactivate (it stays blocklisted in the dictionary, so re-blocking on the
+// next discovery run is possible until the entry is removed).
+const STATUSES: EntityStatus[] = [
+  "active",
+  "suspended",
+  "initial",
+  "deleted",
+  "blocked",
+]
 
 // UI display labels (DB enum values stay English).
 const PHASE_LABEL: Record<string, string> = {
@@ -74,6 +83,7 @@ const STATUS_LABEL: Record<string, string> = {
   suspended: "Приостановлен",
   initial: "Новый",
   deleted: "Удалён",
+  blocked: "Заблокирован",
 }
 
 type ClientFormData = {

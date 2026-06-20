@@ -39,7 +39,13 @@ import type { EntityStatus } from "@/db/schema"
 // `deleted` is a soft-delete (hidden from lists by default, excluded from
 // discovery dedup so a re-scan can re-create it). Flip back to `active` to
 // restore.
-const STATUSES: EntityStatus[] = ["active", "suspended", "initial", "deleted"]
+const STATUSES: EntityStatus[] = [
+  "active",
+  "suspended",
+  "initial",
+  "deleted",
+  "blocked",
+]
 const NO_CLIENT = "__none__"
 
 // UI display labels for status (DB enum values stay English).
@@ -48,6 +54,7 @@ const STATUS_LABEL: Record<string, string> = {
   suspended: "Приостановлен",
   initial: "Новый",
   deleted: "Удалён",
+  blocked: "Заблокирован",
 }
 
 type ContactFormData = {

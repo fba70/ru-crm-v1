@@ -13,6 +13,7 @@ import {
   isFreemailDomain,
 } from "@/lib/email-domain"
 import { loadOwnOrgIdentity } from "@/server/org-identity"
+import { loadOrgBlocklist } from "@/server/blocklist"
 import { cleanPhone } from "@/server/parsers/_shared"
 import { randomUUID } from "crypto"
 
@@ -350,6 +351,11 @@ export async function previewDiscovery(opts?: {
   const period = opts?.period ?? "all"
   const cutoff = periodCutoff(period)
   const ownOrg = await loadOwnOrgIdentity(activeOrgId)
+  // Blocklist guard — consulted at the SAME candidate drop-sites as the own-org
+  // guard so business-irrelevant entities never surface. Re-aggregated each
+  // preview, so adding an entry retroactively suppresses already-parsed items
+  // on the next run (no re-parse needed). See refs/blocklist.md.
+  const blocklist = await loadOrgBlocklist(activeOrgId)
 
   // ── 1. Eligible rows. Any provider — the per-provider gate is gone now
   //       that gchat/gdrive emit canonical participants. ───────────────
@@ -548,13 +554,15 @@ export async function previewDiscovery(opts?: {
       // never attributed to the owner's own org. Soft-`deleted` clients are NOT
       // skipped — they resurface as candidates and are revived on apply.
       if (ownOrg.isOwnCompanyKey(key)) continue
+      // Blocklisted company → never a candidate, never attributes contacts.
+      if (blocklist.isBlockedCompanyKey(key)) continue
       rowKeys.add(key)
       if (!companyKeyToName.has(key)) companyKeyToName.set(key, sig.spelling)
       // Record the row company-key for every alias too (so an alias-only
       // mention in another row still attributes to the same client).
       for (const a of sig.aliases) {
         const ak = companyMatchKey(a)
-        if (ak && !ownOrg.isOwnCompanyKey(ak)) {
+        if (ak && !ownOrg.isOwnCompanyKey(ak) && !blocklist.isBlockedCompanyKey(ak)) {
           rowKeys.add(ak)
           if (!companyKeyToName.has(ak)) companyKeyToName.set(ak, a)
         }
@@ -605,7 +613,11 @@ export async function previewDiscovery(opts?: {
     // the "sole business domain" and get stamped onto the external company),
     // and the owner's address never anchors a link.
     const participants = extractParticipants(meta).filter(
-      (p) => !ownOrg.isOwnDomain(extractEmailDomain(p.email)),
+      (p) =>
+        !ownOrg.isOwnDomain(extractEmailDomain(p.email)) &&
+        // Blocked email (or any address under a blocked domain) → never a
+        // contact candidate, never feeds webUrl inference, never anchors a link.
+        !blocklist.isBlockedEmail(p.email),
     )
     participantsByRow.set(row.id, participants)
     for (const p of participants) {
@@ -704,7 +716,7 @@ export async function previewDiscovery(opts?: {
     // company the email is about).
     for (const u of b.parserWebUrls) {
       const d = extractWebsiteDomain(u)
-      if (d && !ownOrg.isOwnDomain(d)) {
+      if (d && !ownOrg.isOwnDomain(d) && !blocklist.isBlockedDomain(d)) {
         inferredWebUrl = u
         webUrlLevel = "high"
         break
@@ -902,7 +914,8 @@ export async function previewDiscovery(opts?: {
     // Skip a client whose stored website is actually the owner's own domain
     // (legacy bad data from before this guard) — it must not claim the owner's
     // domain for contact linking.
-    if (domain && !ownOrg.isOwnDomain(domain)) clientByDomain.push({ client: lc, domain })
+    if (domain && !ownOrg.isOwnDomain(domain) && !blocklist.isBlockedDomain(domain))
+      clientByDomain.push({ client: lc, domain })
     for (const s of [c.name, ...(c.aliases ?? [])]) addClientKey(lc, companyMatchKey(s))
   }
   for (const cand of clientCandidates) {
@@ -912,7 +925,8 @@ export async function previewDiscovery(opts?: {
     }
     if (cand.inferredWebUrl) {
       const domain = extractWebsiteDomain(cand.inferredWebUrl)
-      if (domain) clientByDomain.push({ client: lc, domain })
+      if (domain && !blocklist.isBlockedDomain(domain))
+        clientByDomain.push({ client: lc, domain })
     }
     addClientKey(lc, cand.normalisedKey)
     for (const a of cand.aliases) addClientKey(lc, companyMatchKey(a))
@@ -1062,6 +1076,9 @@ export async function applyDiscovery(
 ): Promise<ApplyDiscoveryResult> {
   const { session, activeOrgId } = await requireOrgContext()
   const ownOrg = await loadOwnOrgIdentity(activeOrgId)
+  // Defense-in-depth against a stale preview: a block added between preview and
+  // apply must still suppress the entity.
+  const blocklist = await loadOrgBlocklist(activeOrgId)
 
   // ── 1. Insert clients ───────────────────────────────────────────────
   // Re-check existing keys first (parallel-session safety). `deleted` clients
@@ -1110,6 +1127,8 @@ export async function applyDiscovery(
     // Never create the owner's own company (defence in depth — the preview
     // already excludes it, but a stale / forged payload must not slip it past).
     if (ownOrg.isOwnCompanyKey(c.normalisedKey)) return false
+    // Never create a blocklisted company (defence in depth).
+    if (blocklist.isBlockedCompanyKey(c.normalisedKey)) return false
     // Operator-confirmed branch: the candidate was flagged as a possible
     // duplicate of an existing client but explicitly selected → create a
     // separate client even though the normalised key collides (e.g. a
@@ -1296,7 +1315,10 @@ export async function applyDiscovery(
   }
   const toCreateContacts = input.candidates.contacts.filter(
     (c) =>
-      selectedContactEmails.has(c.email) && !existingContactEmails.has(c.email),
+      selectedContactEmails.has(c.email) &&
+      !existingContactEmails.has(c.email) &&
+      // Defence in depth: skip blocked emails / blocked-domain addresses.
+      !blocklist.isBlockedEmail(c.email),
   )
   // Split: candidates whose email matches a soft-deleted contact are REVIVED
   // (reuse the row); the rest are inserted fresh.

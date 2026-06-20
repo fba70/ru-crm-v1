@@ -213,9 +213,26 @@ export const entityStatus = pgEnum("entity_status", [
   "suspended",
   "initial",
   "deleted",
+  // `blocked` — a real but business-irrelevant entity, suppressed by the
+  // discovery blocklist (see `discovery_blocklist` + refs/blocklist.md).
+  // Hidden from default lists and treated as ABSENT by discovery/dedup (like
+  // `deleted`), but NOT auto-revived — the dictionary keeps it suppressed.
+  "blocked",
 ])
 
 export type EntityStatus = (typeof entityStatus.enumValues)[number]
+
+// Discovery blocklist entry kind (see refs/blocklist.md). `match_key` is the
+// normalised canonical form per kind: lower(email) | bare host | companyMatchKey
+// | personMatchKey.
+export const blocklistKind = pgEnum("blocklist_kind", [
+  "email",
+  "domain",
+  "company",
+  "person",
+])
+
+export type BlocklistKind = (typeof blocklistKind.enumValues)[number]
 
 // Order lifecycle. `draft` (internal) → `awaiting_client` (handed to the
 // client for review/confirm via a guest link) → `confirmed` (back to
@@ -428,6 +445,46 @@ export const contact = pgTable(
     index("contact_userId_idx").on(table.userId),
     index("contact_clientId_idx").on(table.clientId),
     index("contact_status_idx").on(table.status),
+  ],
+)
+
+// Org-scoped blocklist dictionary (see refs/blocklist.md). The AUTHORITATIVE
+// source of truth for suppressing business-irrelevant entities BEFORE discovery
+// materialises a client/contact row (a row flag can't do that — most blocked
+// entities have no row yet, and blocking is by domain/name, not by row). Keyed
+// the same way the engines read `metadata_json`: lower(email) / bare host /
+// companyMatchKey / personMatchKey.
+export const discoveryBlocklist = pgTable(
+  "discovery_blocklist",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: blocklistKind("kind").notNull(),
+    // Normalised canonical form (the dedup key): lower(email) | bare host |
+    // companyMatchKey | personMatchKey. Makes "ООО АСТ" / "AST" / "АСТ" collapse
+    // to one entry.
+    matchKey: text("match_key").notNull(),
+    // Raw value as entered, for display.
+    label: text("label").notNull(),
+    // Optional operator "why" note.
+    note: text("note"),
+    // Provenance — which source item raised it, if blocked from a candidate.
+    sourceItemId: text("source_item_id"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("discovery_blocklist_organizationId_idx").on(table.organizationId),
+    // Adding the same block twice is a no-op (onConflictDoNothing).
+    uniqueIndex("discovery_blocklist_org_kind_key_uidx").on(
+      table.organizationId,
+      table.kind,
+      table.matchKey,
+    ),
   ],
 )
 

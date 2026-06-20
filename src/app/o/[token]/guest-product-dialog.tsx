@@ -20,6 +20,7 @@ const STATUS_LABEL: Record<EntityStatus, string> = {
   suspended: "Приостановлен",
   initial: "Новый",
   deleted: "Удалён",
+  blocked: "Заблокирован",
 }
 
 // Humanize a DB field name into a readable label: snake/camel → spaced,
