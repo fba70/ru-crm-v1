@@ -5,6 +5,10 @@ import { client, contact, sourceItem, type EntityStatus } from "@/db/schema"
 import { and, eq, isNull, ne, or, sql, inArray, gte } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { companyMatchKey, personMatchKey } from "@/lib/translit-ru"
+import {
+  CompanyUnionFind,
+  extractCompanySignals,
+} from "@/lib/company-canonical"
 import { isAutomatedEmail } from "@/lib/is-automated-email"
 import {
   domainMatches,
@@ -411,7 +415,73 @@ export async function previewDiscovery(opts?: {
       .where(eq(contact.organizationId, activeOrgId)),
   ])
 
-  // Cross-script match key → an existing client (first wins) for the
+  // ── Company-identity canonicalisation ───────────────────────────────
+  // Collapse spellings that belong to ONE real company into a single canonical
+  // key BEFORE name-keyed bucketing, so it can't surface as two clients. Two
+  // signals are unioned:
+  //   • declared aliases    — `organizations[].aliases` (alias → real name)
+  //   • shared website host — same parser-attributed apex domain (www-insensitive
+  //                           via extractWebsiteDomain) ties two names together
+  // Domain edges use ONLY the high-confidence parser webUrl (organizations[].
+  // webUrl) and existing clients' stored webUrl — never the relaxed "sole
+  // business domain" inference — so a bad inferred domain can't over-merge two
+  // genuinely-distinct companies. Existing clients seed the UF too, so a new
+  // spelling that shares a domain with an existing client canonicalises onto it
+  // (→ recognised as existing, enriched, never re-created).
+  const companyUF = new CompanyUnionFind()
+  const domainToCompanyKey = new Map<string, string>()
+  // Raw name-key → the authoritative org name to display (prefer an
+  // `organizations[].name` over a bare `companies[]` entry / alias).
+  const authoritativeNameByKey = new Map<string, string>()
+  const addDomainEdge = (rawDomain: string, key: string) => {
+    const domain = (rawDomain ?? "").trim().toLowerCase()
+    if (!domain || ownOrg.isOwnDomain(domain) || blocklist.isBlockedDomain(domain)) return
+    const prev = domainToCompanyKey.get(domain)
+    if (prev) companyUF.union(key, prev)
+    else domainToCompanyKey.set(domain, key)
+  }
+  for (const row of rows) {
+    const meta = (row.metadataJson as Record<string, unknown> | null) ?? {}
+    for (const sig of extractCompanySignals(meta)) {
+      const key = companyMatchKey(sig.spelling)
+      if (!key) continue
+      companyUF.add(key)
+      if (sig.authoritative && !authoritativeNameByKey.has(key)) {
+        authoritativeNameByKey.set(key, sig.spelling)
+      }
+      // Alias → real-name: make the alias a child of the name (name stays root).
+      for (const a of sig.aliases) {
+        const ak = companyMatchKey(a)
+        if (ak) companyUF.union(ak, key)
+      }
+      if (sig.webUrl) addDomainEdge(extractWebsiteDomain(sig.webUrl), key)
+    }
+  }
+  // Seed existing clients (live only) so a candidate matching one by alias or
+  // domain canonicalises onto the existing client's key.
+  for (const c of existingClients) {
+    if (c.status === "deleted") continue
+    const nameKey = companyMatchKey(c.name)
+    if (nameKey) {
+      companyUF.add(nameKey)
+      if (!authoritativeNameByKey.has(nameKey)) authoritativeNameByKey.set(nameKey, c.name)
+      for (const a of c.aliases ?? []) {
+        const ak = companyMatchKey(a)
+        if (ak) companyUF.union(ak, nameKey)
+      }
+      const dom = c.webUrl ? extractWebsiteDomain(c.webUrl) : ""
+      if (dom) addDomainEdge(dom, nameKey)
+    }
+  }
+  const canonicalKey = (key: string): string => (key ? companyUF.find(key) : key)
+  // Canonical root → best display name (the authoritative org name in its class).
+  const canonicalDisplayName = new Map<string, string>()
+  for (const [key, name] of authoritativeNameByKey) {
+    const root = companyUF.find(key)
+    if (!canonicalDisplayName.has(root)) canonicalDisplayName.set(root, name)
+  }
+
+  // Cross-script CANONICAL match key → an existing client (first wins) for the
   // possible-duplicate flag, plus the set of exact (lowercased) existing
   // names/aliases so we can still silently merge truly-identical companies
   // without a prompt. Both the name AND every stored alias contribute keys,
@@ -433,7 +503,7 @@ export async function previewDiscovery(opts?: {
     if (c.status === "deleted") continue
     const spellings = [c.name, ...(c.aliases ?? [])]
     for (const s of spellings) {
-      const key = companyMatchKey(s)
+      const key = canonicalKey(companyMatchKey(s))
       if (key && !existingClientByKey.has(key)) {
         existingClientByKey.set(key, { id: c.id, name: c.name, webUrl: c.webUrl })
       }
@@ -516,55 +586,37 @@ export async function previewDiscovery(opts?: {
 
     // Companies — fold the flat `companies` list and the enriched
     // `organizations` list (name + aliases + webUrl) into one stream of
-    // {spelling, key, webUrl?} signals, keyed cross-script so АСТ ≡ AST.
+    // signals, keyed cross-script so АСТ ≡ AST, then collapsed to the canonical
+    // company key (`canonicalKey`) so declared-alias / shared-domain spellings
+    // bucket as ONE candidate.
     const rowKeys = rowCompanyKeys.get(row.id) ?? new Set<string>()
     rowCompanyKeys.set(row.id, rowKeys)
 
-    type CompanySignal = { spelling: string; aliases: string[]; webUrl: string }
-    const companySignals: CompanySignal[] = []
-    const rawCompanies = meta.companies
-    if (Array.isArray(rawCompanies)) {
-      for (const item of rawCompanies) {
-        if (typeof item !== "string") continue
-        const name = item.trim()
-        if (name) companySignals.push({ spelling: name, aliases: [], webUrl: "" })
-      }
-    }
-    const rawOrgs = meta.organizations
-    if (Array.isArray(rawOrgs)) {
-      for (const o of rawOrgs) {
-        if (!o || typeof o !== "object") continue
-        const rec = o as Record<string, unknown>
-        const name = (typeof rec.name === "string" ? rec.name : "").trim()
-        if (!name) continue
-        const aliases = Array.isArray(rec.aliases)
-          ? rec.aliases.filter((a): a is string => typeof a === "string").map((a) => a.trim()).filter(Boolean)
-          : []
-        const webUrl = (typeof rec.webUrl === "string" ? rec.webUrl : "").trim()
-        companySignals.push({ spelling: name, aliases, webUrl })
-      }
-    }
-
-    for (const sig of companySignals) {
-      const key = companyMatchKey(sig.spelling)
-      if (!key) continue
+    for (const sig of extractCompanySignals(meta)) {
+      const rawKey = companyMatchKey(sig.spelling)
+      if (!rawKey) continue
       // Skip the CRM owner's OWN company (it's the email recipient, not a
       // client). Excluding it here keeps it out of client candidates, out of
       // webUrl enrichment, AND out of `rowKeys` so contacts in the thread are
       // never attributed to the owner's own org. Soft-`deleted` clients are NOT
       // skipped — they resurface as candidates and are revived on apply.
-      if (ownOrg.isOwnCompanyKey(key)) continue
+      if (ownOrg.isOwnCompanyKey(rawKey)) continue
       // Blocklisted company → never a candidate, never attributes contacts.
-      if (blocklist.isBlockedCompanyKey(key)) continue
+      if (blocklist.isBlockedCompanyKey(rawKey)) continue
+      // Canonical key — collapses this spelling onto any company it was unioned
+      // with (declared alias / shared website domain).
+      const key = canonicalKey(rawKey)
+      const displayName = canonicalDisplayName.get(key) ?? sig.spelling
       rowKeys.add(key)
-      if (!companyKeyToName.has(key)) companyKeyToName.set(key, sig.spelling)
+      if (!companyKeyToName.has(key)) companyKeyToName.set(key, displayName)
       // Record the row company-key for every alias too (so an alias-only
-      // mention in another row still attributes to the same client).
+      // mention in another row still attributes to the same client). Aliases
+      // canonicalise onto the same key, so this is usually a no-op now — kept
+      // for cross-row mentions the canonicaliser didn't see.
       for (const a of sig.aliases) {
         const ak = companyMatchKey(a)
         if (ak && !ownOrg.isOwnCompanyKey(ak) && !blocklist.isBlockedCompanyKey(ak)) {
-          rowKeys.add(ak)
-          if (!companyKeyToName.has(ak)) companyKeyToName.set(ak, a)
+          rowKeys.add(canonicalKey(ak))
         }
       }
       // Silent-merge only EXACT-name matches against an existing client/alias
@@ -574,7 +626,7 @@ export async function previewDiscovery(opts?: {
       const isExactExisting =
         exactExistingClientNames.has(sig.spelling.toLowerCase()) ||
         sig.aliases.some((a) => exactExistingClientNames.has(a.toLowerCase()))
-      // If this company matches an EXISTING client (by key), record a
+      // If this company matches an EXISTING client (by canonical key), record a
       // blank-fill enrichment regardless of whether it's also a candidate —
       // so an existing client with no website can still gain one from a
       // freshly-discovered signal (parser webUrl or a label-matched domain).
@@ -596,7 +648,7 @@ export async function previewDiscovery(opts?: {
         if (sig.webUrl) bucket.parserWebUrls.add(sig.webUrl)
       } else if (!isExactExisting) {
         clientBuckets.set(key, {
-          displayName: sig.spelling,
+          displayName,
           normalisedKey: key,
           spellings: new Set([sig.spelling, ...sig.aliases]),
           parserWebUrls: sig.webUrl ? new Set([sig.webUrl]) : new Set(),
@@ -703,7 +755,7 @@ export async function previewDiscovery(opts?: {
         if (!domain || isFreemailDomain(domain)) continue
         businessDomains.add(domain)
         const label = secondLevelLabel(domain)
-        if (!labelMatchUrl && label && companyMatchKey(label) === b.normalisedKey) {
+        if (!labelMatchUrl && label && canonicalKey(companyMatchKey(label)) === b.normalisedKey) {
           labelMatchUrl = `https://${domain}`
         }
       }
@@ -916,7 +968,8 @@ export async function previewDiscovery(opts?: {
     // domain for contact linking.
     if (domain && !ownOrg.isOwnDomain(domain) && !blocklist.isBlockedDomain(domain))
       clientByDomain.push({ client: lc, domain })
-    for (const s of [c.name, ...(c.aliases ?? [])]) addClientKey(lc, companyMatchKey(s))
+    for (const s of [c.name, ...(c.aliases ?? [])])
+      addClientKey(lc, canonicalKey(companyMatchKey(s)))
   }
   for (const cand of clientCandidates) {
     const lc: LinkClient = {
@@ -929,7 +982,7 @@ export async function previewDiscovery(opts?: {
         clientByDomain.push({ client: lc, domain })
     }
     addClientKey(lc, cand.normalisedKey)
-    for (const a of cand.aliases) addClientKey(lc, companyMatchKey(a))
+    for (const a of cand.aliases) addClientKey(lc, canonicalKey(companyMatchKey(a)))
   }
 
   // Link-side contacts: DB unlinked contacts + new candidates, with the set of
@@ -1121,6 +1174,19 @@ export async function applyDiscovery(
   for (const k of existingClientByKey.keys()) deletedClientByKey.delete(k)
   const existingClientKeys = new Set(existingClientByKey.keys())
 
+  // Apex website domain → existing LIVE client id. A selected candidate that
+  // resolves to the same domain as an existing client (even under a name whose
+  // key differs — e.g. a stale preview taken before the client existed) is
+  // recognised as the same company and NOT re-created. www-insensitive via
+  // extractWebsiteDomain. Defence-in-depth complement to the preview-side
+  // canonicaliser (which already merges same-domain candidates within a run).
+  const existingClientByDomain = new Map<string, string>()
+  for (const c of existingClients) {
+    if (c.status === "deleted") continue
+    const dom = c.webUrl ? extractWebsiteDomain(c.webUrl) : ""
+    if (dom && !existingClientByDomain.has(dom)) existingClientByDomain.set(dom, c.id)
+  }
+
   const selectedClientKeys = new Set(input.selectedClientKeys)
   const toCreateClients = input.candidates.clients.filter((c) => {
     if (!selectedClientKeys.has(c.normalisedKey)) return false
@@ -1136,6 +1202,9 @@ export async function applyDiscovery(
     // accidental dups / parallel-session races. Keys matching a soft-deleted
     // client fall through here and are REVIVED (not inserted) in the split below.
     if (c.possibleDuplicate) return true
+    // Same website domain as an existing live client → it's that company.
+    const dom = c.inferredWebUrl ? extractWebsiteDomain(c.inferredWebUrl) : ""
+    if (dom && existingClientByDomain.has(dom)) return false
     return !existingClientKeys.has(c.normalisedKey)
   })
 
