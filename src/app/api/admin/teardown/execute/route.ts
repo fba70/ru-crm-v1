@@ -24,7 +24,7 @@ function errorResponse(error: unknown) {
 }
 
 // Hard-delete a source's footprint. Body:
-// { sourceId, confirmText, includeSharedClientIds[], includeSharedContactIds[] }.
+// { sourceId, confirmText, deleteClientIds[], deleteContactIds[] }.
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null)
@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
     const counts = await executeSourceTeardown({
       sourceId,
       confirmText,
-      includeSharedClientIds: asIds(b.includeSharedClientIds),
-      includeSharedContactIds: asIds(b.includeSharedContactIds),
+      deleteClientIds: asIds(b.deleteClientIds),
+      deleteContactIds: asIds(b.deleteContactIds),
     })
     return NextResponse.json({ counts })
   } catch (error) {

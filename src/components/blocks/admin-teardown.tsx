@@ -2,9 +2,10 @@
 
 // Admin "Сброс источника" (source teardown) tab. Hard-deletes everything one
 // source produced — its items + R2 markdown, the cards from them, and the
-// clients/contacts/deals/tasks they triggered — and resets the sync cursor, so
-// the same test/demo can be replayed cleanly. Dry-run preview → typed confirm
-// (re-checked server-side) → execute. See refs/source-teardown.md.
+// clients/contacts/deals/tasks/orders they triggered — and resets the sync
+// cursor, so the same test/demo can be replayed cleanly. Dry-run preview →
+// per-row selection → typed confirm (re-checked server-side) → execute.
+// See refs/source-teardown.md.
 
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
@@ -19,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { AlertTriangle, Loader, Trash2 } from "lucide-react"
+import { Loader, Trash2 } from "lucide-react"
 import type { TeardownPreview } from "@/app/api/admin/teardown/preview/route"
 
 type Source = {
@@ -31,15 +32,13 @@ type Source = {
   itemCount: number
 }
 
-const COUNT_LABELS: { key: keyof TeardownPreview["counts"]; label: string }[] = [
+// Source footprint — ALWAYS deleted (the source's own items + their blobs/cards),
+// independent of which clients/contacts the operator checks.
+const FOOTPRINT_LABELS: { key: keyof TeardownPreview["counts"]; label: string }[] = [
   { key: "sourceItems", label: "Элементы" },
   { key: "childItems", label: "Дочерние" },
   { key: "r2Objects", label: "Файлы R2" },
   { key: "cards", label: "Карточки" },
-  { key: "clients", label: "Клиенты" },
-  { key: "contacts", label: "Контакты" },
-  { key: "deals", label: "Сделки" },
-  { key: "tasks", label: "Задачи" },
 ]
 
 export function AdminTeardown() {
@@ -49,8 +48,10 @@ export function AdminTeardown() {
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [executing, setExecuting] = useState(false)
   const [confirmText, setConfirmText] = useState("")
-  const [sharedClients, setSharedClients] = useState<Set<string>>(new Set())
-  const [sharedContacts, setSharedContacts] = useState<Set<string>>(new Set())
+  // Explicit per-row selection (every row is freely toggleable). Initialised to
+  // the exclusive rows when a preview loads.
+  const [selClients, setSelClients] = useState<Set<string>>(new Set())
+  const [selContacts, setSelContacts] = useState<Set<string>>(new Set())
 
   const loadSources = useCallback(async () => {
     try {
@@ -71,8 +72,8 @@ export function AdminTeardown() {
     setLoadingPreview(true)
     setPreview(null)
     setConfirmText("")
-    setSharedClients(new Set())
-    setSharedContacts(new Set())
+    setSelClients(new Set())
+    setSelContacts(new Set())
     try {
       const res = await fetch("/api/admin/teardown/preview", {
         method: "POST",
@@ -84,7 +85,12 @@ export function AdminTeardown() {
         toast.error(data.error ?? "Не удалось построить предпросмотр")
         return
       }
-      setPreview(data as TeardownPreview)
+      const p = data as TeardownPreview
+      setPreview(p)
+      // Default selection = nothing. The operator reviews the list and
+      // explicitly checks the rows they want deleted.
+      setSelClients(new Set())
+      setSelContacts(new Set())
     } catch {
       toast.error("Ошибка сети")
     } finally {
@@ -110,8 +116,8 @@ export function AdminTeardown() {
         body: JSON.stringify({
           sourceId: preview.source.id,
           confirmText,
-          includeSharedClientIds: [...sharedClients],
-          includeSharedContactIds: [...sharedContacts],
+          deleteClientIds: [...selClients],
+          deleteContactIds: [...selContacts],
         }),
       })
       const data = await res.json()
@@ -122,7 +128,8 @@ export function AdminTeardown() {
       const c = data.counts as TeardownPreview["counts"]
       toast.success(
         `Удалено · элементов ${c.sourceItems} · карточек ${c.cards} · ` +
-          `клиентов ${c.clients} · контактов ${c.contacts} · сделок ${c.deals} · задач ${c.tasks}`,
+          `клиентов ${c.clients} · контактов ${c.contacts} · сделок ${c.deals} · ` +
+          `задач ${c.tasks} · заказов ${c.orders}`,
       )
       // Reload the picker (item counts changed) + re-preview the same source.
       await loadSources()
@@ -146,9 +153,10 @@ export function AdminTeardown() {
       <div className="space-y-1">
         <p className="text-sm text-muted-foreground">
           Полностью удаляет всё, что породил выбранный источник (элементы, файлы
-          R2, карточки и созданные из них клиенты / контакты / сделки / задачи),
-          и сбрасывает курсор синхронизации — чтобы тот же тестовый сценарий
-          можно было прогнать заново «с чистого листа». Действие необратимо.
+          R2, карточки и созданные из них клиенты / контакты / сделки / задачи /
+          заказы), и сбрасывает курсор синхронизации — чтобы тот же тестовый
+          сценарий можно было прогнать заново «с чистого листа». Действие
+          необратимо.
         </p>
       </div>
 
@@ -177,9 +185,9 @@ export function AdminTeardown() {
 
       {preview && !loadingPreview && (
         <div className="space-y-5">
-          {/* Counts */}
+          {/* Counts — footprint (always deleted) + live selection */}
           <div className="flex flex-wrap gap-2">
-            {COUNT_LABELS.map((c) => (
+            {FOOTPRINT_LABELS.map((c) => (
               <div
                 key={c.key}
                 className="rounded-md border px-3 py-1.5 text-sm"
@@ -188,43 +196,35 @@ export function AdminTeardown() {
                 <span className="font-medium">{preview.counts[c.key]}</span>
               </div>
             ))}
+            <div className="rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-sm">
+              <span className="text-muted-foreground">Выбрано клиентов: </span>
+              <span className="font-medium">{selClients.size}</span>
+            </div>
+            <div className="rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-sm">
+              <span className="text-muted-foreground">Выбрано контактов: </span>
+              <span className="font-medium">{selContacts.size}</span>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Счётчики сделок/задач показаны для набора по умолчанию (только
-            эксклюзивные записи). При включении «общих» записей итог
-            пересчитывается на сервере.
+            Элементы / файлы R2 / карточки источника удаляются всегда. Клиенты и
+            контакты — только отмеченные ниже (по умолчанию ничего не выбрано).
+            Связанные сделки, задачи и заказы выбранных клиентов удаляются вместе
+            с ними; их итоговое число считается на сервере и попадёт в отчёт.
           </p>
-
-          {/* Order-blocked clients */}
-          {preview.blockedByOrders.length > 0 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 space-y-1">
-              <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-300">
-                <AlertTriangle className="h-4 w-4" />
-                Пропущены (есть заказы — удалить нельзя)
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {preview.blockedByOrders.map((b) => b.name).join(", ")}
-              </div>
-            </div>
-          )}
 
           {/* Clients */}
           <EntityList
             title="Клиенты"
-            rows={preview.clients.filter((c) => !c.hasOrders)}
-            sharedSelected={sharedClients}
-            onToggleShared={(id) =>
-              toggle(sharedClients, setSharedClients, id)
-            }
+            rows={preview.clients}
+            selected={selClients}
+            onToggle={(id) => toggle(selClients, setSelClients, id)}
           />
           {/* Contacts */}
           <EntityList
             title="Контакты"
             rows={preview.contacts}
-            sharedSelected={sharedContacts}
-            onToggleShared={(id) =>
-              toggle(sharedContacts, setSharedContacts, id)
-            }
+            selected={selContacts}
+            onToggle={(id) => toggle(selContacts, setSelContacts, id)}
           />
 
           {/* Typed confirm + execute */}
@@ -265,18 +265,20 @@ type EntityRow = {
   name: string
   exclusive: boolean
   otherItemCount: number
+  status: string
+  orderCount?: number
 }
 
 function EntityList({
   title,
   rows,
-  sharedSelected,
-  onToggleShared,
+  selected,
+  onToggle,
 }: {
   title: string
   rows: EntityRow[]
-  sharedSelected: Set<string>
-  onToggleShared: (id: string) => void
+  selected: Set<string>
+  onToggle: (id: string) => void
 }) {
   if (rows.length === 0) {
     return (
@@ -289,19 +291,29 @@ function EntityList({
   return (
     <div className="space-y-1.5">
       <div className="text-sm font-medium">
-        {title} ({rows.length})
+        {title} ({selected.size}/{rows.length})
       </div>
       <div className="rounded-md border divide-y">
         {rows.map((r) => (
-          <div key={r.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+          <label
+            key={r.id}
+            className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-muted/40"
+          >
             <Checkbox
-              checked={r.exclusive || sharedSelected.has(r.id)}
-              disabled={r.exclusive}
-              onCheckedChange={() => {
-                if (!r.exclusive) onToggleShared(r.id)
-              }}
+              checked={selected.has(r.id)}
+              onCheckedChange={() => onToggle(r.id)}
             />
             <span className="min-w-0 flex-1 truncate">{r.name}</span>
+            {r.status === "deleted" && (
+              <Badge variant="outline" className="text-[10px] px-1 py-0 text-muted-foreground">
+                уже удалён
+              </Badge>
+            )}
+            {typeof r.orderCount === "number" && r.orderCount > 0 && (
+              <Badge className="text-[10px] px-1 py-0 bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30">
+                заказов: {r.orderCount}
+              </Badge>
+            )}
             {r.exclusive ? (
               <Badge variant="secondary" className="text-[10px] px-1 py-0">
                 только этот источник
@@ -311,7 +323,7 @@ function EntityList({
                 также в {r.otherItemCount} др. элем.
               </Badge>
             )}
-          </div>
+          </label>
         ))}
       </div>
     </div>

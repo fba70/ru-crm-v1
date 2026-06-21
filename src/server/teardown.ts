@@ -156,13 +156,19 @@ type ClientMatch = {
   name: string
   exclusive: boolean
   otherItemCount: number
-  hasOrders: boolean
+  // How many orders + order-requests reference this client. They are
+  // cascade-deleted along with the client (no longer a blocker).
+  orderCount: number
+  // 'active' | 'deleted' | 'blocked' — soft-deleted rows are included so a
+  // reset also clears tombstones; the UI flags them.
+  status: string
 }
 type ContactMatch = {
   id: string
   name: string
   exclusive: boolean
   otherItemCount: number
+  status: string
 }
 
 type Resolved = {
@@ -233,7 +239,8 @@ async function resolve(sourceId: string): Promise<Resolved> {
     for (const k of contactKeysFromMeta(meta)) addKey(contactKeyToItems, k, it.id)
   }
 
-  // 5. Clients (skip soft-deleted) — classify by company keys.
+  // 5. Clients (INCLUDING soft-deleted, so a reset also clears tombstones) —
+  //    classify by company keys.
   const clientRows = await db
     .select({
       id: client.id,
@@ -244,7 +251,6 @@ async function resolve(sourceId: string): Promise<Resolved> {
     .from(client)
     .where(eq(client.organizationId, orgId))
   const matchedClients = clientRows
-    .filter((c) => c.status !== "deleted")
     .map((c) => {
       const keys = [c.name, ...(c.aliases ?? [])]
         .map((s) => companyMatchKey(s))
@@ -258,21 +264,25 @@ async function resolve(sourceId: string): Promise<Resolved> {
     })
     .filter((m) => m.matched)
 
-  // 6. Order check — clients with an order OR order_request can't be hard-
-  //    deleted (both FK-restrict on client). Detect → skip + warn.
+  // 6. Order counts — orders + order_requests reference clients via FK-restrict,
+  //    so they MUST be cascade-deleted before the client. Tally per client (no
+  //    longer a blocker — the UI shows the count so the operator knows orders go
+  //    too).
   const matchedClientIds = matchedClients.map((m) => m.row.id)
-  const orderBlockedIds = new Set<string>()
+  const orderCountByClient = new Map<string, number>()
   if (matchedClientIds.length > 0) {
+    const bump = (id: string) =>
+      orderCountByClient.set(id, (orderCountByClient.get(id) ?? 0) + 1)
     const orderRows = await db
       .select({ clientId: order.clientId })
       .from(order)
       .where(inArray(order.clientId, matchedClientIds))
-    for (const r of orderRows) orderBlockedIds.add(r.clientId)
+    for (const r of orderRows) bump(r.clientId)
     const reqRows = await db
       .select({ clientId: orderRequest.clientId })
       .from(orderRequest)
       .where(inArray(orderRequest.clientId, matchedClientIds))
-    for (const r of reqRows) orderBlockedIds.add(r.clientId)
+    for (const r of reqRows) bump(r.clientId)
   }
 
   const clients: ClientMatch[] = matchedClients.map((m) => ({
@@ -280,10 +290,11 @@ async function resolve(sourceId: string): Promise<Resolved> {
     name: m.row.name,
     exclusive: m.exclusive,
     otherItemCount: m.otherItemCount,
-    hasOrders: orderBlockedIds.has(m.row.id),
+    orderCount: orderCountByClient.get(m.row.id) ?? 0,
+    status: m.row.status,
   }))
 
-  // 7. Contacts (skip soft-deleted) — classify by email + person-name keys.
+  // 7. Contacts (INCLUDING soft-deleted) — classify by email + person-name keys.
   const contactRows = await db
     .select({
       id: contact.id,
@@ -296,7 +307,6 @@ async function resolve(sourceId: string): Promise<Resolved> {
     .from(contact)
     .where(eq(contact.organizationId, orgId))
   const contacts: ContactMatch[] = contactRows
-    .filter((c) => c.status !== "deleted")
     .map((c) => {
       const keys: string[] = []
       const email = (c.email ?? "").trim().toLowerCase()
@@ -318,6 +328,7 @@ async function resolve(sourceId: string): Promise<Resolved> {
       name: m.row.nameNative || m.row.name,
       exclusive: m.exclusive,
       otherItemCount: m.otherItemCount,
+      status: m.row.status,
     }))
 
   // 8. Cards from this source's items.
@@ -395,25 +406,35 @@ export type TeardownPreview = {
     contacts: number
     deals: number
     tasks: number
+    orders: number
   }
   clients: ClientMatch[]
   contacts: ContactMatch[]
-  blockedByOrders: { id: string; name: string }[]
 }
 
-// Count deals + tasks that the default delete set (exclusive, non-order-blocked
-// clients/contacts) would remove.
-async function countDealsAndTasks(
+// Count deals + tasks + orders that a given client/contact delete set would
+// remove (all FK-restrict on client, so they MUST go first).
+async function countCascade(
   clientIds: string[],
   contactIds: string[],
-): Promise<{ dealIds: string[]; taskIds: string[] }> {
+): Promise<{ dealIds: string[]; taskIds: string[]; orderCount: number }> {
   const dealIds: string[] = []
+  let orderCount = 0
   if (clientIds.length > 0) {
     const rows = await db
       .select({ id: deal.id })
       .from(deal)
       .where(inArray(deal.clientId, clientIds))
     for (const r of rows) dealIds.push(r.id)
+    const orderRows = await db
+      .select({ id: order.id })
+      .from(order)
+      .where(inArray(order.clientId, clientIds))
+    const reqRows = await db
+      .select({ id: orderRequest.id })
+      .from(orderRequest)
+      .where(inArray(orderRequest.clientId, clientIds))
+    orderCount = orderRows.length + reqRows.length
   }
   // Tasks linking any deleted deal / client / contact.
   const taskIds = new Set<string>()
@@ -428,7 +449,7 @@ async function countDealsAndTasks(
   await collectTasks(task.clientId, clientIds)
   await collectTasks(task.contactId, contactIds)
   await collectTasks(task.dealId, dealIds)
-  return { dealIds, taskIds: [...taskIds] }
+  return { dealIds, taskIds: [...taskIds], orderCount }
 }
 
 export async function previewSourceTeardown(
@@ -437,12 +458,14 @@ export async function previewSourceTeardown(
   await requireAdmin()
   const r = await resolve(sourceId)
 
-  // Default delete set = exclusive rows; clients also minus order-blocked.
-  const delClientIds = r.clients
-    .filter((c) => c.exclusive && !c.hasOrders)
-    .map((c) => c.id)
+  // Default delete set = exclusive rows (the UI lets the operator toggle any
+  // row freely; this is just the initial count).
+  const delClientIds = r.clients.filter((c) => c.exclusive).map((c) => c.id)
   const delContactIds = r.contacts.filter((c) => c.exclusive).map((c) => c.id)
-  const { dealIds, taskIds } = await countDealsAndTasks(delClientIds, delContactIds)
+  const { dealIds, taskIds, orderCount } = await countCascade(
+    delClientIds,
+    delContactIds,
+  )
 
   return {
     source: r.source,
@@ -455,12 +478,10 @@ export async function previewSourceTeardown(
       contacts: delContactIds.length,
       deals: dealIds.length,
       tasks: taskIds.length,
+      orders: orderCount,
     },
     clients: r.clients,
     contacts: r.contacts,
-    blockedByOrders: r.clients
-      .filter((c) => c.hasOrders)
-      .map((c) => ({ id: c.id, name: c.name })),
   }
 }
 
@@ -469,8 +490,11 @@ export type TeardownCounts = TeardownPreview["counts"]
 export async function executeSourceTeardown(input: {
   sourceId: string
   confirmText: string
-  includeSharedClientIds?: string[]
-  includeSharedContactIds?: string[]
+  // Explicit selection from the UI (every row is freely toggleable). Validated
+  // server-side to be a subset of the resolved matched set — never an arbitrary
+  // client/contact id.
+  deleteClientIds?: string[]
+  deleteContactIds?: string[]
 }): Promise<TeardownCounts> {
   const { userId } = await requireAdmin()
   const r = await resolve(input.sourceId)
@@ -483,33 +507,41 @@ export async function executeSourceTeardown(input: {
     )
   }
 
-  const sharedClientOptIn = new Set(input.includeSharedClientIds ?? [])
-  const sharedContactOptIn = new Set(input.includeSharedContactIds ?? [])
+  // Intersect the requested ids with the matched set (drop anything not in it).
+  const matchedClientIds = new Set(r.clients.map((c) => c.id))
+  const matchedContactIds = new Set(r.contacts.map((c) => c.id))
+  const requestedClients = new Set(input.deleteClientIds ?? [])
+  const requestedContacts = new Set(input.deleteContactIds ?? [])
+  const finalClientIds = [...requestedClients].filter((id) =>
+    matchedClientIds.has(id),
+  )
+  const finalContactIds = [...requestedContacts].filter((id) =>
+    matchedContactIds.has(id),
+  )
 
-  // Final sets = exclusive + opted-in shared, minus order-blocked clients.
-  const finalClientIds = r.clients
-    .filter(
-      (c) => !c.hasOrders && (c.exclusive || sharedClientOptIn.has(c.id)),
-    )
-    .map((c) => c.id)
-  const finalContactIds = r.contacts
-    .filter((c) => c.exclusive || sharedContactOptIn.has(c.id))
-    .map((c) => c.id)
-
-  const { dealIds, taskIds } = await countDealsAndTasks(
+  const { dealIds, taskIds, orderCount } = await countCascade(
     finalClientIds,
     finalContactIds,
   )
 
   // ── Delete in FK-safe order (see refs/source-teardown.md §3) ──────────
-  // R2 objects → tasks → deals → cards → contacts → clients → source_items →
-  // reset cursor → teardown_log.
+  // R2 objects → tasks → deals → orders(+requests) → cards → contacts →
+  // clients → source_items → reset cursor → teardown_log.
   const r2Deleted = await deleteFromR2(r.r2Keys)
 
   if (taskIds.length > 0)
     await db.delete(task).where(inArray(task.id, taskIds))
   if (dealIds.length > 0)
     await db.delete(deal).where(inArray(deal.id, dealIds)) // cascades deal_contact
+  if (finalClientIds.length > 0) {
+    // Orders + order-requests FK-restrict on client → delete before the client.
+    // `order` cascades order_item + order_access_link; `order_request` cascades
+    // order_request_item.
+    await db.delete(order).where(inArray(order.clientId, finalClientIds))
+    await db
+      .delete(orderRequest)
+      .where(inArray(orderRequest.clientId, finalClientIds))
+  }
   if (r.cardIds.length > 0)
     await db.delete(card).where(inArray(card.id, r.cardIds)) // cascades card_* junctions
   if (finalContactIds.length > 0)
@@ -535,6 +567,7 @@ export async function executeSourceTeardown(input: {
     contacts: finalContactIds.length,
     deals: dealIds.length,
     tasks: taskIds.length,
+    orders: orderCount,
   }
 
   await db.insert(teardownLog).values({
