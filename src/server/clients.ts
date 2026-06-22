@@ -9,7 +9,7 @@ import {
   type EntityStatus,
   type ClientLookupCandidateJson,
 } from "@/db/schema"
-import { and, eq, desc, isNull, or, count, inArray } from "drizzle-orm"
+import { and, eq, ne, desc, isNull, or, count, inArray } from "drizzle-orm"
 import { generateText, Output, stepCountIs } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
@@ -95,7 +95,12 @@ export async function listClients(): Promise<ClientRow[]> {
         .where(
           and(
             eq(contact.organizationId, activeOrgId),
-            eq(contact.status, "active"),
+            // Show every linked contact except soft-deleted ones — matches the
+            // client detail page (`getClientDetail`, `ne(status,'deleted')`).
+            // The old `status='active'` filter hid `initial` (New) contacts, so
+            // a discovery-linked contact (created `initial`) silently vanished
+            // from a New client's card even though the link exists.
+            ne(contact.status, "deleted"),
           ),
         )
     : []

@@ -14,6 +14,15 @@ import { useProcessRun } from "@/components/blocks/use-process-run"
 import { WorkflowStatistics } from "@/components/blocks/workflow-statistics"
 import type { SourceSummary } from "@/server/sources"
 
+// Local-date "YYYY-MM-DD" for `<input type="date">` (the default processing
+// period is today → today).
+function todayInputDate(): string {
+  const d = new Date()
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const dd = String(d.getDate()).padStart(2, "0")
+  return `${d.getFullYear()}-${mm}-${dd}`
+}
+
 // Client wrapper that owns the cross-component refresh + drop-off
 // upload-dialog state. Lives here (not on the page) so the page itself
 // can stay a server component that fetches the sources dictionary.
@@ -155,11 +164,12 @@ function SourcesScope({
 }) {
   const proc = useProcessRun({ onRefresh: onBumpRefresh })
   // "Processing period" — bounds which fetched items the sync→process chain
-  // actually parses+uploads, by `source_created_at` (NOT a table filter).
-  // Empty = all. `<input type="date">` yields YYYY-MM-DD, which is exactly
-  // what /process-ids expects for date_from/date_to.
-  const [procDateFrom, setProcDateFrom] = useState("")
-  const [procDateTo, setProcDateTo] = useState("")
+  // parses+uploads (and the table listing below), by `source_created_at`.
+  // **Defaults to today → today** (empty = all). `<input type="date">` yields
+  // YYYY-MM-DD, which is exactly what /process-ids + /items expect. Clear it
+  // via the × in the action bar to process/show the whole backlog.
+  const [procDateFrom, setProcDateFrom] = useState(todayInputDate)
+  const [procDateTo, setProcDateTo] = useState(todayInputDate)
 
   if (sources.length === 0) {
     return (
