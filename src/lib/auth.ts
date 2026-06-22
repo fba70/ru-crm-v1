@@ -71,10 +71,13 @@ export const auth = betterAuth({
         type: "string",
         returned: true,
       },
-      activeOrganizationLogo: {
-        type: "string",
-        returned: true,
-      },
+      // NOTE: the org logo is intentionally NOT a session field. Logos are
+      // stored as base64 data URLs (often 100KB+), and `cookieCache` serialises
+      // every returned session field into the signed session cookie — a large
+      // logo blows past the ~16KB HTTP header limit → 431 Request Header Fields
+      // Too Large on every authenticated request (and fails on Vercel too). The
+      // sidebar loads the logo server-side from the `organization` table instead
+      // (see (protected)/layout.tsx + AppSidebar `orgLogo` prop).
       activeOrganizationSlug: {
         type: "string",
         returned: true,
@@ -157,7 +160,7 @@ export const auth = betterAuth({
               ...session,
               activeOrganizationId: organization?.id,
               activeOrganizationName: organization?.name,
-              activeOrganizationLogo: organization?.logo,
+              // Logo intentionally omitted — see additionalFields note above.
               activeOrganizationSlug: organization?.slug,
             },
           }

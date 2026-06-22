@@ -123,65 +123,49 @@ function contactKeysFromMeta(meta: Meta): string[] {
   return [...keys]
 }
 
-// Classify a row (by its keys) against the org-wide key→items map + the target
-// item set. `matched` = any producing item is in target; `exclusive` = ALL
-// producing items are in target; `otherItemCount` = producing items outside.
-function classify(
-  rowKeys: string[],
-  keyToItems: Map<string, Set<string>>,
-  targetItemIds: Set<string>,
-): { matched: boolean; exclusive: boolean; otherItemCount: number } {
-  const producing = new Set<string>()
-  for (const k of rowKeys) {
-    const s = keyToItems.get(k)
-    if (s) for (const id of s) producing.add(id)
-  }
-  let outside = 0
-  let inside = 0
-  for (const id of producing) {
-    if (targetItemIds.has(id)) inside++
-    else outside++
-  }
-  return {
-    matched: inside > 0,
-    exclusive: inside > 0 && outside === 0,
-    otherItemCount: outside,
-  }
+// A teardown unit: one top-level source_item (parent) + its children
+// (attachments / audio / .ics), i.e. "one test email and its parts".
+type ThreadInfo = {
+  id: string // parent (root) source_item id
+  title: string
+  date: string | null // ISO
+  itemIds: Set<string> // parent + children
+  cardIds: string[]
 }
 
-// ── resolve — shared by preview + execute ─────────────────────────────
-
-type ClientMatch = {
+// An existing client/contact with the org-wide set of source_items that produce
+// its dedup keys (company keys / email / person-name). `producing` is the exact
+// set the next sync would dedup against — exclusivity is decided from it.
+type EntityProducers = {
   id: string
   name: string
-  exclusive: boolean
-  otherItemCount: number
-  // How many orders + order-requests reference this client. They are
-  // cascade-deleted along with the client (no longer a blocker).
-  orderCount: number
-  // 'active' | 'deleted' | 'blocked' — soft-deleted rows are included so a
-  // reset also clears tombstones; the UI flags them.
   status: string
-}
-type ContactMatch = {
-  id: string
-  name: string
-  exclusive: boolean
-  otherItemCount: number
-  status: string
+  orderCount: number // orders + order-requests (clients only; 0 for contacts)
+  producing: Set<string>
 }
 
 type Resolved = {
   source: { id: string; name: string; organizationId: string }
-  targetItemIds: Set<string>
-  sourceItemCount: number
-  childItemCount: number
-  r2Keys: string[]
-  cardIds: string[]
-  clients: ClientMatch[]
-  contacts: ContactMatch[]
+  // Ordered newest-first.
+  threads: ThreadInfo[]
+  sourceItemIds: Set<string>
+  r2KeyByItem: Map<string, string>
+  clients: EntityProducers[]
+  contacts: EntityProducers[]
 }
 
+// Pick a human title for a thread root from its metadata.
+function threadTitle(meta: Meta, externalId: string): string {
+  const subject = str(meta.subject).trim()
+  if (subject) return subject
+  const snippet = str(meta.snippet).trim()
+  if (snippet) return snippet.length > 80 ? snippet.slice(0, 80) + "…" : snippet
+  const title = str(meta.title).trim()
+  if (title) return title
+  return externalId || "(без названия)"
+}
+
+// ── resolve — shared by preview + execute ─────────────────────────────
 async function resolve(sourceId: string): Promise<Resolved> {
   // 1. Load the source.
   const srcRows = await db
@@ -207,22 +191,56 @@ async function resolve(sourceId: string): Promise<Resolved> {
       parentSourceItemId: sourceItem.parentSourceItemId,
       markdownR2Key: sourceItem.markdownR2Key,
       metadataJson: sourceItem.metadataJson,
+      externalId: sourceItem.externalId,
+      sourceCreatedAt: sourceItem.sourceCreatedAt,
+      createdAt: sourceItem.createdAt,
     })
     .from(sourceItem)
     .where(eq(sourceItem.organizationId, orgId))
 
-  // 3. Target = items belonging to THIS source (parent + children share sourceId).
-  const targetItemIds = new Set<string>()
-  const r2Keys: string[] = []
-  let childItemCount = 0
-  for (const it of items) {
-    if (it.sourceId !== sourceId) continue
-    targetItemIds.add(it.id)
-    if (it.markdownR2Key) r2Keys.push(it.markdownR2Key)
-    if (it.parentSourceItemId) childItemCount++
+  // 3. This source's items + group them into threads (parent + children).
+  const sourceItemIds = new Set<string>()
+  const r2KeyByItem = new Map<string, string>()
+  // root id → ThreadInfo (built first for parents, then children attached).
+  const threadById = new Map<string, ThreadInfo>()
+  // child item id → its root id, for attaching children whose parent we've seen.
+  const ourItems = items.filter((it) => it.sourceId === sourceId)
+  for (const it of ourItems) {
+    sourceItemIds.add(it.id)
+    if (it.markdownR2Key) r2KeyByItem.set(it.id, it.markdownR2Key)
+  }
+  // Parents (roots): no parentSourceItemId. Children attach to their root; a
+  // child whose parent isn't in this source (shouldn't happen) becomes its own
+  // root so it's never silently dropped.
+  for (const it of ourItems) {
+    if (it.parentSourceItemId) continue
+    const meta = (it.metadataJson as Meta | null) ?? {}
+    threadById.set(it.id, {
+      id: it.id,
+      title: threadTitle(meta, it.externalId),
+      date: (it.sourceCreatedAt ?? it.createdAt)?.toISOString() ?? null,
+      itemIds: new Set([it.id]),
+      cardIds: [],
+    })
+  }
+  for (const it of ourItems) {
+    if (!it.parentSourceItemId) continue
+    const root = threadById.get(it.parentSourceItemId)
+    if (root) root.itemIds.add(it.id)
+    else {
+      // Orphaned child (parent missing) — stand it up as its own thread.
+      const meta = (it.metadataJson as Meta | null) ?? {}
+      threadById.set(it.id, {
+        id: it.id,
+        title: threadTitle(meta, it.externalId),
+        date: (it.sourceCreatedAt ?? it.createdAt)?.toISOString() ?? null,
+        itemIds: new Set([it.id]),
+        cardIds: [],
+      })
+    }
   }
 
-  // 4. Build the org-wide key → items maps.
+  // 4. Org-wide key → producing items maps.
   const companyKeyToItems = new Map<string, Set<string>>()
   const contactKeyToItems = new Map<string, Set<string>>()
   const addKey = (map: Map<string, Set<string>>, key: string, itemId: string) => {
@@ -239,8 +257,9 @@ async function resolve(sourceId: string): Promise<Resolved> {
     for (const k of contactKeysFromMeta(meta)) addKey(contactKeyToItems, k, it.id)
   }
 
-  // 5. Clients (INCLUDING soft-deleted, so a reset also clears tombstones) —
-  //    classify by company keys.
+  // 5. Clients (INCLUDING soft-deleted, so a reset also clears tombstones) →
+  //    producing-item set from company keys. Keep only those produced by at
+  //    least one of THIS source's items (the rest are unrelated).
   const clientRows = await db
     .select({
       id: client.id,
@@ -250,24 +269,32 @@ async function resolve(sourceId: string): Promise<Resolved> {
     })
     .from(client)
     .where(eq(client.organizationId, orgId))
+  const producingOf = (
+    keys: string[],
+    map: Map<string, Set<string>>,
+  ): Set<string> => {
+    const producing = new Set<string>()
+    for (const k of keys) {
+      const s = map.get(k)
+      if (s) for (const id of s) producing.add(id)
+    }
+    return producing
+  }
+  const touchesSource = (producing: Set<string>): boolean => {
+    for (const id of producing) if (sourceItemIds.has(id)) return true
+    return false
+  }
+
   const matchedClients = clientRows
     .map((c) => {
       const keys = [c.name, ...(c.aliases ?? [])]
         .map((s) => companyMatchKey(s))
         .filter(Boolean)
-      const { matched, exclusive, otherItemCount } = classify(
-        keys,
-        companyKeyToItems,
-        targetItemIds,
-      )
-      return { row: c, matched, exclusive, otherItemCount }
+      return { row: c, producing: producingOf(keys, companyKeyToItems) }
     })
-    .filter((m) => m.matched)
+    .filter((m) => touchesSource(m.producing))
 
-  // 6. Order counts — orders + order_requests reference clients via FK-restrict,
-  //    so they MUST be cascade-deleted before the client. Tally per client (no
-  //    longer a blocker — the UI shows the count so the operator knows orders go
-  //    too).
+  // 6. Order counts per matched client (orders + order_requests; cascade-deleted).
   const matchedClientIds = matchedClients.map((m) => m.row.id)
   const orderCountByClient = new Map<string, number>()
   if (matchedClientIds.length > 0) {
@@ -285,16 +312,15 @@ async function resolve(sourceId: string): Promise<Resolved> {
     for (const r of reqRows) bump(r.clientId)
   }
 
-  const clients: ClientMatch[] = matchedClients.map((m) => ({
+  const clients: EntityProducers[] = matchedClients.map((m) => ({
     id: m.row.id,
     name: m.row.name,
-    exclusive: m.exclusive,
-    otherItemCount: m.otherItemCount,
-    orderCount: orderCountByClient.get(m.row.id) ?? 0,
     status: m.row.status,
+    orderCount: orderCountByClient.get(m.row.id) ?? 0,
+    producing: m.producing,
   }))
 
-  // 7. Contacts (INCLUDING soft-deleted) — classify by email + person-name keys.
+  // 7. Contacts (INCLUDING soft-deleted) → producing set from email + name keys.
   const contactRows = await db
     .select({
       id: contact.id,
@@ -306,7 +332,7 @@ async function resolve(sourceId: string): Promise<Resolved> {
     })
     .from(contact)
     .where(eq(contact.organizationId, orgId))
-  const contacts: ContactMatch[] = contactRows
+  const contacts: EntityProducers[] = contactRows
     .map((c) => {
       const keys: string[] = []
       const email = (c.email ?? "").trim().toLowerCase()
@@ -315,43 +341,48 @@ async function resolve(sourceId: string): Promise<Resolved> {
         const pk = personMatchKey(n ?? "")
         if (pk) keys.push(`name:${pk}`)
       }
-      const { matched, exclusive, otherItemCount } = classify(
-        keys,
-        contactKeyToItems,
-        targetItemIds,
-      )
-      return { row: c, matched, exclusive, otherItemCount }
+      return {
+        row: c,
+        producing: producingOf(keys, contactKeyToItems),
+      }
     })
-    .filter((m) => m.matched)
+    .filter((m) => touchesSource(m.producing))
     .map((m) => ({
       id: m.row.id,
       name: m.row.nameNative || m.row.name,
-      exclusive: m.exclusive,
-      otherItemCount: m.otherItemCount,
       status: m.row.status,
+      orderCount: 0,
+      producing: m.producing,
     }))
 
-  // 8. Cards from this source's items.
-  const cardRows =
-    targetItemIds.size > 0
-      ? await db
-          .select({ id: card.id })
-          .from(card)
-          .where(
-            and(
-              eq(card.organizationId, orgId),
-              inArray(card.sourceItemId, [...targetItemIds]),
-            ),
-          )
-      : []
+  // 8. Cards → bucket into the thread whose items contain card.source_item_id.
+  if (sourceItemIds.size > 0) {
+    const cardRows = await db
+      .select({ id: card.id, sourceItemId: card.sourceItemId })
+      .from(card)
+      .where(
+        and(
+          eq(card.organizationId, orgId),
+          inArray(card.sourceItemId, [...sourceItemIds]),
+        ),
+      )
+    const threads = [...threadById.values()]
+    for (const cr of cardRows) {
+      if (!cr.sourceItemId) continue
+      const t = threads.find((th) => th.itemIds.has(cr.sourceItemId!))
+      if (t) t.cardIds.push(cr.id)
+    }
+  }
+
+  const threads = [...threadById.values()].sort((a, b) =>
+    (b.date ?? "").localeCompare(a.date ?? ""),
+  )
 
   return {
     source: { id: src.id, name: src.name, organizationId: orgId },
-    targetItemIds,
-    sourceItemCount: targetItemIds.size,
-    childItemCount,
-    r2Keys,
-    cardIds: cardRows.map((r) => r.id),
+    threads,
+    sourceItemIds,
+    r2KeyByItem,
     clients,
     contacts,
   }
@@ -395,25 +426,133 @@ export async function listTeardownSources(): Promise<TeardownSource[]> {
   }))
 }
 
-export type TeardownPreview = {
-  source: { id: string; name: string; organizationId: string }
-  counts: {
-    sourceItems: number
-    childItems: number
-    r2Objects: number
-    cards: number
-    clients: number
-    contacts: number
-    deals: number
-    tasks: number
-    orders: number
-  }
-  clients: ClientMatch[]
-  contacts: ContactMatch[]
+// A client/contact shown under a thread, with provenance badges so the operator
+// sees the link between the thread and the artifacts it produced.
+export type TeardownEntity = {
+  id: string
+  name: string
+  status: string // 'active' | 'deleted' | 'blocked' — soft-deleted flagged in UI
+  orderCount: number // cascade-deleted with the client (0 for contacts)
+  // EVERY producing item is inside this thread → deleting just this thread
+  // removes it ("только этот тред").
+  exclusiveToThread: boolean
+  // # of OTHER threads in THIS source that also produce it (select them too to
+  // delete it).
+  otherThreadsInSource: number
+  // # of producing items in OTHER sources → can NEVER be removed by this
+  // source's teardown (shown disabled, always kept).
+  itemsInOtherSources: number
+  // Every thread (in THIS source) that produces it — the client computes the
+  // exact deletable set for the current selection (deletable iff
+  // itemsInOtherSources === 0 AND producingThreadIds ⊆ selected).
+  producingThreadIds: string[]
 }
 
-// Count deals + tasks + orders that a given client/contact delete set would
-// remove (all FK-restrict on client, so they MUST go first).
+export type TeardownThread = {
+  id: string
+  title: string
+  date: string | null
+  itemCount: number
+  cardCount: number
+  clients: TeardownEntity[]
+  contacts: TeardownEntity[]
+}
+
+export type TeardownPreview = {
+  source: { id: string; name: string; organizationId: string }
+  threads: TeardownThread[]
+}
+
+// Build the per-thread provenance view for one entity, relative to `thread`.
+function entityForThread(
+  e: EntityProducers,
+  thread: ThreadInfo,
+  threads: ThreadInfo[],
+  sourceItemIds: Set<string>,
+): TeardownEntity {
+  let exclusiveToThread = true
+  let itemsInOtherSources = 0
+  for (const id of e.producing) {
+    if (!thread.itemIds.has(id)) exclusiveToThread = false
+    if (!sourceItemIds.has(id)) itemsInOtherSources++
+  }
+  let otherThreadsInSource = 0
+  const producingThreadIds: string[] = []
+  for (const t of threads) {
+    let hit = false
+    for (const id of e.producing) {
+      if (t.itemIds.has(id)) {
+        hit = true
+        break
+      }
+    }
+    if (!hit) continue
+    producingThreadIds.push(t.id)
+    if (t.id !== thread.id) otherThreadsInSource++
+  }
+  return {
+    id: e.id,
+    name: e.name,
+    status: e.status,
+    orderCount: e.orderCount,
+    producingThreadIds,
+    exclusiveToThread,
+    otherThreadsInSource,
+    itemsInOtherSources,
+  }
+}
+
+export async function previewSourceTeardown(
+  sourceId: string,
+): Promise<TeardownPreview> {
+  await requireAdmin()
+  const r = await resolve(sourceId)
+
+  const threads: TeardownThread[] = r.threads.map((t) => {
+    const clients = r.clients
+      .filter((e) => {
+        for (const id of e.producing) if (t.itemIds.has(id)) return true
+        return false
+      })
+      .map((e) => entityForThread(e, t, r.threads, r.sourceItemIds))
+    const contacts = r.contacts
+      .filter((e) => {
+        for (const id of e.producing) if (t.itemIds.has(id)) return true
+        return false
+      })
+      .map((e) => entityForThread(e, t, r.threads, r.sourceItemIds))
+    return {
+      id: t.id,
+      title: t.title,
+      date: t.date,
+      itemCount: t.itemIds.size,
+      cardCount: t.cardIds.length,
+      clients,
+      contacts,
+    }
+  })
+
+  return { source: r.source, threads }
+}
+
+export type TeardownResult = {
+  threads: number
+  sourceItems: number
+  r2Objects: number
+  cards: number
+  clients: number
+  contacts: number
+  deals: number
+  tasks: number
+  orders: number
+  // Matched but KEPT because a producing item lies outside the selection.
+  sharedSkipped: number
+  cursorReset: boolean
+}
+
+// Count deals + tasks + orders that a given client/contact delete set removes
+// (deals/orders FK-restrict on client → must go first; tasks are set-null but
+// we delete them to actually clear the thread's tasks).
 async function countCascade(
   clientIds: string[],
   contactIds: string[],
@@ -436,7 +575,6 @@ async function countCascade(
       .where(inArray(orderRequest.clientId, clientIds))
     orderCount = orderRows.length + reqRows.length
   }
-  // Tasks linking any deleted deal / client / contact.
   const taskIds = new Set<string>()
   const collectTasks = async (col: AnyPgColumn, ids: string[]) => {
     if (ids.length === 0) return
@@ -452,50 +590,12 @@ async function countCascade(
   return { dealIds, taskIds: [...taskIds], orderCount }
 }
 
-export async function previewSourceTeardown(
-  sourceId: string,
-): Promise<TeardownPreview> {
-  await requireAdmin()
-  const r = await resolve(sourceId)
-
-  // Default delete set = exclusive rows (the UI lets the operator toggle any
-  // row freely; this is just the initial count).
-  const delClientIds = r.clients.filter((c) => c.exclusive).map((c) => c.id)
-  const delContactIds = r.contacts.filter((c) => c.exclusive).map((c) => c.id)
-  const { dealIds, taskIds, orderCount } = await countCascade(
-    delClientIds,
-    delContactIds,
-  )
-
-  return {
-    source: r.source,
-    counts: {
-      sourceItems: r.sourceItemCount,
-      childItems: r.childItemCount,
-      r2Objects: r.r2Keys.length,
-      cards: r.cardIds.length,
-      clients: delClientIds.length,
-      contacts: delContactIds.length,
-      deals: dealIds.length,
-      tasks: taskIds.length,
-      orders: orderCount,
-    },
-    clients: r.clients,
-    contacts: r.contacts,
-  }
-}
-
-export type TeardownCounts = TeardownPreview["counts"]
-
 export async function executeSourceTeardown(input: {
   sourceId: string
   confirmText: string
-  // Explicit selection from the UI (every row is freely toggleable). Validated
-  // server-side to be a subset of the resolved matched set — never an arbitrary
-  // client/contact id.
-  deleteClientIds?: string[]
-  deleteContactIds?: string[]
-}): Promise<TeardownCounts> {
+  // The threads (parent source_item ids) the operator chose to delete.
+  threadIds: string[]
+}): Promise<TeardownResult> {
   const { userId } = await requireAdmin()
   const r = await resolve(input.sourceId)
 
@@ -507,17 +607,47 @@ export async function executeSourceTeardown(input: {
     )
   }
 
-  // Intersect the requested ids with the matched set (drop anything not in it).
-  const matchedClientIds = new Set(r.clients.map((c) => c.id))
-  const matchedContactIds = new Set(r.contacts.map((c) => c.id))
-  const requestedClients = new Set(input.deleteClientIds ?? [])
-  const requestedContacts = new Set(input.deleteContactIds ?? [])
-  const finalClientIds = [...requestedClients].filter((id) =>
-    matchedClientIds.has(id),
-  )
-  const finalContactIds = [...requestedContacts].filter((id) =>
-    matchedContactIds.has(id),
-  )
+  // Selected threads (intersect requested with the resolved set) → their items.
+  const requested = new Set(input.threadIds ?? [])
+  const selectedThreads = r.threads.filter((t) => requested.has(t.id))
+  if (selectedThreads.length === 0) {
+    throw new TeardownError("bad_request", "No threads selected")
+  }
+  const selectedItemIds = new Set<string>()
+  const selectedR2Keys: string[] = []
+  const selectedCardIds: string[] = []
+  for (const t of selectedThreads) {
+    for (const id of t.itemIds) {
+      selectedItemIds.add(id)
+      const key = r.r2KeyByItem.get(id)
+      if (key) selectedR2Keys.push(key)
+    }
+    for (const c of t.cardIds) selectedCardIds.push(c)
+  }
+
+  // An entity is deletable iff it's touched by the selection AND EVERY item
+  // producing its keys is inside the selection (otherwise it's shared with a
+  // thread/source we're not deleting → keep it). Server-authoritative.
+  let sharedSkipped = 0
+  const deletable = (e: EntityProducers): boolean => {
+    let touched = false
+    for (const id of e.producing) {
+      if (selectedItemIds.has(id)) touched = true
+      else return false // a producer outside the selection → shared, keep
+    }
+    if (!touched) return false
+    return true
+  }
+  const finalClientIds: string[] = []
+  for (const c of r.clients) {
+    if (deletable(c)) finalClientIds.push(c.id)
+    else if ([...c.producing].some((id) => selectedItemIds.has(id))) sharedSkipped++
+  }
+  const finalContactIds: string[] = []
+  for (const c of r.contacts) {
+    if (deletable(c)) finalContactIds.push(c.id)
+    else if ([...c.producing].some((id) => selectedItemIds.has(id))) sharedSkipped++
+  }
 
   const { dealIds, taskIds, orderCount } = await countCascade(
     finalClientIds,
@@ -525,9 +655,9 @@ export async function executeSourceTeardown(input: {
   )
 
   // ── Delete in FK-safe order (see refs/source-teardown.md §3) ──────────
-  // R2 objects → tasks → deals → orders(+requests) → cards → contacts →
-  // clients → source_items → reset cursor → teardown_log.
-  const r2Deleted = await deleteFromR2(r.r2Keys)
+  // R2 → tasks → deals → orders(+requests) → cards → contacts → clients →
+  // source_items → (conditional) reset cursor → teardown_log.
+  const r2Deleted = await deleteFromR2(selectedR2Keys)
 
   if (taskIds.length > 0)
     await db.delete(task).where(inArray(task.id, taskIds))
@@ -542,32 +672,39 @@ export async function executeSourceTeardown(input: {
       .delete(orderRequest)
       .where(inArray(orderRequest.clientId, finalClientIds))
   }
-  if (r.cardIds.length > 0)
-    await db.delete(card).where(inArray(card.id, r.cardIds)) // cascades card_* junctions
+  if (selectedCardIds.length > 0)
+    await db.delete(card).where(inArray(card.id, selectedCardIds)) // cascades card_* junctions
   if (finalContactIds.length > 0)
     await db.delete(contact).where(inArray(contact.id, finalContactIds))
   if (finalClientIds.length > 0)
     await db.delete(client).where(inArray(client.id, finalClientIds))
-  // Source items: delete by source_id (parent + children share it; children
-  // also cascade via parent_source_item_id).
-  await db.delete(sourceItem).where(eq(sourceItem.sourceId, input.sourceId))
+  // Source items: delete the selected threads' items (children cascade via
+  // parent_source_item_id; deleting by id is explicit and selection-scoped).
+  await db.delete(sourceItem).where(inArray(sourceItem.id, [...selectedItemIds]))
 
-  // Reset the sync cursor so an incremental re-sync re-fetches the old messages.
-  await db
-    .update(source)
-    .set({ lastSyncedAt: null })
-    .where(eq(source.id, input.sourceId))
+  // Reset the sync cursor ONLY on a full-source reset (every thread selected),
+  // so a re-sync re-fetches from scratch. A partial (surgical) delete leaves the
+  // cursor so the threads we KEPT aren't re-pulled / disturbed.
+  const fullReset = selectedThreads.length === r.threads.length
+  if (fullReset) {
+    await db
+      .update(source)
+      .set({ lastSyncedAt: null })
+      .where(eq(source.id, input.sourceId))
+  }
 
-  const counts: TeardownCounts = {
-    sourceItems: r.sourceItemCount,
-    childItems: r.childItemCount,
+  const result: TeardownResult = {
+    threads: selectedThreads.length,
+    sourceItems: selectedItemIds.size,
     r2Objects: r2Deleted,
-    cards: r.cardIds.length,
+    cards: selectedCardIds.length,
     clients: finalClientIds.length,
     contacts: finalContactIds.length,
     deals: dealIds.length,
     tasks: taskIds.length,
     orders: orderCount,
+    sharedSkipped,
+    cursorReset: fullReset,
   }
 
   await db.insert(teardownLog).values({
@@ -576,8 +713,8 @@ export async function executeSourceTeardown(input: {
     sourceId: r.source.id,
     sourceName: r.source.name,
     adminUserId: userId,
-    counts,
+    counts: result,
   })
 
-  return counts
+  return result
 }

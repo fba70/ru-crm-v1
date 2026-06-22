@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { FolderUp, Loader, Upload } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { FolderUp, Loader, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 import type { SystemSource } from "@/server/sources"
 import { getProvider, PROVIDER_LIST } from "@/lib/sources/providers"
@@ -33,6 +34,10 @@ export function SyncActionBar({
   onSynced,
   onProcessSource,
   processRunning,
+  processDateFrom,
+  processDateTo,
+  onProcessDateFromChange,
+  onProcessDateToChange,
   onOpenDropoffUpload,
   onOpenWhatsAppUpload,
 }: {
@@ -44,6 +49,13 @@ export function SyncActionBar({
   // True while a shared process run is in flight — disables sync buttons
   // so a second run can't be stacked on top.
   processRunning: boolean
+  // "Processing period" — YYYY-MM-DD bounds (empty = all). Scopes which fetched
+  // items the sync→process chain parses+uploads, by source_created_at. NOT a
+  // table filter — purely the processing work-set.
+  processDateFrom: string
+  processDateTo: string
+  onProcessDateFromChange: (v: string) => void
+  onProcessDateToChange: (v: string) => void
   onOpenDropoffUpload: () => void
   onOpenWhatsAppUpload: () => void
 }) {
@@ -82,6 +94,48 @@ export function SyncActionBar({
               processRunning={processRunning}
             />
           ))}
+
+        {/* Processing period — bounds which fetched items get parsed+uploaded
+            after a sync (by source_created_at). Empty = all. */}
+        <div className="flex items-center gap-1.5 rounded-md border px-2 py-1">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            Период обработки:
+          </span>
+          <Input
+            type="date"
+            aria-label="Период обработки: с"
+            value={processDateFrom}
+            max={processDateTo || undefined}
+            onChange={(e) => onProcessDateFromChange(e.target.value)}
+            disabled={processRunning}
+            className="h-7 w-35 text-xs"
+          />
+          <span className="text-xs text-muted-foreground">—</span>
+          <Input
+            type="date"
+            aria-label="Период обработки: по"
+            value={processDateTo}
+            min={processDateFrom || undefined}
+            onChange={(e) => onProcessDateToChange(e.target.value)}
+            disabled={processRunning}
+            className="h-7 w-35 text-xs"
+          />
+          {(processDateFrom || processDateTo) && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              title="Сбросить период (обрабатывать все)"
+              disabled={processRunning}
+              onClick={() => {
+                onProcessDateFromChange("")
+                onProcessDateToChange("")
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {hasArchiveSource && (

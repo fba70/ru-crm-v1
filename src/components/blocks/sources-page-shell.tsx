@@ -154,6 +154,12 @@ function SourcesScope({
   onOpenWhatsAppUpload: () => void
 }) {
   const proc = useProcessRun({ onRefresh: onBumpRefresh })
+  // "Processing period" — bounds which fetched items the sync→process chain
+  // actually parses+uploads, by `source_created_at` (NOT a table filter).
+  // Empty = all. `<input type="date">` yields YYYY-MM-DD, which is exactly
+  // what /process-ids expects for date_from/date_to.
+  const [procDateFrom, setProcDateFrom] = useState("")
+  const [procDateTo, setProcDateTo] = useState("")
 
   if (sources.length === 0) {
     return (
@@ -171,9 +177,21 @@ function SourcesScope({
         sources={sources}
         onSynced={onBumpRefresh}
         onProcessSource={(sourceId, label) =>
-          proc.run({ scope: "org", sourceId }, { label })
+          proc.run(
+            {
+              scope: "org",
+              sourceId,
+              dateFromIso: procDateFrom || undefined,
+              dateToIso: procDateTo || undefined,
+            },
+            { label },
+          )
         }
         processRunning={proc.running}
+        processDateFrom={procDateFrom}
+        processDateTo={procDateTo}
+        onProcessDateFromChange={setProcDateFrom}
+        onProcessDateToChange={setProcDateTo}
         onOpenDropoffUpload={onOpenDropoffUpload}
         onOpenWhatsAppUpload={onOpenWhatsAppUpload}
       />

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { previewSourceTeardown, TeardownError } from "@/server/teardown"
 
-export { type TeardownPreview } from "@/server/teardown"
+export {
+  type TeardownPreview,
+  type TeardownThread,
+  type TeardownEntity,
+} from "@/server/teardown"
 
 function errorResponse(error: unknown) {
   if (error instanceof TeardownError) {

@@ -23,8 +23,9 @@ function errorResponse(error: unknown) {
   )
 }
 
-// Hard-delete a source's footprint. Body:
-// { sourceId, confirmText, deleteClientIds[], deleteContactIds[] }.
+// Hard-delete the selected threads (parent source_items + children) of a source
+// and the artifacts EXCLUSIVELY produced by them. Body:
+// { sourceId, confirmText, threadIds[] }.
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null)
@@ -39,13 +40,12 @@ export async function POST(request: NextRequest) {
     }
     const asIds = (v: unknown): string[] =>
       Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []
-    const counts = await executeSourceTeardown({
+    const result = await executeSourceTeardown({
       sourceId,
       confirmText,
-      deleteClientIds: asIds(b.deleteClientIds),
-      deleteContactIds: asIds(b.deleteContactIds),
+      threadIds: asIds(b.threadIds),
     })
-    return NextResponse.json({ counts })
+    return NextResponse.json({ counts: result })
   } catch (error) {
     return errorResponse(error)
   }

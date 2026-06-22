@@ -71,12 +71,19 @@ export const items = [
   },
 ]
 
-export function AppSidebar({ session }: { session: AuthSession }) {
+export function AppSidebar({
+  session,
+  orgLogo = null,
+}: {
+  session: AuthSession
+  // Loaded server-side (not from the session) because logos are large base64
+  // data URLs that would overflow the session cookie. See (protected)/layout.tsx.
+  orgLogo?: string | null
+}) {
   const pathname = usePathname()
   const { open } = useSidebar()
 
   const orgName = session.session.activeOrganizationName ?? null
-  const orgLogo = session.session.activeOrganizationLogo ?? null
   const userName = session.user.name
   const userImage = session.user.image
   const isAdmin = session.user.role === "admin"

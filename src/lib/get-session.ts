@@ -42,7 +42,6 @@ export const getServerSession = cache(async () => {
         .select({
           id: organization.id,
           name: organization.name,
-          logo: organization.logo,
           slug: organization.slug,
         })
         .from(organization)
@@ -50,12 +49,15 @@ export const getServerSession = cache(async () => {
         .limit(1)
       const org = orgRow[0]
       if (org) {
+        // NOTE: the org logo is deliberately NOT written to the session.
+        // It's a base64 data URL (often 100KB+) and `cookieCache` would
+        // serialise it into the session cookie → 431 Request Header Fields
+        // Too Large. The sidebar loads the logo server-side instead.
         await db
           .update(sessionTable)
           .set({
             activeOrganizationId: org.id,
             activeOrganizationName: org.name,
-            activeOrganizationLogo: org.logo ?? null,
             activeOrganizationSlug: org.slug,
           })
           .where(eq(sessionTable.id, session.session.id))
@@ -67,7 +69,6 @@ export const getServerSession = cache(async () => {
         Object.assign(session.session, {
           activeOrganizationId: org.id,
           activeOrganizationName: org.name,
-          activeOrganizationLogo: org.logo ?? null,
           activeOrganizationSlug: org.slug,
         })
       }
