@@ -270,7 +270,7 @@ export default function TasksPage() {
 
       <Card className="w-full max-w-7xl">
         <CardHeader>
-          <CardTitle>Канбан-доска</CardTitle>
+          <CardTitle>Задачи</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex justify-end mb-3">

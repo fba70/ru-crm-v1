@@ -235,6 +235,8 @@ export function TableSourceItems({
   onActionComplete,
   processRunning,
   onRunAll,
+  periodFrom = "",
+  periodTo = "",
 }: {
   sources: SourceSummary[]
   // Bumped by the parent on sync / completed batch runs.
@@ -246,6 +248,11 @@ export function TableSourceItems({
   processRunning: boolean
   // Hands the table's current filter context to the shared runner.
   onRunAll: (filters: ProcessRunFilters, opts: { slow: boolean }) => void
+  // "Processing period" from the action bar (YYYY-MM-DD, empty = none). When
+  // set it bounds BOTH this listing AND "Обработать все" by source_created_at,
+  // across every view, and supersedes the table's own date inputs.
+  periodFrom?: string
+  periodTo?: string
 }) {
   const [rows, setRows] = useState<SourceItemRow[]>([])
   const [total, setTotal] = useState(0)
@@ -260,6 +267,13 @@ export function TableSourceItems({
   const [page, setPage] = useState(1)
 
   const dateBounded = DATE_BOUNDED_VIEWS.has(view)
+
+  // Effective date bound: the action-bar "Период обработки" wins when set and
+  // applies to EVERY view; otherwise fall back to the table's own date inputs
+  // (only meaningful in the date-bounded views).
+  const periodActive = !!(periodFrom || periodTo)
+  const effDateFrom = periodActive ? periodFrom : dateBounded ? dateFrom : ""
+  const effDateTo = periodActive ? periodTo : dateBounded ? dateTo : ""
 
   // Per-row in-flight tracking.
   const [actionInFlight, setActionInFlight] = useState<
@@ -280,8 +294,8 @@ export function TableSourceItems({
       params.set("offset", String((page - 1) * PAGE_SIZE))
       if (sourceFilter !== ALL_SOURCES) params.set("sourceId", sourceFilter)
       if (q.trim()) params.set("q", q.trim())
-      if (dateBounded && dateFrom) params.set("date_from", dateFrom)
-      if (dateBounded && dateTo) params.set("date_to", dateTo)
+      if (effDateFrom) params.set("date_from", effDateFrom)
+      if (effDateTo) params.set("date_to", effDateTo)
       const res = await fetch(`/api/sources/items?${params.toString()}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Не удалось загрузить элементы")
@@ -293,7 +307,7 @@ export function TableSourceItems({
     } finally {
       setLoading(false)
     }
-  }, [view, dateBounded, sourceFilter, q, dateFrom, dateTo, page])
+  }, [view, sourceFilter, q, effDateFrom, effDateTo, page])
 
   useEffect(() => {
     fetchPage()
@@ -313,7 +327,7 @@ export function TableSourceItems({
 
   useEffect(() => {
     setPage(1)
-  }, [view, sourceFilter, q, dateFrom, dateTo])
+  }, [view, sourceFilter, q, effDateFrom, effDateTo])
 
   async function runProcess(rowId: string) {
     setActionInFlight((m) => ({ ...m, [rowId]: "process" }))
@@ -390,10 +404,10 @@ export function TableSourceItems({
       scope: "org",
       sourceId: sourceFilter !== ALL_SOURCES ? sourceFilter : undefined,
       filenameSearch: q.trim() || undefined,
-      dateFromIso: dateBounded && dateFrom ? dateFrom : undefined,
-      dateToIso: dateBounded && dateTo ? dateTo : undefined,
+      dateFromIso: effDateFrom || undefined,
+      dateToIso: effDateTo || undefined,
     }),
-    [sourceFilter, q, dateBounded, dateFrom, dateTo],
+    [sourceFilter, q, effDateFrom, effDateTo],
   )
 
   return (
@@ -459,31 +473,42 @@ export function TableSourceItems({
             className="h-8 text-sm"
           />
         </div>
-        {dateBounded && (
-          <>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">
-                С
-              </label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="h-8 text-sm"
-              />
+        {periodActive ? (
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">
+              Период обработки
+            </label>
+            <div className="flex h-8 items-center rounded-md border bg-muted/40 px-2 text-sm text-muted-foreground">
+              {periodFrom || "…"} — {periodTo || "…"}
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">
-                По
-              </label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-8 text-sm"
-              />
-            </div>
-          </>
+          </div>
+        ) : (
+          dateBounded && (
+            <>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  С
+                </label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  По
+                </label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </>
+          )
         )}
         <Button
           variant="outline"

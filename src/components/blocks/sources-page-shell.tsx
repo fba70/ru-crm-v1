@@ -213,6 +213,8 @@ function SourcesScope({
             onActionComplete={onBumpRefresh}
             processRunning={proc.running}
             onRunAll={proc.run}
+            periodFrom={procDateFrom}
+            periodTo={procDateTo}
           />
         </CardContent>
       </Card>

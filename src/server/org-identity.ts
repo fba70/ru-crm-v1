@@ -64,14 +64,22 @@ export async function loadOwnOrgIdentity(
       const emailDomain = org.email ? extractEmailDomain(org.email) : ""
       if (emailDomain) domains.add(emailDomain)
 
-      // Company keys: the org name itself, plus the second-level label of every
-      // own domain (so `in4comgroup.com` contributes key `in4comgroup` even when
-      // the display name "IN4COM" keys differently as `in4com` — both are own).
+      // Company keys: the org name itself, PLUS — for every own domain — both
+      // its second-level label AND the full domain string. The LLM frequently
+      // emits the owner's domain verbatim as a "company" (e.g. `in4comgroup.com`
+      // in metadata_json.companies); `companyMatchKey` keeps the TLD, so the
+      // full domain keys as `in4comgroupcom` while the display name "IN4COM"
+      // keys as `in4com` and the label as `in4comgroup` — all three must count
+      // as own, otherwise the owner's own company leaks in as a client candidate
+      // (which then steals webUrl inference + makes contact↔client links
+      // ambiguous, breaking auto-linking). See refs/discovery + the АСТ case.
       const nameKey = companyMatchKey(org.name ?? "")
       if (nameKey) companyKeys.add(nameKey)
       for (const d of domains) {
         const labelKey = companyMatchKey(secondLevelLabel(d))
         if (labelKey) companyKeys.add(labelKey)
+        const fullKey = companyMatchKey(d)
+        if (fullKey) companyKeys.add(fullKey)
       }
     }
   }
