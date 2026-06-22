@@ -25,6 +25,7 @@ import { Loader, Sparkles, X } from "lucide-react"
 import type { CardRow } from "@/app/api/cards/route"
 import { DashboardCard } from "@/components/blocks/dashboard-card"
 import { ExploreSourcesDialog } from "@/components/blocks/explore-sources-dialog"
+import { MagicCardsButton } from "@/components/blocks/magic-cards-button"
 
 // One row on the lg grid (3 cols) — pagination engages at 4+ visible cards.
 const PAGE_SIZE = 3
@@ -240,15 +241,18 @@ export function CardsFeedSection() {
         <CardTitle className="text-xl tracking-wide">
           Утренние карточки
         </CardTitle>
-        <ExploreSourcesDialog
-          onCardsGenerated={load}
-          trigger={
-            <Button size="sm">
-              <Sparkles className="h-4 w-4 mr-1" />
-              Исследовать источники
-            </Button>
-          }
-        />
+        <div className="flex items-center gap-2">
+          <MagicCardsButton onCardsGenerated={load} />
+          <ExploreSourcesDialog
+            onCardsGenerated={load}
+            trigger={
+              <Button size="sm">
+                <Sparkles className="h-4 w-4 mr-1" />
+                Исследовать источники
+              </Button>
+            }
+          />
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">

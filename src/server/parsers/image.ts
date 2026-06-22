@@ -15,6 +15,11 @@ import {
 } from "@/server/parsers/_shared"
 
 const imageAnalysisSchema = z.object({
+  isBoilerplate: z
+    .boolean()
+    .describe(
+      "True ONLY if the image is purely decorative email/UI chrome carrying no substantive information: a company logo, signature graphic, social-media icon/badge, header or footer banner, divider/spacer, or tracking pixel. False for screenshots, photos, charts/diagrams, scanned documents, receipts, product shots, whiteboards, or anything with text or content worth keeping. When unsure, return false.",
+    ),
   language: z
     .string()
     .describe(
@@ -79,6 +84,11 @@ export type ImageParseInput = {
 
 export type ParsedImage = {
   markdown: string
+  // The model's verdict that this image is purely decorative chrome (logo,
+  // banner, icon, tracking pixel) with no substantive content. Callers may
+  // use it to skip storing inline email images. See `isBoilerplate` in the
+  // analysis schema.
+  decorative: boolean
   metadata: {
     sourceId: string
     sourceSystem: string
@@ -168,6 +178,7 @@ For images specifically: the 'author/sender' is whoever you extract into the \`s
 
   return {
     markdown,
+    decorative: analysis.isBoilerplate === true,
     metadata: {
       sourceId: input.sourceId,
       sourceSystem: input.sourceSystem,

@@ -23,6 +23,8 @@ import {
 } from "@/server/parsers/org-attribution"
 import { companyMatchKey } from "@/lib/translit-ru"
 import { extractWebsiteDomain } from "@/lib/email-domain"
+import { PARSER_CONFIG } from "@/lib/parser-config"
+import { triageInlineImage } from "@/lib/image-triage"
 import nylas from "@/lib/nylas"
 import { downloadChatAttachmentBytes } from "@/lib/google-chat"
 import {
@@ -513,6 +515,9 @@ async function parseNylasAttachment(
     attSourceId,
     externalType: "attachment",
     meta,
+    // Nylas delivers cid: inline images as attachments — flag image ones so
+    // the decorative triage runs (signature logos / banners / tracking GIFs).
+    isInlineImage: kind === "image" && ref.isInline,
   })
 }
 
@@ -521,12 +526,50 @@ async function parseNylasInlineImage(
   index: number,
   ctx: ParseContext,
 ): Promise<ChildOutcome> {
-  const sid = `nylas-inline:${ctx.externalId}:${index}`
+  return parseInlineImageOrSkip(
+    img,
+    `nylas-inline:${ctx.externalId}:${index}`,
+    ctx,
+  )
+}
+
+// Shared inline-image flow for the email providers (Nylas + IMAP). Inline
+// (cid:) images are mostly decorative chrome — logos, signature graphics,
+// social badges, header/footer banners, tracking pixels — that bring no
+// content. Two cheap filters drop them before they become source items:
+//   1. A header-only dimension/filename triage (no LLM call) catches the
+//      obvious junk (tiny icons, thin banners, 1×1 pixels).
+//   2. Whatever survives is parsed, and the model's `isBoilerplate` verdict
+//      skips high-res logos/banners that slipped past the size gate.
+// Either way a skipped image is recorded as an audit row (with the reason in
+// parse_error), just kept out of parsed content + discovery. Explicit file
+// attachments do NOT go through here — they're treated as intentional.
+async function parseInlineImageOrSkip(
+  img: InlineBodyImage,
+  sid: string,
+  ctx: ParseContext,
+): Promise<ChildOutcome> {
   const meta = {
     fileName: img.filename,
     contentType: img.mediaType,
     byteSize: img.bytes.byteLength,
   }
+
+  const triage = triageInlineImage(
+    { bytes: img.bytes, fileName: img.filename },
+    PARSER_CONFIG.image.decorative,
+  )
+  if (triage.skip) {
+    await insertSkippedChild({
+      ctx,
+      externalId: sid,
+      externalType: "inline_image",
+      meta,
+      reason: triage.reason,
+    })
+    return { inserted: 0, skipped: 1, failed: 0 }
+  }
+
   try {
     const result = await parseImageBytes({
       bytes: img.bytes,
@@ -539,6 +582,16 @@ async function parseNylasInlineImage(
       sourceCreatedAt: isoOrNull(ctx.sourceCreatedAt),
       sourceReceivedAt: isoOrNull(ctx.sourceCreatedAt),
     })
+    if (result.decorative) {
+      await insertSkippedChild({
+        ctx,
+        externalId: sid,
+        externalType: "inline_image",
+        meta,
+        reason: "decorative image (logo/banner/icon)",
+      })
+      return { inserted: 0, skipped: 1, failed: 0 }
+    }
     await insertParsedChild({
       ctx,
       externalId: sid,
@@ -646,42 +699,11 @@ async function parseImapInlineImage(
   index: number,
   ctx: ParseContext,
 ): Promise<ChildOutcome> {
-  const sid = `imap-inline:${ctx.externalId}:${index}`
-  const meta = {
-    fileName: img.filename,
-    contentType: img.mediaType,
-    byteSize: img.bytes.byteLength,
-  }
-  try {
-    const result = await parseImageBytes({
-      bytes: img.bytes,
-      fileName: img.filename,
-      mediaType: img.mediaType,
-      sourceId: sid,
-      parentSourceId: ctx.parentNamespacedSourceId,
-      sourceSystem: ctx.sourceSystemLabel,
-      threadId: ctx.threadExternalId,
-      sourceCreatedAt: isoOrNull(ctx.sourceCreatedAt),
-      sourceReceivedAt: isoOrNull(ctx.sourceCreatedAt),
-    })
-    await insertParsedChild({
-      ctx,
-      externalId: sid,
-      externalType: "inline_image",
-      meta,
-      markdown: result.markdown,
-      analysis: result.analysis,
-    })
-    return { inserted: 1, skipped: 0, failed: 0 }
-  } catch (err) {
-    return classifyAndInsertChildError({
-      ctx,
-      externalId: sid,
-      externalType: "inline_image",
-      meta,
-      err,
-    })
-  }
+  return parseInlineImageOrSkip(
+    img,
+    `imap-inline:${ctx.externalId}:${index}`,
+    ctx,
+  )
 }
 
 // ── Google Chat ───────────────────────────────────────────────────────
@@ -917,6 +939,11 @@ type RunAttachmentInput = {
   attSourceId: string
   externalType: SourceItemKind
   meta: AttachmentMeta
+  // True when this is an INLINE (cid:) email image — Nylas surfaces those as
+  // attachments with `isInline: true`. Such images get the decorative triage
+  // (logo / banner / icon / tracking-pixel filter); explicit file attachments
+  // do not. See `parseInlineImageOrSkip` for the matching data-URI path.
+  isInlineImage?: boolean
 }
 
 async function runAttachmentParser(
@@ -1036,7 +1063,24 @@ async function runAttachmentParser(
       })
       return { inserted: 1, skipped: 0, failed: 0 }
     }
-    // image
+    // image — inline (cid:) images get the decorative pre-filter; explicit
+    // attachments are treated as intentional content and parsed as-is.
+    if (input.isInlineImage) {
+      const triage = triageInlineImage(
+        { bytes, fileName: meta.fileName },
+        PARSER_CONFIG.image.decorative,
+      )
+      if (triage.skip) {
+        await insertSkippedChild({
+          ctx,
+          externalId: attSourceId,
+          externalType,
+          meta,
+          reason: triage.reason,
+        })
+        return { inserted: 0, skipped: 1, failed: 0 }
+      }
+    }
     const r = await parseImageBytes({
       ...commonInput,
       bytes,
@@ -1046,6 +1090,16 @@ async function runAttachmentParser(
         inferImageMediaType(meta.fileName),
       ),
     })
+    if (input.isInlineImage && r.decorative) {
+      await insertSkippedChild({
+        ctx,
+        externalId: attSourceId,
+        externalType,
+        meta,
+        reason: "decorative image (logo/banner/icon)",
+      })
+      return { inserted: 0, skipped: 1, failed: 0 }
+    }
     await insertParsedChild({
       ctx,
       externalId: attSourceId,

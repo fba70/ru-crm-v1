@@ -2,7 +2,7 @@
 
 import { db } from "@/db/drizzle"
 import { contact, client, user, type EntityStatus } from "@/db/schema"
-import { and, eq, desc } from "drizzle-orm"
+import { and, eq, desc, inArray } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
 
@@ -106,7 +106,12 @@ export async function listClientOptions(): Promise<ClientOption[]> {
     .where(
       and(
         eq(client.organizationId, activeOrgId),
-        eq(client.status, "active"),
+        // Include `initial` (New) clients, not just `active` — otherwise a
+        // contact linked to a freshly-discovered New company has no matching
+        // <SelectItem> in the edit dialog, so the selector renders empty and
+        // the existing link looks absent. Matches the `["active","initial"]`
+        // convention used by deals/orders/tasks selectors.
+        inArray(client.status, ["active", "initial"]),
       ),
     )
     .orderBy(client.name)

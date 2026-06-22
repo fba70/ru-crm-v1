@@ -36,6 +36,7 @@ import { ClientCard } from "@/components/blocks/client-card"
 import { ContactCard } from "@/components/blocks/contact-card"
 import { DealCard } from "@/components/blocks/deal-card"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
+import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
@@ -474,6 +475,7 @@ export default function ClientsPage() {
           >
             {/* Shared toolbar for both sections */}
             <div className="flex justify-end gap-2 flex-wrap">
+              <MagicDiscoverButton onApplied={refreshAll} />
               <DiscoverDialog
                 onApplied={refreshAll}
                 canBlock={canBlock}
