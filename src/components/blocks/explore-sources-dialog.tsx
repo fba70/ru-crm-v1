@@ -74,7 +74,7 @@ export function ExploreSourcesDialog({
 }) {
   const [open, setOpen] = useState(false)
 
-  const [period, setPeriod] = useState<Period>("last_week")
+  const [period, setPeriod] = useState<Period>("last_day")
   const [specificFrom, setSpecificFrom] = useState(() => isoNDaysAgo(7))
   const [specificTo, setSpecificTo] = useState(() => todayIso())
 

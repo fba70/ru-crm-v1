@@ -91,7 +91,7 @@ export function DiscoverDialog({
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState<Phase>("idle")
   const [preview, setPreview] = useState<DiscoveryPreview | null>(null)
-  const [period, setPeriod] = useState<DiscoveryPeriod>("all")
+  const [period, setPeriod] = useState<DiscoveryPeriod>("last_day")
   const [includeAlreadyScanned, setIncludeAlreadyScanned] = useState(false)
 
   // Selection state (all default to checked when a preview loads).
@@ -110,7 +110,7 @@ export function DiscoverDialog({
   const reset = useCallback(() => {
     setPhase("idle")
     setPreview(null)
-    setPeriod("all")
+    setPeriod("last_day")
     setIncludeAlreadyScanned(false)
     setClientChecked({})
     setContactChecked({})
@@ -171,7 +171,7 @@ export function DiscoverDialog({
     (next: boolean) => {
       setOpen(next)
       if (next) {
-        startScan("all", false)
+        startScan("last_day", false)
       } else {
         reset()
       }
