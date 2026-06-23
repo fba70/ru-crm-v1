@@ -53,14 +53,18 @@ function resolveRange(
   specificFrom: string,
   specificTo: string,
 ): { from: string; to: string } {
+  // Inclusive calendar-day ranges: the label is the number of days the window
+  // should span, so "last day" = today only, "last 3 days" = today + 2 prior,
+  // "last week" = today + 6 prior. (from N-1 days ago, not N — else each preset
+  // leaks an extra leading day's items past the selected range.)
   if (period === "last_day") {
-    return { from: isoNDaysAgo(1), to: todayIso() }
+    return { from: todayIso(), to: todayIso() }
   }
   if (period === "last_3_days") {
-    return { from: isoNDaysAgo(3), to: todayIso() }
+    return { from: isoNDaysAgo(2), to: todayIso() }
   }
   if (period === "last_week") {
-    return { from: isoNDaysAgo(7), to: todayIso() }
+    return { from: isoNDaysAgo(6), to: todayIso() }
   }
   return { from: specificFrom, to: specificTo }
 }

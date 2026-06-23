@@ -37,6 +37,7 @@ import { ContactCard } from "@/components/blocks/contact-card"
 import { DealCard } from "@/components/blocks/deal-card"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
+import { MagicDealsButton } from "@/components/blocks/magic-deals-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
@@ -712,6 +713,7 @@ export default function ClientsPage() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
+                    <MagicDealsButton onDealsGenerated={refreshAll} />
                     <DiscoverDealsDialog
                       onDealsGenerated={refreshAll}
                       trigger={

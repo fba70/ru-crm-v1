@@ -6,40 +6,32 @@ import { Loader, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { DEFAULT_MODEL_KEY } from "@/lib/llm-models"
 import type { RuleRow } from "@/app/api/rules/route"
+import type { GenerateDealsResult } from "@/app/api/deals/discover/route"
 
-// One-click "Magic" — runs the exact same card-generation flow as
-// <ExploreSourcesDialog>, but with everything pre-decided so there's no
+// One-click "Magic" — runs the exact same deal-discovery flow as
+// <DiscoverDealsDialog>, but with everything pre-decided so there's no
 // intermediate dialog:
 //   • period  → last day (rolling 24h — matches client/contact discovery's
 //     periodCutoff("last_day"); see rolling24hCutoffIso below)
 //   • sources → all organization sources (sourceIds: null)
-//   • rule    → "Cards pop-up rule — Telegram orders" (resolved by name)
+//   • rule    → "Funnel Processing Rule" (resolved by name)
 //   • model   → Gemini 2.5 Flash (DEFAULT_MODEL_KEY)
 //   • already-analyzed items are skipped (the default)
-const MAGIC_RULE_NAME = "Cards pop-up rule — Telegram orders"
+const MAGIC_RULE_NAME = "Funnel Processing Rule"
 const MAGIC_MODEL_KEY = DEFAULT_MODEL_KEY // "gemini-2.5-flash"
 
-// Russian plural picker: forms = [one, few, many] (1 / 2–4 / 0,5–20).
-function plural(n: number, forms: [string, string, string]): string {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return forms[0]
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1]
-  return forms[2]
-}
-
 // Rolling 24h cutoff, mirroring discovery's periodCutoff("last_day"). The
-// cards/deals APIs take a from/to date-time (not a `period`), so we send this
-// cutoff as `from` (full ISO timestamp) with no upper bound (`to: null`) →
+// deals API takes a from/to date-time (not a `period`), so we send this cutoff
+// as `from` (full ISO timestamp) with no upper bound (`to: null`) →
 // sourceCreatedAt >= now-24h, identical to the discovery Magic button.
 function rolling24hCutoffIso(): string {
   return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 }
 
-export function MagicCardsButton({
-  onCardsGenerated,
+export function MagicDealsButton({
+  onDealsGenerated,
 }: {
-  onCardsGenerated: () => void
+  onDealsGenerated: () => void
 }) {
   const [running, setRunning] = useState(false)
 
@@ -56,15 +48,13 @@ export function MagicCardsButton({
       const rules: RuleRow[] = rData.rules ?? []
       const rule =
         rules.find((r) => r.name === MAGIC_RULE_NAME) ??
-        rules.find((r) =>
-          r.name.toLowerCase().includes("telegram orders"),
-        )
+        rules.find((r) => r.name.toLowerCase().includes("funnel processing"))
       if (!rule) {
         toast.error(`Правило «${MAGIC_RULE_NAME}» не найдено в организации`)
         return
       }
 
-      const res = await fetch("/api/cards/generate", {
+      const res = await fetch("/api/deals/discover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -78,26 +68,23 @@ export function MagicCardsButton({
       })
       const data = await res.json()
       if (!res.ok) {
-        toast.error(data.error || "Не удалось сгенерировать карточки")
+        toast.error(data.error || "Не удалось выполнить поиск сделок")
         return
       }
-      const r = data.result as {
-        scanned: number
-        cardsCreated: number
-        skippedNotRelevant: number
-        skippedNoMarkdown: number
-        failed: number
-        capped: number
-        errors: { sourceItemId: string; message: string }[]
-      }
+      const r = data.result as GenerateDealsResult
       if (r.errors && r.errors.length > 0) {
-        console.warn("[magic-cards] per-item errors:", r.errors)
+        console.warn("[magic-deals] per-item errors:", r.errors)
       }
-      const summary = `Создано ${r.cardsCreated} ${plural(r.cardsCreated, [
-        "карточка",
-        "карточки",
-        "карточек",
-      ])} · просмотрено ${r.scanned} · пропущено ${r.skippedNotRelevant}`
+      const skippedTotal =
+        r.skippedNotRelevant +
+        r.skippedNoMarkdown +
+        r.skippedUnknownClient +
+        r.skippedUnknownStage +
+        r.skippedUnknownDeal +
+        r.skippedDuplicate
+      const summary =
+        `Создано ${r.dealsCreated} · обновлений этапа ${r.stageUpdates} · ` +
+        `просмотрено ${r.scanned} · пропущено ${skippedTotal}`
       if (r.capped > 0) {
         toast.success(
           `${summary} (достигнут предел — ${r.capped} не проанализировано)`,
@@ -108,10 +95,10 @@ export function MagicCardsButton({
       } else {
         toast.success(summary)
       }
-      onCardsGenerated()
+      onDealsGenerated()
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Не удалось сгенерировать карточки",
+        e instanceof Error ? e.message : "Не удалось выполнить поиск сделок",
       )
     } finally {
       setRunning(false)
