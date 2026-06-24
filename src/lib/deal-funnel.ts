@@ -4,7 +4,7 @@
 // presentation map. Any custom org-defined stage falls through to its own name.
 export const DEAL_STAGE_LABEL: Record<string, string> = {
   Qualification: "Квалификация",
-  Discovery: "Выявление потребностей",
+  Discovery: "Потребности",
   Pilot: "Пилот",
   Proposal: "КП",
   Negotiations: "Переговоры",

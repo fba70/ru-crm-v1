@@ -656,6 +656,12 @@ export const deal = pgTable(
     // participate in deal-discovery (identify / match / move). Distinct from
     // the funnel `Rejected` stage, which is a visible sales outcome.
     status: dealStatus("status").notNull().default("active"),
+    // Fractional-indexing key for manual kanban ordering WITHIN a funnel
+    // stage (column). Nullable: legacy rows + LLM-discovered deals may have no
+    // key until first dragged; the board treats null as "unordered, sort to
+    // the end by updatedAt". Set/refreshed by `moveDeal` on drag. See
+    // `src/lib/kanban-move.ts` (computePosition) + `refs/kanban-spec.md`.
+    position: text("position"),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -674,6 +680,8 @@ export const deal = pgTable(
     index("deal_clientId_idx").on(table.clientId),
     index("deal_funnelStageId_idx").on(table.funnelStageId),
     index("deal_status_idx").on(table.status),
+    // Composite index for the per-column ordered read (stage + manual order).
+    index("deal_stage_position_idx").on(table.funnelStageId, table.position),
   ],
 )
 

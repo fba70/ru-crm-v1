@@ -34,14 +34,13 @@ import ContactEditDialog from "@/components/forms/form-contact-edit"
 import DealEditDialog from "@/components/forms/form-deal-edit"
 import { ClientCard } from "@/components/blocks/client-card"
 import { ContactCard } from "@/components/blocks/contact-card"
-import { DealCard } from "@/components/blocks/deal-card"
+import { DealsKanbanBoard } from "@/components/blocks/deals-kanban/board"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
 import { MagicDealsButton } from "@/components/blocks/magic-deals-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
-import { dealStageLabel } from "@/lib/deal-funnel"
 import { authClient } from "@/lib/auth-client"
 
 const PAGE_SIZE = 6
@@ -63,10 +62,6 @@ const DEAL_UPDATED_RANGE_DAYS: Record<string, number | null> = {
   week: 7,
   month: 30,
 }
-// Per-sub-tab pagination size options. The grid is 3 columns, so 3 / 6 / 12
-// render as 1 / 2 / 4 rows respectively.
-const DEAL_PAGE_SIZE_OPTIONS = [3, 6, 12] as const
-const DEAL_DEFAULT_PAGE_SIZE = 6
 
 // `deleted` is a soft-delete (test/garbage records, excluded from discovery).
 // It's selectable here so operators can view/restore them, but hidden under
@@ -355,19 +350,6 @@ export default function ClientsPage() {
     dealUpdatedRange,
     currentUserId,
   ])
-
-  const dealsByStage = useMemo(() => {
-    const map = new Map<string, DealRow[]>()
-    for (const s of dealStages) map.set(s.id, [])
-    for (const d of filteredDeals) {
-      const bucket = map.get(d.funnelStageId)
-      if (bucket) bucket.push(d)
-      // Deals on stages outside the resolved stage list (e.g. a stale
-      // org-scoped reference after the funnel was changed) are intentionally
-      // dropped — there's no kanban tab to render them in.
-    }
-    return map
-  }, [dealStages, filteredDeals])
 
   // Sales funnel value: sum of (deal.value × stage.closureProbability)
   // across ALL non-cancelled deals — board-level summary, deliberately
@@ -821,99 +803,17 @@ export default function ClientsPage() {
                 ) : dealStages.length === 0 ? (
                   <EmptyState label="Этапы воронки не настроены. Запустите скрипт инициализации, чтобы их создать." />
                 ) : (
-                  <Tabs defaultValue={dealStages[0].id} className="w-full">
-                    <TabsList className="flex-wrap h-auto">
-                      {dealStages.map((s) => (
-                        <TabsTrigger key={s.id} value={s.id}>
-                          {dealStageLabel(s.name)}
-                          <span className="ml-1.5 text-xs text-muted-foreground">
-                            ({(dealsByStage.get(s.id) ?? []).length})
-                          </span>
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                    {dealStages.map((s) => {
-                      const bucket = dealsByStage.get(s.id) ?? []
-                      return (
-                        <TabsContent key={s.id} value={s.id} className="mt-4">
-                          <DealStageBucket
-                            deals={bucket}
-                            stages={dealStages}
-                            onChanged={refreshAll}
-                            emptyLabel={
-                              hasDealFilters
-                                ? `Нет сделок по фильтрам на этапе «${dealStageLabel(s.name)}».`
-                                : `Нет сделок на этапе «${dealStageLabel(s.name)}».`
-                            }
-                          />
-                        </TabsContent>
-                      )
-                    })}
-                  </Tabs>
+                  <DealsKanbanBoard
+                    deals={filteredDeals}
+                    stages={dealStages}
+                    onChanged={refreshAll}
+                    boardId={currentUserId || "deals"}
+                  />
                 )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
-    </div>
-  )
-}
-
-function DealStageBucket({
-  deals,
-  stages,
-  onChanged,
-  emptyLabel,
-}: {
-  deals: DealRow[]
-  stages: DealFunnelStageOption[]
-  onChanged: () => void
-  emptyLabel: string
-}) {
-  // Per-sub-tab page size (3 / 6 / 12). Each stage bucket keeps its own.
-  const [pageSize, setPageSize] = useState<number>(DEAL_DEFAULT_PAGE_SIZE)
-  const paged = usePaged(deals, pageSize)
-
-  if (deals.length === 0) {
-    return <EmptyState label={emptyLabel} />
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {paged.pageItems.map((d) => (
-          <DealCard key={d.id} deal={d} stages={stages} onChanged={onChanged} />
-        ))}
-      </div>
-      {/* Bottom row: page-size selector pinned bottom-left, pager centered. */}
-      <div className="flex items-center gap-2">
-        <div className="flex flex-1 items-center gap-2">
-          <span className="whitespace-nowrap text-xs text-muted-foreground">
-            Карточек на странице:
-          </span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(v) => setPageSize(Number(v))}
-          >
-            <SelectTrigger size="sm" className="w-fit shrink-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DEAL_PAGE_SIZE_OPTIONS.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <PagerNav
-          page={paged.page}
-          totalPages={paged.totalPages}
-          setPage={paged.setPage}
-        />
-        <div className="flex-1" />
       </div>
     </div>
   )

@@ -32,6 +32,9 @@ export type DealRow = {
   value: string | null
   currency: string
   status: DealStatus
+  // Fractional-indexing key for manual kanban order within a stage; null until
+  // the deal is first dragged (board sorts null to the end by updatedAt).
+  position: string | null
   userId: string
   userName: string | null
   organizationId: string
@@ -329,6 +332,7 @@ export async function listDeals(
     value: r.deal.value,
     currency: r.deal.currency,
     status: r.deal.status,
+    position: r.deal.position,
     userId: r.deal.userId,
     userName: r.userName,
     organizationId: r.deal.organizationId,
@@ -380,6 +384,7 @@ export async function getDeal(dealId: string): Promise<DealRow | null> {
     value: r.deal.value,
     currency: r.deal.currency,
     status: r.deal.status,
+    position: r.deal.position,
     userId: r.deal.userId,
     userName: r.userName,
     organizationId: r.deal.organizationId,
@@ -515,5 +520,27 @@ export async function setDealStatus(dealId: string, status: DealStatus) {
   }
   await assertDealInOrg(dealId, activeOrgId)
   await db.update(deal).set({ status }).where(eq(deal.id, dealId))
+}
+
+// Kanban drag: move a deal to a column (funnel stage) at a manual-order slot.
+// The CLIENT computes `position` via fractional-indexing (computePosition in
+// src/lib/kanban-move.ts) from the neighbours at the drop point; the server
+// only validates tenant + stage ownership and writes both fields. This is the
+// only path that sets `deal.position`. (`updatedAt` bumps via $onUpdate — a
+// drag counts as a touch, same as the stage-move dropdown.)
+export async function moveDeal(
+  dealId: string,
+  data: { funnelStageId: string; position: string },
+) {
+  const { activeOrgId } = await requireOrgContext()
+  await assertDealInOrg(dealId, activeOrgId)
+  await assertFunnelStageAccessible(data.funnelStageId, activeOrgId)
+  if (typeof data.position !== "string" || data.position.length === 0) {
+    throw new Error("Invalid position")
+  }
+  await db
+    .update(deal)
+    .set({ funnelStageId: data.funnelStageId, position: data.position })
+    .where(eq(deal.id, dealId))
 }
 

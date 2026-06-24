@@ -90,7 +90,10 @@ export default function DealEditDialog({
       funnelStageId: deal?.funnelStageId ?? "",
       clientId: deal?.clientId ?? "",
       value: deal?.value ?? "",
-      currency: deal?.currency ?? "EUR",
+      // RUB-only business — the card renders amounts in ₽ regardless of the
+      // stored currency, so the edit field always defaults to RUB (legacy
+      // deals carry an EUR/USD default we don't want to surface).
+      currency: "RUB",
       status: deal?.status ?? "active",
       contactIds: deal?.contacts.map((c) => c.id) ?? [],
     },
@@ -137,7 +140,7 @@ export default function DealEditDialog({
           funnelStageId: defaultFunnelStageId,
           clientId: deal?.clientId ?? "",
           value: deal?.value ?? "",
-          currency: deal?.currency ?? "RUB",
+          currency: "RUB",
           status: deal?.status ?? "active",
           contactIds: deal?.contacts.map((c) => c.id) ?? [],
         })
