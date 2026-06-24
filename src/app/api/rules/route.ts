@@ -20,13 +20,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const type = searchParams.get("type") || "Custom"
     const search = searchParams.get("search") || undefined
-    const organizationId = searchParams.get("organizationId") || undefined
-    const activeOrgOnly = searchParams.get("activeOrgOnly") === "1"
 
+    // Custom rules are always scoped to the active org server-side (see
+    // getCustomRules) — the legacy `organizationId` / `activeOrgOnly` query
+    // params are intentionally ignored so the client can't widen the scope.
     const rules =
       type === "System"
         ? await getSystemRules(search)
-        : await getCustomRules(search, organizationId, activeOrgOnly)
+        : await getCustomRules(search)
 
     return NextResponse.json({ rules })
   } catch (error) {

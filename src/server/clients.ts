@@ -417,8 +417,26 @@ export async function lookupClientOnWeb(
     .filter(Boolean)
     .join("\n")
 
+  // A known website URL is the authoritative identity of the company: when
+  // it's present we pin all research to that one site and never offer
+  // name-similarity alternatives (the URL, not the name, is the key criterion).
+  const knownUrl = (target.webUrl ?? "").trim()
+  const hasKnownUrl = knownUrl.length > 0
+
   // ── Pass 1: grounded research ───────────────────────────────────────
-  const researchPrompt = `I have the following CRM record for a company:
+  const researchPrompt = hasKnownUrl
+    ? `I have the following CRM record for a company:
+
+${knownLines}
+
+This record already has a confirmed official website: ${knownUrl}
+
+Research ONLY this exact organisation — the one that owns ${knownUrl}. Use web search to read that website (and pages directly under that same domain) to gather: official company name, primary contact email, main-office phone, headquarters address. The website URL is the authoritative identity of this company.
+
+Do NOT consider, search for, or mention any other company that merely has a similar name — only the organisation behind ${knownUrl} matters here.
+
+Write 1–3 short paragraphs of research notes summarising what you found on that website. Do NOT fabricate facts — only state what your search results actually confirm.`
+    : `I have the following CRM record for a company:
 
 ${knownLines}
 
@@ -447,7 +465,15 @@ Write 2–4 short paragraphs of research notes summarising what you found. If mu
   )
 
   // ── Pass 2: structured extraction ───────────────────────────────────
-  const extractPrompt = `CRM record (current fields):
+  const extractPrompt = hasKnownUrl
+    ? `CRM record (current fields):
+${knownLines}
+
+Research notes from web search (about ${knownUrl} only):
+${research.text || "(no research output)"}
+
+The record's website URL (${knownUrl}) is the authoritative identity of this company. Return EXACTLY ONE candidate, describing the organisation behind ${knownUrl}. Set its webUrl to ${knownUrl}. Do NOT add alternative companies based on name similarity. Fill every field the research notes confirm, and use empty strings for fields the research didn't establish. Set confidence to "high".`
+    : `CRM record (current fields):
 ${knownLines}
 
 Research notes from web search:

@@ -88,28 +88,13 @@ export async function getSystemRules(search?: string): Promise<RuleRow[]> {
   return listRules({ type: "System", search })
 }
 
-export async function getCustomRules(
-  search?: string,
-  organizationFilter?: string,
-  activeOrgOnly?: boolean,
-): Promise<RuleRow[]> {
+// Custom rules are ALWAYS scoped to the caller's active organization —
+// regardless of platform role. There is intentionally no cross-org listing
+// here: the /rules page is an org-scoped surface, and a platform admin must
+// not see (or edit) another org's custom rules through it. (System rules are
+// the only platform-wide bucket; see getSystemRules.)
+export async function getCustomRules(search?: string): Promise<RuleRow[]> {
   const session = await requireSession()
-  const admin = isPlatformAdmin(session.user.role)
-
-  if (activeOrgOnly) {
-    const activeOrgId = session.session.activeOrganizationId
-    if (!activeOrgId) return []
-    return listRules({ type: "Custom", search, organizationId: activeOrgId })
-  }
-
-  if (admin) {
-    return listRules({
-      type: "Custom",
-      search,
-      organizationId: organizationFilter || null,
-    })
-  }
-
   const activeOrgId = session.session.activeOrganizationId
   if (!activeOrgId) return []
   return listRules({ type: "Custom", search, organizationId: activeOrgId })
@@ -161,10 +146,13 @@ async function authorizeMutation(ruleId: string) {
   if (!current) throw new Error("Rule not found")
 
   if (current.type === "System") {
+    // System rules are platform-wide — only platform admins may mutate them.
     if (!admin) throw new Error("Unauthorized")
   } else {
+    // Custom rules are strictly org-scoped — only a member of the owning org
+    // may mutate them, regardless of platform role (mirrors getCustomRules).
     const activeOrgId = session.session.activeOrganizationId
-    if (!admin && current.organizationId !== activeOrgId) {
+    if (current.organizationId !== activeOrgId) {
       throw new Error("Unauthorized")
     }
   }

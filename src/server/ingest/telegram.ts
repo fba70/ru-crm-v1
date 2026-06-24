@@ -17,6 +17,8 @@ import { db } from "@/db/drizzle"
 import { source } from "@/db/schema"
 import { getTelegramCredentials } from "@/server/providers/credentials"
 import { upsertSourceItem } from "@/server/source-items"
+import { parseSourceItem } from "@/server/parse-source-item"
+import { uploadSourceItem } from "@/server/r2/upload-source-item"
 import {
   getTelegramUpdates,
   isTelegramWebhookConflict,
@@ -199,8 +201,49 @@ async function persistTelegramMessage(
   return { outcome: "ingested", itemId: id, inserted, chatId: message.chat.id }
 }
 
+// Drive a freshly-ingested telegram item through parse → R2 upload so it
+// becomes eligible for card / deal generation within seconds, instead of
+// sitting un-parsed until the daily orchestration pipeline (cron 03:00 UTC)
+// runs. Telegram arrives in real time via webhook (and on-demand via the
+// pull/Fetch button); without this fast-path, an operator clicking the
+// dashboard «Magic» button right after a message lands would find nothing
+// eligible yet (email "just works" only because it came through an earlier
+// scheduled sync that already parsed + uploaded it).
+//
+// Best-effort: every failure is logged and swallowed. parse + upload are
+// idempotent and the orchestration pipeline re-attempts any row that isn't
+// `parse_status='complete' AND r2_upload_status='complete'`, so a transient
+// failure here just defers the item to the next pipeline run — it never
+// blocks the ack or the fetch response.
+export async function parseAndUploadTelegramItem(
+  itemId: string,
+): Promise<void> {
+  try {
+    const parsed = await parseSourceItem(itemId)
+    if (parsed.parentStatus !== "complete") {
+      console.warn(
+        `[telegram] post-ingest parse not complete for ${itemId}: ` +
+          `${parsed.parentParseError ?? parsed.parentStatus}`,
+      )
+      return
+    }
+    const uploaded = await uploadSourceItem(itemId)
+    if (!uploaded.ok) {
+      console.warn(
+        `[telegram] post-ingest R2 upload failed for ${itemId}: ` +
+          `${uploaded.reason} — ${uploaded.error}`,
+      )
+    }
+  } catch (err) {
+    console.error(
+      `[telegram] post-ingest parse/upload threw for ${itemId}:`,
+      err,
+    )
+  }
+}
+
 export type TelegramIngestResult =
-  | { ok: true; outcome: "ingested" | "ignored"; itemId?: string }
+  | { ok: true; outcome: "ingested" | "ignored"; itemId?: string; inserted?: boolean }
   | { ok: false; reason: "unauthorized" }
 
 // Webhook delivery path: verify the echoed secret, persist, then ack the
@@ -235,7 +278,12 @@ export async function ingestTelegramUpdate(
     )
   }
 
-  return { ok: true, outcome: "ingested", itemId: result.itemId }
+  return {
+    ok: true,
+    outcome: "ingested",
+    itemId: result.itemId,
+    inserted: result.inserted,
+  }
 }
 
 export type TelegramFetchResult = {
@@ -285,6 +333,10 @@ export async function fetchTelegramUpdates(
   let fetched = 0
   let ingested = 0
   let ignored = 0
+  // Newly-inserted item ids to drive through parse → R2 upload at the end, so
+  // a pulled message is immediately eligible for card / deal generation (same
+  // fast-path as the webhook). Re-delivered duplicates aren't collected.
+  const newItemIds: string[] = []
 
   for (let page = 0; page < FETCH_DRAIN_PAGES; page++) {
     let updates
@@ -304,8 +356,10 @@ export async function fetchTelegramUpdates(
     for (const u of updates) {
       fetched++
       const r = await persistTelegramMessage(scope, u)
-      if (r.outcome === "ingested") ingested++
-      else ignored++
+      if (r.outcome === "ingested") {
+        ingested++
+        if (r.inserted) newItemIds.push(r.itemId)
+      } else ignored++
       // Next offset = highest seen update_id + 1 (confirms processed ones).
       offset = Math.max(offset ?? 0, u.update_id + 1)
     }
@@ -318,6 +372,15 @@ export async function fetchTelegramUpdates(
       .update(source)
       .set({ providerConfig: { ...cfg, telegramOffset: offset } })
       .where(eq(source.id, sourceId))
+  }
+
+  // Parse + upload the freshly-pulled messages inline (sequentially) so they're
+  // card/deal-eligible by the time this response returns and the operator can
+  // act on them immediately. Each call is non-throwing; transient failures fall
+  // back to the daily pipeline. Telegram text parses fast, so even a large pull
+  // stays comfortably inside the route's maxDuration.
+  for (const itemId of newItemIds) {
+    await parseAndUploadTelegramItem(itemId)
   }
 
   return { fetched, ingested, ignored, webhookActive: false }

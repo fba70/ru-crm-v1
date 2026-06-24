@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import type { Update } from "grammy/types"
 import {
   resolveTelegramWebhookContext,
   ingestTelegramUpdate,
+  parseAndUploadTelegramItem,
 } from "@/server/ingest/telegram"
 import {
   MissingCredentialsError,
@@ -71,6 +72,15 @@ export async function POST(
     if (!result.ok) {
       // Secret mismatch — reject the forgery.
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    // Fast-path the freshly-ingested message through parse → R2 upload AFTER
+    // the ack is flushed, so it becomes eligible for card / deal generation
+    // within seconds instead of waiting for the daily pipeline. Only for a
+    // genuinely new row (re-deliveries are already parsed); best-effort —
+    // `parseAndUploadTelegramItem` swallows failures and the pipeline retries.
+    if (result.outcome === "ingested" && result.inserted && result.itemId) {
+      const itemId = result.itemId
+      after(() => parseAndUploadTelegramItem(itemId))
     }
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (err) {
