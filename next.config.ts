@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   // internals (e.g. imapflow uses BigInt + node streams) that break when
   // Turbopack inlines them into the server build ("s.BigInt is not a
   // function"). Keep them external so they're require()'d at runtime.
-  serverExternalPackages: ["imapflow", "mailparser", "node-ical"],
+  serverExternalPackages: ["imapflow", "mailparser", "node-ical", "exceljs"],
   experimental: {
     authInterrupts: true,
     serverActions: {

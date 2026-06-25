@@ -64,6 +64,7 @@
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "fractional-indexing": "^3.3.0",
     "googleapis": "^171.4.0",
     "grammy": "^1.43.0",

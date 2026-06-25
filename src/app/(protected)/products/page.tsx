@@ -46,7 +46,15 @@ import {
   OrderRequestWizardStrip,
 } from "@/components/blocks/order-request-wizard"
 import { toast } from "sonner"
-import { ExternalLink, Eye, ImageOff, Loader, Plus, X } from "lucide-react"
+import {
+  Download,
+  ExternalLink,
+  Eye,
+  ImageOff,
+  Loader,
+  Plus,
+  X,
+} from "lucide-react"
 import type {
   ProductRow,
   ListProductsResult,
@@ -192,6 +200,38 @@ export default function ProductsPage() {
 
   const [categories, setCategories] = useState<string[]>([])
   const [options, setOptions] = useState<ProductFilterOptions>(EMPTY_OPTIONS)
+
+  // Price-list export — downloads the whole active catalog as an XLSX with one
+  // sheet per country (server builds it; no params). Fetch-to-blob so we can
+  // show a spinner and surface server errors as a toast.
+  const [exporting, setExporting] = useState(false)
+  const exportPriceList = useCallback(async () => {
+    setExporting(true)
+    try {
+      const res = await fetch("/api/products/export")
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(body?.error ?? `Ошибка экспорта (${res.status})`)
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get("Content-Disposition") ?? ""
+      const fileName =
+        disposition.match(/filename="?([^"]+)"?/)?.[1] ?? "price-list.xlsx"
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success("Прайс-лист выгружен")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка экспорта")
+    } finally {
+      setExporting(false)
+    }
+  }, [])
 
   // Commit a Select/stock filter immediately + reset to page 1.
   const setSelect = useCallback((key: keyof Filters, value: string) => {
@@ -644,7 +684,22 @@ export default function ProductsPage() {
             )}
             <Card>
               <CardHeader>
-                <CardTitle>Каталог товаров</CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle>Каталог товаров</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportPriceList}
+                    disabled={exporting}
+                  >
+                    {exporting ? (
+                      <Loader className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-1" />
+                    )}
+                    Экспорт прайс-листа
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Top row: search + clear-all. */}
