@@ -58,6 +58,24 @@ export function formatOrderAmount(amount: number, currency: string): string {
   }
 }
 
+// Apply a whole-percent discount to an order subtotal. Returns the clamped
+// percent, the rounded discount amount, and the discounted total. Pure +
+// client-safe so the orders table, the order builder, and the guest page all
+// derive the same numbers from `(totalAmount, discountPercent)` — the order
+// stores only the percent; the amounts are always derived.
+export function computeOrderDiscount(
+  total: number,
+  percentRaw: number,
+): { percent: number; discountAmount: number; discountedTotal: number } {
+  const percent = Number.isFinite(percentRaw)
+    ? Math.min(Math.max(percentRaw, 0), 100)
+    : 0
+  const t = Number.isFinite(total) ? total : 0
+  const discountAmount = Math.round(t * percent) / 100
+  const discountedTotal = Math.max(0, Math.round((t - discountAmount) * 100) / 100)
+  return { percent, discountAmount, discountedTotal }
+}
+
 export function formatOrderDate(iso: string): string {
   return new Date(iso).toLocaleDateString("ru-RU", {
     year: "numeric",

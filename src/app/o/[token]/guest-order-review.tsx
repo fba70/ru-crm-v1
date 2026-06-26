@@ -343,11 +343,36 @@ export function GuestOrderReview({
               </Table>
             </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Итого</span>
-              <span className="text-lg font-semibold tabular-nums">
-                {formatOrderAmount(view.totalAmount, view.currency)}
-              </span>
+            <div className="space-y-1">
+              {view.discountPercent > 0 ? (
+                <>
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>Итого</span>
+                    <span className="tabular-nums">
+                      {formatOrderAmount(view.totalAmount, view.currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-amber-600 dark:text-amber-400">
+                    <span>Скидка {view.discountPercent}%</span>
+                    <span className="tabular-nums">
+                      −{formatOrderAmount(view.discountAmount, view.currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t pt-1">
+                    <span className="text-sm font-medium">Итого со скидкой</span>
+                    <span className="text-lg font-semibold tabular-nums">
+                      {formatOrderAmount(view.discountedTotal, view.currency)}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Итого</span>
+                  <span className="text-lg font-semibold tabular-nums">
+                    {formatOrderAmount(view.totalAmount, view.currency)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {view.can.confirm && (

@@ -98,6 +98,8 @@ type ClientFormData = {
   webUrl: string
   /** Stored under `customFields.type`; `TYPE_NONE` means unset. */
   type: ClientType | typeof TYPE_NONE
+  /** Stored under `customFields.discount`; whole % 0–100, "" means no discount. */
+  discount: string
   funnelPhase: FunnelPhase
   status: EntityStatus
 }
@@ -162,6 +164,10 @@ export default function ClientEditDialog({
       address: client?.address ?? "",
       webUrl: client?.webUrl ?? "",
       type: client?.customFields?.type ?? TYPE_NONE,
+      discount:
+        client?.customFields?.discount != null
+          ? String(client.customFields.discount)
+          : "",
       funnelPhase: client?.funnelPhase ?? "awareness",
       status: client?.status ?? "active",
     },
@@ -179,6 +185,10 @@ export default function ClientEditDialog({
         address: client?.address ?? "",
         webUrl: client?.webUrl ?? "",
         type: client?.customFields?.type ?? TYPE_NONE,
+        discount:
+          client?.customFields?.discount != null
+            ? String(client.customFields.discount)
+            : "",
         funnelPhase: client?.funnelPhase ?? "awareness",
         status: client?.status ?? "active",
       })
@@ -195,10 +205,13 @@ export default function ClientEditDialog({
         // Fold the flat `type` select back into the extensible custom-fields
         // bag, preserving any other keys already on the client. The server
         // re-validates + forces `{}` for orgs without the structured type.
-        const { type, ...rest } = data
+        const { type, discount, ...rest } = data
+        const discountValue = discount.trim() === "" ? undefined : Number(discount)
         const customFields = {
           ...(client?.customFields ?? {}),
           type: type === TYPE_NONE ? undefined : type,
+          // Server re-validates to a whole 0–100 (or drops it).
+          discount: discountValue,
         }
         const payload =
           mode === "create"
@@ -326,6 +339,38 @@ export default function ClientEditDialog({
                   <FormLabel className="text-gray-400">Сайт</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="https://example.com" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="discount"
+              rules={{
+                validate: (v) => {
+                  const s = (v ?? "").trim()
+                  if (s === "") return true
+                  const n = Number(s)
+                  return (Number.isFinite(n) && n >= 0 && n <= 100) ||
+                    "Скидка должна быть числом от 0 до 100"
+                },
+              }}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">Скидка (%)</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      value={field.value ?? ""}
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      inputMode="numeric"
+                      placeholder="напр. 20"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

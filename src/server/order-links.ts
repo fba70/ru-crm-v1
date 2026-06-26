@@ -19,7 +19,7 @@ import {
   hashToken,
   buildOrderLinkUrl,
 } from "@/lib/order-link-token"
-import { isValidEmail } from "@/lib/orders-format"
+import { isValidEmail, computeOrderDiscount } from "@/lib/orders-format"
 
 // Default link lifetime (spec §10 open question → 14-day global default;
 // per-order windows can land later as a column + form field).
@@ -318,7 +318,13 @@ export type GuestOrderView = {
   description: string | null
   status: OrderStatus
   currency: string
+  // `totalAmount` = catalog subtotal (pre-discount). The discount % is stored
+  // on the order; amount + discounted total are derived. A guest qty change
+  // recomputes the subtotal and the discount re-applies at the same percent.
   totalAmount: number
+  discountPercent: number
+  discountAmount: number
+  discountedTotal: number
   items: GuestLineItem[]
   grantStatus: OrderLinkStatus
   recipientEmail: string | null
@@ -391,6 +397,9 @@ export async function resolveOrderLink(
     .where(eq(orderItem.orderId, o.id))
     .orderBy(asc(orderItem.createdAt))
 
+  const totalAmount = Number(o.totalAmount)
+  const discount = computeOrderDiscount(totalAmount, Number(o.discountPercent))
+
   return {
     ok: true,
     view: {
@@ -399,7 +408,10 @@ export async function resolveOrderLink(
       description: o.description,
       status: o.status,
       currency: o.currency,
-      totalAmount: Number(o.totalAmount),
+      totalAmount,
+      discountPercent: discount.percent,
+      discountAmount: discount.discountAmount,
+      discountedTotal: discount.discountedTotal,
       items: items.map((i) => {
         const alcohol = i.alcohol?.trim()
         return {

@@ -13,6 +13,8 @@ import { and, asc, count, desc, eq, ilike, inArray, or } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
 import { getOrderLinkMeta, type OrderLinkMeta } from "@/server/order-links"
+import { normalizeDiscountPercent } from "@/lib/client-custom-fields"
+import { computeOrderDiscount } from "@/lib/orders-format"
 
 // Lightweight shape for the orders table — only the columns the table
 // renders (date / client / total / status), plus ids for row actions.
@@ -22,7 +24,13 @@ export type OrderRow = {
   clientId: string
   clientName: string | null
   // numeric(14,2) comes back from drizzle as a string; the API/UI use number.
+  // `totalAmount` is the catalog subtotal (pre-discount). `discountPercent` is
+  // the per-client discount snapshotted on the order; `discountAmount` +
+  // `discountedTotal` are DERIVED from the two (never stored).
   totalAmount: number
+  discountPercent: number
+  discountAmount: number
+  discountedTotal: number
   currency: string
   status: OrderStatus
   createdAt: string
@@ -48,6 +56,9 @@ export type OrderDetail = {
   description: string | null
   status: OrderStatus
   totalAmount: number
+  discountPercent: number
+  discountAmount: number
+  discountedTotal: number
   currency: string
   clientId: string
   clientName: string | null
@@ -70,6 +81,10 @@ export type OrderClientOption = {
   name: string
   // Used to prefill the "send to client" recipient email.
   email: string | null
+  // The client's current discount % (0 when unset) so the builder can preview
+  // the discount live as a client is picked. The server re-pulls it
+  // authoritatively on save.
+  discount: number
 }
 
 // One product line as supplied by a caller (create / update). `unitPrice`
@@ -136,6 +151,17 @@ async function assertClientInOrg(clientId: string, organizationId: string) {
 // string or number; a fixed 2-decimal string keeps the column consistent).
 function money(n: number): string {
   return (Number.isFinite(n) ? n : 0).toFixed(2)
+}
+
+// The client's current discount % (whole 0–100, 0 when unset), read from
+// `client.custom_fields.discount`. Snapshotted onto the order at save time.
+async function clientDiscountPercent(clientId: string): Promise<number> {
+  const rows = await db
+    .select({ customFields: client.customFields })
+    .from(client)
+    .where(eq(client.id, clientId))
+    .limit(1)
+  return normalizeDiscountPercent(rows[0]?.customFields?.discount) ?? 0
 }
 
 function normalizeCurrency(raw: string | null | undefined): string {
@@ -219,6 +245,7 @@ export async function listOrders(
         clientId: order.clientId,
         clientName: client.name,
         totalAmount: order.totalAmount,
+        discountPercent: order.discountPercent,
         currency: order.currency,
         status: order.status,
         createdAt: order.createdAt,
@@ -237,16 +264,26 @@ export async function listOrders(
   ])
 
   return {
-    rows: rows.map((r) => ({
-      id: r.id,
-      orderDate: r.orderDate.toISOString(),
-      clientId: r.clientId,
-      clientName: r.clientName,
-      totalAmount: Number(r.totalAmount),
-      currency: r.currency,
-      status: r.status,
-      createdAt: r.createdAt.toISOString(),
-    })),
+    rows: rows.map((r) => {
+      const totalAmount = Number(r.totalAmount)
+      const { percent, discountAmount, discountedTotal } = computeOrderDiscount(
+        totalAmount,
+        Number(r.discountPercent),
+      )
+      return {
+        id: r.id,
+        orderDate: r.orderDate.toISOString(),
+        clientId: r.clientId,
+        clientName: r.clientName,
+        totalAmount,
+        discountPercent: percent,
+        discountAmount,
+        discountedTotal,
+        currency: r.currency,
+        status: r.status,
+        createdAt: r.createdAt.toISOString(),
+      }
+    }),
     total: totalRows[0]?.n ?? 0,
   }
 }
@@ -291,12 +328,21 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     getOrderLinkMeta(id),
   ])
 
+  const totalAmount = Number(h.order.totalAmount)
+  const discount = computeOrderDiscount(
+    totalAmount,
+    Number(h.order.discountPercent),
+  )
+
   return {
     id: h.order.id,
     orderDate: h.order.orderDate.toISOString(),
     description: h.order.description,
     status: h.order.status,
-    totalAmount: Number(h.order.totalAmount),
+    totalAmount,
+    discountPercent: discount.percent,
+    discountAmount: discount.discountAmount,
+    discountedTotal: discount.discountedTotal,
     currency: h.order.currency,
     clientId: h.order.clientId,
     clientName: h.clientName,
@@ -334,6 +380,8 @@ export async function createOrder(data: {
     activeOrgId,
     data.items ?? [],
   )
+  // Snapshot the client's current discount onto the order.
+  const discountPercent = await clientDiscountPercent(data.clientId)
 
   const id = randomUUID()
   const now = new Date()
@@ -347,6 +395,7 @@ export async function createOrder(data: {
     description: data.description?.trim() || null,
     status: "draft",
     totalAmount: money(total),
+    discountPercent: money(discountPercent),
     currency: normalizeCurrency(data.currency),
     clientId: data.clientId,
     userId: session.user.id,
@@ -425,6 +474,13 @@ export async function updateOrder(
     totalOverride = total
   }
 
+  // Re-sync the discount from the (possibly newly-assigned) client on every
+  // internal save, so fixing a client's discount and re-saving the order
+  // applies it. Guest qty edits go through `@/server/order-links` and leave the
+  // stored percent untouched.
+  const effectiveClientId = data.clientId ?? current.clientId
+  const discountPercent = await clientDiscountPercent(effectiveClientId)
+
   await db
     .update(order)
     .set({
@@ -441,6 +497,7 @@ export async function updateOrder(
       ...(totalOverride !== undefined
         ? { totalAmount: money(totalOverride) }
         : {}),
+      discountPercent: money(discountPercent),
     })
     .where(eq(order.id, orderId))
 }
@@ -450,7 +507,12 @@ export async function updateOrder(
 export async function listOrderClientOptions(): Promise<OrderClientOption[]> {
   const { activeOrgId } = await requireOrgContext()
   const rows = await db
-    .select({ id: client.id, name: client.name, email: client.email })
+    .select({
+      id: client.id,
+      name: client.name,
+      email: client.email,
+      customFields: client.customFields,
+    })
     .from(client)
     .where(
       and(
@@ -459,5 +521,10 @@ export async function listOrderClientOptions(): Promise<OrderClientOption[]> {
       ),
     )
     .orderBy(asc(client.name))
-  return rows
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    discount: normalizeDiscountPercent(r.customFields?.discount) ?? 0,
+  }))
 }

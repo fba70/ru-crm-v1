@@ -17,6 +17,7 @@ import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
 import {
   isClientType,
+  normalizeDiscountPercent,
   orgHasStructuredClientType,
   type ClientCustomFields,
 } from "@/lib/client-custom-fields"
@@ -160,18 +161,21 @@ function cleanAliases(raw: string[] | null | undefined): string[] | null {
 }
 
 /**
- * Normalise the custom-fields bag for the given org. Only the designated org
- * keeps a structured `type` (validated against `CLIENT_TYPE_VALUES`); every
- * other org stores an empty `{}`. Unknown keys are dropped — the bag is
- * extensible by design but the server controls what actually lands.
+ * Normalise the custom-fields bag for the given org. The `discount` percentage
+ * is kept for ALL orgs (validated to a whole 0–100, omitted when unset). The
+ * structured `type` is kept only for the designated org. Unknown keys are
+ * dropped — the bag is extensible by design but the server controls what lands.
  */
 function normalizeClientCustomFields(
   organizationId: string,
   raw: ClientCustomFields | null | undefined,
 ): ClientCustomFields {
-  if (!orgHasStructuredClientType(organizationId)) return {}
   const out: ClientCustomFields = {}
-  if (isClientType(raw?.type)) out.type = raw.type
+  if (orgHasStructuredClientType(organizationId) && isClientType(raw?.type)) {
+    out.type = raw.type
+  }
+  const discount = normalizeDiscountPercent(raw?.discount)
+  if (discount != null) out.discount = discount
   return out
 }
 

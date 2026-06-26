@@ -34,7 +34,35 @@ export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
 /** Extensible per-client custom-fields bag stored as jsonb. */
 export type ClientCustomFields = {
   type?: ClientType
+  /**
+   * Per-client discount, a whole percentage 0–100. Applied to the catalog
+   * subtotal of every order placed for this client (snapshotted onto the order
+   * at save time). Absent / 0 = no discount. Available to ALL orgs (unlike
+   * `type`).
+   */
+  discount?: number
 } & Record<string, unknown>
+
+/** Upper bound for the client discount percentage. */
+export const MAX_DISCOUNT_PERCENT = 100
+
+/**
+ * Normalise an arbitrary value into a whole discount percentage in [1, 100], or
+ * `null` when unset / invalid / ≤ 0. Whole numbers only (rounded). `null` is the
+ * "no discount" signal — the key is then omitted from the custom-fields bag.
+ */
+export function normalizeDiscountPercent(raw: unknown): number | null {
+  const n =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+        ? Number(raw)
+        : NaN
+  if (!Number.isFinite(n)) return null
+  const v = Math.round(n)
+  if (v <= 0) return null
+  return Math.min(v, MAX_DISCOUNT_PERCENT)
+}
 
 /** Whether the given org gets the structured `type` custom field. */
 export function orgHasStructuredClientType(

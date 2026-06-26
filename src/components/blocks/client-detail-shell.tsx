@@ -157,6 +157,15 @@ export function ClientDetailShell({
                   {STATUS_LABEL[detail.status] ?? detail.status}
                 </Badge>
               )}
+              {typeof detail.customFields?.discount === "number" &&
+                detail.customFields.discount > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="bg-amber-500/15 text-amber-600 dark:text-amber-300"
+                  >
+                    Скидка {detail.customFields.discount}%
+                  </Badge>
+                )}
             </div>
           </div>
           <div className="flex items-center gap-2">

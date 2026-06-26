@@ -162,7 +162,9 @@ export function OrdersTable({
             <TableRow>
               <TableHead className="w-32">Дата</TableHead>
               <TableHead>Клиент</TableHead>
-              <TableHead className="text-right w-36">Итого</TableHead>
+              <TableHead className="text-right w-32">Итого</TableHead>
+              <TableHead className="text-right w-32">Скидка</TableHead>
+              <TableHead className="text-right w-36">Итого со скидкой</TableHead>
               <TableHead className="w-40">Статус</TableHead>
               <TableHead className="w-20 text-center">Открыть</TableHead>
             </TableRow>
@@ -170,14 +172,14 @@ export function OrdersTable({
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-40 text-center">
+                <TableCell colSpan={7} className="h-40 text-center">
                   <Loader className="animate-spin h-6 w-6 mx-auto" />
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={7}
                   className="h-40 text-center text-muted-foreground"
                 >
                   {filtersActive
@@ -202,6 +204,22 @@ export function OrdersTable({
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatOrderAmount(o.totalAmount, o.currency)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {o.discountPercent > 0 ? (
+                      <span className="text-amber-600 dark:text-amber-400">
+                        −{formatOrderAmount(o.discountAmount, o.currency)}
+                        <span className="text-muted-foreground">
+                          {" "}
+                          ({o.discountPercent}%)
+                        </span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {formatOrderAmount(o.discountedTotal, o.currency)}
                   </TableCell>
                   <TableCell>
                     <Badge

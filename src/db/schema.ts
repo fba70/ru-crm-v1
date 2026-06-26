@@ -957,6 +957,15 @@ export const order = pgTable(
     totalAmount: numeric("total_amount", { precision: 14, scale: 2 })
       .notNull()
       .default("0"),
+    // Per-client discount snapshotted onto the order at save time (a whole
+    // percent 0–100, sourced from `client.custom_fields.discount`). Re-synced
+    // from the client on every internal create/update; guest qty edits keep it.
+    // The discount AMOUNT and the discounted total are DERIVED on read (see
+    // `computeOrderDiscount`) from `total_amount` × this percent — never stored,
+    // so a guest qty change recomputes them without extra writes.
+    discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
+      .notNull()
+      .default("0"),
     currency: text("currency").notNull().default("RUB"),
     // `restrict` (not cascade / set null): clients are never hard-deleted in
     // this app (soft-delete via status), so an accidental hard-delete should
