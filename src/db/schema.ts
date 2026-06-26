@@ -513,6 +513,8 @@ export const taskType = pgEnum("task_type", [
   "email",
   "offer",
   "docs",
+  // Customer-support task — created when an operator accepts a `support` card.
+  "support",
   "other",
 ])
 
@@ -722,6 +724,10 @@ export const cardCategory = pgEnum("card_category", [
   // "Create order" button that opens the New Order dialog on /products
   // prefilled with the client + that message (→ the order-from-request flow).
   "new_order",
+  // A customer-support request: complaint about product quality, a delivery
+  // problem, a product issue/question. High priority; accepting it spawns a
+  // `support`-type task. See `src/app/CLAUDE.md` § "Support cards".
+  "support",
 ])
 
 export type CardCategory = (typeof cardCategory.enumValues)[number]

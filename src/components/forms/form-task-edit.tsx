@@ -38,7 +38,15 @@ import type {
 } from "@/app/api/tasks/route"
 import type { TaskType, TaskPriority, TaskStatus } from "@/db/schema"
 
-const TYPES: TaskType[] = ["meet", "call", "email", "offer", "docs", "other"]
+const TYPES: TaskType[] = [
+  "meet",
+  "call",
+  "email",
+  "offer",
+  "docs",
+  "support",
+  "other",
+]
 const PRIORITIES: TaskPriority[] = ["low", "medium", "high"]
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "closed"]
 
@@ -48,6 +56,7 @@ const TYPE_LABELS: Record<TaskType, string> = {
   email: "Email",
   offer: "Предложение",
   docs: "Документы",
+  support: "Поддержка",
   other: "Другое",
 }
 

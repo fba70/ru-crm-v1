@@ -53,6 +53,7 @@ const CATEGORY_LABEL: Record<CardCategory, string> = {
   momentum: "Динамика",
   log_only: "Только запись",
   new_order: "Новый заказ",
+  support: "Поддержка",
 }
 
 const CATEGORY_COLOR: Record<CardCategory, string> = {
@@ -65,6 +66,7 @@ const CATEGORY_COLOR: Record<CardCategory, string> = {
   momentum: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
   log_only: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
   new_order: "bg-lime-500/15 text-lime-700 dark:text-lime-300",
+  support: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
 }
 
 const PRIORITY_COLOR: Record<CardPriority, string> = {

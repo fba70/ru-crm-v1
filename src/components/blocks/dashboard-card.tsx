@@ -38,6 +38,7 @@ import type {
   CardPriority,
   TaskPriority,
   TaskStatus,
+  TaskType,
 } from "@/db/schema"
 
 const PRIORITY_LABEL: Record<CardPriority, string> = {
@@ -55,6 +56,7 @@ const CATEGORY_LABEL: Record<CardCategory, string> = {
   momentum: "Динамика",
   log_only: "Только запись",
   new_order: "Новый заказ",
+  support: "Поддержка",
 }
 
 const CATEGORY_COLOR: Record<CardCategory, string> = {
@@ -67,6 +69,7 @@ const CATEGORY_COLOR: Record<CardCategory, string> = {
   momentum: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
   log_only: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
   new_order: "bg-lime-500/15 text-lime-700 dark:text-lime-300",
+  support: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
 }
 
 const PRIORITY_COLOR: Record<CardPriority, string> = {
@@ -223,6 +226,9 @@ export function DashboardCard({
       description: recommendation,
       priority: (card.priority === "high" ? "high" : "medium") as TaskPriority,
       status: "todo" as TaskStatus,
+      // A support card spawns a customer-support task; other cards leave the
+      // type to the form default.
+      ...(card.category === "support" ? { type: "support" as TaskType } : {}),
       ...(clientId ? { clientId } : {}),
       ...(contactId ? { contactId } : {}),
     }

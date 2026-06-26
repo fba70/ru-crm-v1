@@ -52,6 +52,7 @@ const CATEGORIES = [
   "momentum",
   "log_only",
   "new_order",
+  "support",
 ] as const
 
 const CATEGORY_LABEL: Record<(typeof CATEGORIES)[number], string> = {
@@ -64,6 +65,7 @@ const CATEGORY_LABEL: Record<(typeof CATEGORIES)[number], string> = {
   momentum: "Динамика",
   log_only: "Только запись",
   new_order: "Новый заказ",
+  support: "Поддержка",
 }
 
 // UI display labels for card priority (DB enum values stay English).
