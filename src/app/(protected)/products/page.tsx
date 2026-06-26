@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -32,6 +32,11 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { ProductDetailDialog } from "@/components/blocks/product-detail-dialog"
@@ -47,6 +52,7 @@ import {
 } from "@/components/blocks/order-request-wizard"
 import { toast } from "sonner"
 import {
+  ChevronsUpDown,
   Download,
   ExternalLink,
   Eye,
@@ -76,12 +82,15 @@ type Filters = {
   q: string
   category: string
   type: string
-  color: string
+  // Export-relevant, multi-select (country → region → color = the price-list
+  // hierarchy). These drive both the catalog listing AND the price-list export.
+  countryName: string[]
+  region: string[]
+  color: string[]
   sugar: string
   year: string
   aging: string
   bottleVolume: string
-  countryName: string
   appelacion: string
   rating: string
   awards: string
@@ -94,12 +103,13 @@ const EMPTY_FILTERS: Filters = {
   q: "",
   category: ALL,
   type: ALL,
-  color: ALL,
+  countryName: [],
+  region: [],
+  color: [],
   sugar: ALL,
   year: ALL,
   aging: ALL,
   bottleVolume: ALL,
-  countryName: ALL,
   appelacion: ALL,
   rating: ALL,
   awards: "",
@@ -118,23 +128,134 @@ const EMPTY_OPTIONS: ProductFilterOptions = {
   countryName: [],
   appelacion: [],
   rating: [],
+  region: [],
+  regionsByCountry: {},
 }
 
-// A labelled filter cell: tiny caption above the control.
+// A labelled filter cell: tiny caption above the control. `accent` paints the
+// label yellow to mark the three export-relevant filters (country / region /
+// color) — the only ones the price-list export honors.
 function FilterField({
   label,
   children,
   className,
+  accent,
 }: {
   label: string
   children: React.ReactNode
   className?: string
+  accent?: boolean
 }) {
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span
+        className={`text-xs ${
+          accent
+            ? "font-medium text-amber-600 dark:text-amber-400"
+            : "text-muted-foreground"
+        }`}
+      >
+        {label}
+      </span>
       {children}
     </div>
+  )
+}
+
+// A multi-select attribute dropdown: Popover + a plain searchable checkbox
+// list. The trigger shows the chosen count; "Все" when nothing is picked. Used
+// for the export-relevant country / region / color filters.
+//
+// Deliberately NOT built on cmdk's <Command>: cmdk tracks a single highlighted
+// value and re-runs its own filter on every state change, which dropped
+// selections in a multi-pick list. Here each row is an independent <Checkbox>
+// whose onCheckedChange toggles exactly that value via a functional update in
+// the parent — picks can't race or clobber one another.
+function MultiFilterSelect({
+  values,
+  onToggle,
+  onClear,
+  options,
+  disabled,
+}: {
+  values: string[]
+  onToggle: (v: string) => void
+  onClear: () => void
+  options: string[]
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const selected = new Set(values)
+  const q = query.trim().toLowerCase()
+  const visible = q
+    ? options.filter((o) => o.toLowerCase().includes(q))
+    : options
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o)
+        if (!o) setQuery("")
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className="w-full justify-between font-normal"
+        >
+          <span className="truncate">
+            {values.length === 0 ? "Все" : `Выбрано: ${values.length}`}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-(--radix-popover-trigger-width) min-w-52 p-0"
+      >
+        <div className="border-b p-2">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Поиск…"
+            className="h-8"
+          />
+        </div>
+        <div className="max-h-64 overflow-y-auto p-1">
+          {values.length > 0 && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="w-full rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent"
+            >
+              Очистить выбор
+            </button>
+          )}
+          {visible.length === 0 ? (
+            <div className="px-2 py-1.5 text-sm text-muted-foreground">
+              Ничего не найдено
+            </div>
+          ) : (
+            visible.map((o) => (
+              <label
+                key={o}
+                className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              >
+                <Checkbox
+                  checked={selected.has(o)}
+                  onCheckedChange={() => onToggle(o)}
+                />
+                <span className="truncate">{o}</span>
+              </label>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -163,6 +284,22 @@ function FilterSelect({
       </SelectContent>
     </Select>
   )
+}
+
+// Append a multi-select filter's values as repeated query params — UNLESS every
+// available option is selected, in which case the filter is omitted entirely
+// (treated as "no constraint"). Omitting matters because `col IN (…)` can't match
+// a NULL/empty value, so selecting every option would otherwise silently drop
+// rows whose value for that attribute is blank (e.g. products with no color).
+// "All selected" = no narrowing → include those blank rows too.
+function appendUnlessAll(
+  params: URLSearchParams,
+  key: string,
+  selected: string[],
+  allOptions: string[],
+) {
+  if (allOptions.length > 0 && selected.length >= allOptions.length) return
+  for (const v of selected) params.append(key, v)
 }
 
 // Format a price as RUB currency in the RU locale (thin-space grouping +
@@ -201,14 +338,35 @@ export default function ProductsPage() {
   const [categories, setCategories] = useState<string[]>([])
   const [options, setOptions] = useState<ProductFilterOptions>(EMPTY_OPTIONS)
 
-  // Price-list export — downloads the whole active catalog as an XLSX with one
-  // sheet per country (server builds it; no params). Fetch-to-blob so we can
-  // show a spinner and surface server errors as a toast.
+  // Region choices are scoped to the selected countries (union of their
+  // regions); with no country picked, every region is offered. Declared here
+  // (before the export/list callbacks) because both use it as the "all regions
+  // selected?" denominator.
+  const availableRegions = useMemo(() => {
+    if (filters.countryName.length === 0) return options.region
+    const set = new Set<string>()
+    for (const c of filters.countryName)
+      for (const r of options.regionsByCountry[c] ?? []) set.add(r)
+    return [...set].sort((a, b) => a.localeCompare(b, "ru"))
+  }, [filters.countryName, options.region, options.regionsByCountry])
+
+  // Price-list export — downloads the active catalog as an XLSX with one sheet
+  // per country. The three export-relevant filters (country / region / color)
+  // are forwarded so the export honors them; every OTHER active filter is
+  // ignored by the export. No relevant filters set → the whole active catalog.
+  // Fetch-to-blob so we can show a spinner and surface server errors as a toast.
   const [exporting, setExporting] = useState(false)
   const exportPriceList = useCallback(async () => {
     setExporting(true)
     try {
-      const res = await fetch("/api/products/export")
+      // Repeated params (NOT comma-joined): some region values contain commas.
+      // All-of-an-attribute selected ⇒ omit it so blank-valued rows are kept.
+      const params = new URLSearchParams()
+      appendUnlessAll(params, "countries", filters.countryName, options.countryName)
+      appendUnlessAll(params, "regions", filters.region, availableRegions)
+      appendUnlessAll(params, "colors", filters.color, options.color)
+      const qs = params.toString()
+      const res = await fetch(`/api/products/export${qs ? `?${qs}` : ""}`)
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         throw new Error(body?.error ?? `Ошибка экспорта (${res.status})`)
@@ -231,11 +389,73 @@ export default function ProductsPage() {
     } finally {
       setExporting(false)
     }
+  }, [
+    filters.countryName,
+    filters.region,
+    filters.color,
+    options.countryName,
+    options.color,
+    availableRegions,
+  ])
+
+  // Commit a single-value Select/stock filter immediately + reset to page 1.
+  const setSelect = useCallback(
+    (key: "category" | "type" | "sugar" | "year" | "aging" | "bottleVolume" | "appelacion" | "rating" | "inStock", value: string) => {
+      setFilters((f) => ({ ...f, [key]: value }))
+      setPage(1)
+    },
+    [],
+  )
+
+  // Toggle/clear a multi-value filter (region / color) via FUNCTIONAL updates so
+  // rapid clicks inside the cmdk list always read the latest selection.
+  const toggleMulti = useCallback((key: "region" | "color", value: string) => {
+    setFilters((f) => {
+      const cur = f[key]
+      return {
+        ...f,
+        [key]: cur.includes(value)
+          ? cur.filter((x) => x !== value)
+          : [...cur, value],
+      }
+    })
+    setPage(1)
+  }, [])
+  const clearMulti = useCallback((key: "region" | "color") => {
+    setFilters((f) => ({ ...f, [key]: [] }))
+    setPage(1)
   }, [])
 
-  // Commit a Select/stock filter immediately + reset to page 1.
-  const setSelect = useCallback((key: keyof Filters, value: string) => {
-    setFilters((f) => ({ ...f, [key]: value }))
+  // Country is the parent of region. Pruning of orphaned regions happens ONLY
+  // when a country is REMOVED — adding a country can only widen the allowed set,
+  // so it must never drop an already-picked region (that bug dropped selections
+  // when regions were chosen before both countries were). Functional update for
+  // the same anti-race reason as above.
+  const toggleCountry = useCallback(
+    (value: string) => {
+      setFilters((f) => {
+        const removing = f.countryName.includes(value)
+        const countryName = removing
+          ? f.countryName.filter((x) => x !== value)
+          : [...f.countryName, value]
+        if (!removing || countryName.length === 0) {
+          return { ...f, countryName }
+        }
+        const allowed = new Set(
+          countryName.flatMap((c) => options.regionsByCountry[c] ?? []),
+        )
+        return {
+          ...f,
+          countryName,
+          region: f.region.filter((r) => allowed.has(r)),
+        }
+      })
+      setPage(1)
+    },
+    [options.regionsByCountry],
+  )
+  const clearCountries = useCallback(() => {
+    setFilters((f) => ({ ...f, countryName: [] }))
     setPage(1)
   }, [])
 
@@ -291,12 +511,13 @@ export default function ProductsPage() {
     awardsInput !== "" ||
     filters.category !== ALL ||
     filters.type !== ALL ||
-    filters.color !== ALL ||
+    filters.countryName.length > 0 ||
+    filters.region.length > 0 ||
+    filters.color.length > 0 ||
     filters.sugar !== ALL ||
     filters.year !== ALL ||
     filters.aging !== ALL ||
     filters.bottleVolume !== ALL ||
-    filters.countryName !== ALL ||
     filters.appelacion !== ALL ||
     filters.rating !== ALL ||
     filters.inStock !== ALL ||
@@ -564,14 +785,18 @@ export default function ProductsPage() {
       if (filters.q && !boxIsWizardPhrase) params.set("q", filters.q)
       if (filters.category !== ALL) params.set("category", filters.category)
       if (filters.type !== ALL) params.set("type", filters.type)
-      if (filters.color !== ALL) params.set("color", filters.color)
+      // Repeated params (NOT comma-joined) — some region values legitimately
+      // contain commas (e.g. "АЛЬГЕРО,САРДИНИЯ"), which a delimiter would split.
+      // All-of-an-attribute selected ⇒ omit it (no constraint) so blank-valued
+      // rows (e.g. a product with no color) aren't dropped by the IN (…) gate.
+      appendUnlessAll(params, "colors", filters.color, options.color)
       if (filters.sugar !== ALL) params.set("sugar", filters.sugar)
       if (filters.year !== ALL) params.set("year", filters.year)
       if (filters.aging !== ALL) params.set("aging", filters.aging)
       if (filters.bottleVolume !== ALL)
         params.set("bottleVolume", filters.bottleVolume)
-      if (filters.countryName !== ALL)
-        params.set("countryName", filters.countryName)
+      appendUnlessAll(params, "countryNames", filters.countryName, options.countryName)
+      appendUnlessAll(params, "regions", filters.region, availableRegions)
       if (filters.appelacion !== ALL)
         params.set("appelacion", filters.appelacion)
       if (filters.rating !== ALL) params.set("rating", filters.rating)
@@ -611,7 +836,18 @@ export default function ProductsPage() {
     } finally {
       if (reqId === reqIdRef.current) setLoading(false)
     }
-  }, [page, pageSize, filters, wizard, wizardSearch, builder.stockOnly, includeMerch])
+  }, [
+    page,
+    pageSize,
+    filters,
+    wizard,
+    wizardSearch,
+    builder.stockOnly,
+    includeMerch,
+    options.color,
+    options.countryName,
+    availableRegions,
+  ])
 
   useEffect(() => {
     load()
@@ -722,8 +958,34 @@ export default function ProductsPage() {
                 </div>
 
                 {/* Filter grid. Every control filters server-side over the whole
-                catalog; several can be combined at once. */}
+                catalog; several can be combined at once. The first three
+                (Страна / Регион / Цвет, yellow labels) are the price-list
+                hierarchy and ALSO drive the export; the rest are listing-only. */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-2">
+                  <FilterField label="Страна" accent>
+                    <MultiFilterSelect
+                      values={filters.countryName}
+                      onToggle={toggleCountry}
+                      onClear={clearCountries}
+                      options={options.countryName}
+                    />
+                  </FilterField>
+                  <FilterField label="Регион" accent>
+                    <MultiFilterSelect
+                      values={filters.region}
+                      onToggle={(v) => toggleMulti("region", v)}
+                      onClear={() => clearMulti("region")}
+                      options={availableRegions}
+                    />
+                  </FilterField>
+                  <FilterField label="Цвет" accent>
+                    <MultiFilterSelect
+                      values={filters.color}
+                      onToggle={(v) => toggleMulti("color", v)}
+                      onClear={() => clearMulti("color")}
+                      options={options.color}
+                    />
+                  </FilterField>
                   <FilterField label="Категория">
                     <FilterSelect
                       value={filters.category}
@@ -738,25 +1000,11 @@ export default function ProductsPage() {
                       options={options.type}
                     />
                   </FilterField>
-                  <FilterField label="Цвет">
-                    <FilterSelect
-                      value={filters.color}
-                      onChange={(v) => setSelect("color", v)}
-                      options={options.color}
-                    />
-                  </FilterField>
                   <FilterField label="Сахар">
                     <FilterSelect
                       value={filters.sugar}
                       onChange={(v) => setSelect("sugar", v)}
                       options={options.sugar}
-                    />
-                  </FilterField>
-                  <FilterField label="Страна">
-                    <FilterSelect
-                      value={filters.countryName}
-                      onChange={(v) => setSelect("countryName", v)}
-                      options={options.countryName}
                     />
                   </FilterField>
                   <FilterField label="Год">

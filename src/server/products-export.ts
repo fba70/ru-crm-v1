@@ -1,7 +1,7 @@
 import "server-only"
 
 import ExcelJS from "exceljs"
-import { and, asc, eq, sql } from "drizzle-orm"
+import { and, asc, eq, sql, type SQL } from "drizzle-orm"
 
 import { db } from "@/db/drizzle"
 import { product } from "@/db/schema"
@@ -139,13 +139,47 @@ function buildSheet(workbook: ExcelJS.Workbook, sheetName: string, rows: ExportR
   }
 }
 
-// Builds the full price-list workbook for the caller's active organization and
-// returns it as an XLSX buffer. The API route is a thin auth wrapper around it.
-export async function buildPriceListWorkbook(): Promise<{
+// Optional filters mirror the price-list HIERARCHY (country → region → color) —
+// the only catalog attributes the export groups on. Every filter is an IN (...)
+// over the matching values; an empty / absent array means "no constraint on
+// this level". Filters on any OTHER attribute (type, sugar, year, …) are
+// deliberately NOT honored here — they don't shape the price-list structure.
+export type PriceListFilters = {
+  countries?: string[]
+  regions?: string[]
+  colors?: string[]
+}
+
+// Builds the price-list workbook for the caller's active organization and
+// returns it as an XLSX buffer. With no filters it exports the whole active
+// catalog; with country/region/color filters it exports only that subset using
+// the same one-sheet-per-country hierarchical layout. The API route is a thin
+// auth wrapper around it.
+export async function buildPriceListWorkbook(
+  filters: PriceListFilters = {},
+): Promise<{
   buffer: ArrayBuffer
   fileName: string
 }> {
   const { activeOrgId } = await requireOrgContext()
+
+  const conds: SQL[] = [
+    eq(product.organizationId, activeOrgId),
+    eq(product.status, "active"),
+  ]
+  const inFilter = (jsonKey: string, vals?: string[]) => {
+    const uniq = [...new Set((vals ?? []).map((v) => v.trim()).filter(Boolean))]
+    if (uniq.length === 0) return
+    conds.push(
+      sql`${product.additionalMetadata} ->> ${jsonKey} IN (${sql.join(
+        uniq.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    )
+  }
+  inFilter("country_name", filters.countries)
+  inFilter("region", filters.regions)
+  inFilter("color", filters.colors)
 
   const rows = (await db
     .select({
@@ -158,7 +192,7 @@ export async function buildPriceListWorkbook(): Promise<{
       country: sql<string | null>`${product.additionalMetadata} ->> 'country_name'`,
     })
     .from(product)
-    .where(and(eq(product.organizationId, activeOrgId), eq(product.status, "active")))
+    .where(and(...conds))
     .orderBy(asc(product.name))) as Array<{
     name: string
     price: string | null

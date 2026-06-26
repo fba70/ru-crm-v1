@@ -75,6 +75,13 @@ export type ListProductsParams = {
   countryName?: string
   appelacion?: string
   rating?: string
+  // Multi-select variants of the export-relevant attributes (country / region /
+  // color). The Products page sends these as arrays; each becomes an IN (...)
+  // gate. Region has no single-value form (it's a multi-select only). Kept
+  // separate from the single `color`/`countryName` above for back-compat.
+  colors?: string[]
+  countryNames?: string[]
+  regions?: string[]
   // Free-text "contains" filter over the long, composite awards string.
   awards?: string
   // Price range over the numeric price column.
@@ -234,15 +241,33 @@ export async function listProducts(
     const v = val?.trim()
     if (v) gateParts.push(sql`additional_metadata ->> ${jsonKey} = ${v}`)
   }
+  // Multi-value gate: matches any of the supplied values (single + array forms
+  // merged, deduped). Used by the export-relevant country / region / color
+  // filters, which are multi-select on the page.
+  const hardAttrMulti = (jsonKey: string, single?: string, multi?: string[]) => {
+    const vals = [
+      ...(single?.trim() ? [single.trim()] : []),
+      ...(multi ?? []).map((v) => v.trim()).filter(Boolean),
+    ]
+    const uniq = [...new Set(vals)]
+    if (uniq.length === 0) return
+    gateParts.push(
+      sql`additional_metadata ->> ${jsonKey} IN (${sql.join(
+        uniq.map((v) => sql`${v}`),
+        sql`, `,
+      )})`,
+    )
+  }
   const category = params.category?.trim()
   if (category) gateParts.push(sql`category = ${category}`)
   hardAttr(ATTR_FILTER_KEYS.type, params.type)
-  hardAttr(ATTR_FILTER_KEYS.color, params.color)
+  hardAttrMulti(ATTR_FILTER_KEYS.color, params.color, params.colors)
   hardAttr(ATTR_FILTER_KEYS.sugar, params.sugar)
   hardAttr(ATTR_FILTER_KEYS.year, params.year)
   hardAttr(ATTR_FILTER_KEYS.aging, params.aging)
   hardAttr(ATTR_FILTER_KEYS.bottleVolume, params.bottleVolume)
-  hardAttr(ATTR_FILTER_KEYS.countryName, params.countryName)
+  hardAttrMulti(ATTR_FILTER_KEYS.countryName, params.countryName, params.countryNames)
+  hardAttrMulti("region", undefined, params.regions)
   hardAttr(ATTR_FILTER_KEYS.appelacion, params.appelacion)
   hardAttr(ATTR_FILTER_KEYS.rating, params.rating)
   const awards = params.awards?.trim()
@@ -421,6 +446,11 @@ export type ProductFilterOptions = {
   countryName: string[]
   appelacion: string[]
   rating: string[]
+  // `region` is a multi-select on the page; `regionsByCountry` lets the UI
+  // narrow the region choices to the currently-selected countries (region is a
+  // sub-level of country in the price-list hierarchy).
+  region: string[]
+  regionsByCountry: Record<string, string[]>
 }
 
 export async function listProductFilterOptions(): Promise<ProductFilterOptions> {
@@ -468,6 +498,34 @@ export async function listProductFilterOptions(): Promise<ProductFilterOptions> 
     distinct(ATTR_FILTER_KEYS.rating),
   ])
 
+  // Distinct (country, region) pairs → the flat region list + the per-country
+  // region map, so the UI can scope region choices to the selected countries.
+  const regionPairs = await db
+    .selectDistinct({
+      country: sql<string | null>`${product.additionalMetadata} ->> 'country_name'`,
+      region: sql<string>`${product.additionalMetadata} ->> 'region'`,
+    })
+    .from(product)
+    .where(
+      and(
+        eq(product.organizationId, activeOrgId),
+        eq(product.status, "active"),
+        sql`COALESCE(TRIM(${product.additionalMetadata} ->> 'region'), '') <> ''`,
+      ),
+    )
+
+  const regionSet = new Set<string>()
+  const regionsByCountry: Record<string, string[]> = {}
+  for (const { country, region } of regionPairs) {
+    regionSet.add(region)
+    const c = (country ?? "").trim()
+    if (!c) continue
+    ;(regionsByCountry[c] ??= []).push(region)
+  }
+  for (const c of Object.keys(regionsByCountry)) {
+    regionsByCountry[c] = [...new Set(regionsByCountry[c])].sort(alpha)
+  }
+
   return {
     type: type.sort(alpha),
     color: color.sort(alpha),
@@ -478,5 +536,7 @@ export async function listProductFilterOptions(): Promise<ProductFilterOptions> 
     countryName: countryName.sort(alpha),
     appelacion: appelacion.sort(alpha),
     rating: rating.sort(numDesc),
+    region: [...regionSet].sort(alpha),
+    regionsByCountry,
   }
 }
