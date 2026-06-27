@@ -128,6 +128,11 @@ function itemTitle(row: SourceItemRow): string {
       const preview = previewFromRawText(rawText)
       if (preview) return preview
     }
+    // Telegram voice/audio note: no caption text, but the row carries a
+    // media descriptor and its transcript lives in the parsed content (open
+    // via «Показать»). Label it so it doesn't read as an empty message.
+    const voice = telegramVoiceLabel(m)
+    if (voice) return voice
     return "(пустое сообщение)"
   }
   if (row.externalType === "drive_file") {
@@ -137,6 +142,22 @@ function itemTitle(row: SourceItemRow): string {
     return row.filename ?? "(загруженный файл)"
   }
   return row.filename ?? row.externalId
+}
+
+// "🎙️ Голосовое сообщение (0:04)" for a Telegram voice note / audio file.
+// Returns "" when the row carries no telegram media descriptor.
+function telegramVoiceLabel(m: Record<string, unknown>): string {
+  const telegram = m.telegram as Record<string, unknown> | undefined
+  const media = telegram?.media as Record<string, unknown> | undefined
+  if (!media) return ""
+  const kind = media.kind === "audio" ? "Аудио" : "Голосовое сообщение"
+  const duration = typeof media.duration === "number" ? media.duration : 0
+  if (duration > 0) {
+    const mm = Math.floor(duration / 60)
+    const ss = String(duration % 60).padStart(2, "0")
+    return `🎙️ ${kind} (${mm}:${ss})`
+  }
+  return `🎙️ ${kind}`
 }
 
 function previewFromRawText(rawText: string): string {
