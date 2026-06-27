@@ -96,7 +96,15 @@ export function verifyTelegramSecret(
 }
 
 type PersistResult =
-  | { outcome: "ingested"; itemId: string; inserted: boolean; chatId: number }
+  | {
+      outcome: "ingested"
+      itemId: string
+      inserted: boolean
+      chatId: number
+      // "voice" → media item that still needs transcription; "text" → body
+      // already in hand. Drives the wording of the chat acknowledgement.
+      kind: "text" | "voice"
+    }
   | { outcome: "ignored" }
 
 // Telegram service/system messages — the payload lives in one of these named
@@ -134,12 +142,72 @@ function isBotCommand(text: string): boolean {
   return text.startsWith("/")
 }
 
+// The display name of a message sender, best-effort.
+function resolveSenderName(message: Message): string {
+  const from = message.from
+  return (
+    [from?.first_name, from?.last_name].filter(Boolean).join(" ").trim() ||
+    from?.username ||
+    "Telegram user"
+  )
+}
+
+// Non-secret descriptor of who sent a message — stamped onto every source
+// item's metadata so the parser + downstream attribution have a sender.
+function senderMetadata(message: Message): Record<string, unknown> | null {
+  const from = message.from
+  return from
+    ? {
+        id: from.id,
+        isBot: from.is_bot,
+        username: from.username ?? null,
+        firstName: from.first_name ?? null,
+        lastName: from.last_name ?? null,
+      }
+    : null
+}
+
+// A voice memo (`message.voice`, Opus-in-Ogg) or an audio file
+// (`message.audio`, usually mp3/m4a). Both carry a stable `file_id` we
+// re-resolve to bytes at parse time. `message.caption` (if any) rides along
+// as text context for the transcript. Returns the media descriptor we persist
+// into `metadata_json.telegram.media`, or null when the message has no audio.
+function extractTelegramAudio(
+  message: Message,
+): { kind: "voice" | "audio"; fileId: string; mimeType: string; fileName: string; duration: number; fileSize: number | null } | null {
+  if (message.voice) {
+    const v = message.voice
+    return {
+      kind: "voice",
+      fileId: v.file_id,
+      mimeType: v.mime_type ?? "audio/ogg",
+      fileName: `voice-${message.message_id}.ogg`,
+      duration: v.duration,
+      fileSize: v.file_size ?? null,
+    }
+  }
+  if (message.audio) {
+    const a = message.audio
+    return {
+      kind: "audio",
+      fileId: a.file_id,
+      mimeType: a.mime_type ?? "audio/mpeg",
+      fileName: a.file_name ?? `audio-${message.message_id}.mp3`,
+      duration: a.duration,
+      fileSize: a.file_size ?? null,
+    }
+  }
+  return null
+}
+
 // Persist one update into a source_item. Pure persistence — NO secret
-// verification, NO ack (callers own those). Phase 1 scope: direct-message
-// TEXT only; group messages (Phase 3) and attachments (Phase 2) are
-// ignored. Idempotency rides on `upsertSourceItem`'s
-// UNIQUE(source_id, external_id) where external_id = `<chat_id>:<msg_id>`,
-// so a re-delivered / re-pulled update updates the row instead of duping.
+// verification, NO ack (callers own those). Scope: direct-message TEXT and
+// VOICE/AUDIO; group messages (Phase 3) are ignored. Voice/audio rows store
+// the Telegram `file_id` (re-resolved to bytes at parse time) under
+// `metadata_json.telegram.media` and are transcribed by `parseTelegramItem`.
+// Idempotency rides on `upsertSourceItem`'s UNIQUE(source_id, external_id)
+// where external_id = `<chat_id>:<msg_id>`, so a re-delivered / re-pulled
+// update updates the row instead of duping.
 async function persistTelegramMessage(
   scope: { sourceId: string; organizationId: string | null },
   update: Update,
@@ -152,6 +220,51 @@ async function persistTelegramMessage(
   // changes, migrations, auto-delete timer) — no client signal in them.
   if (isServiceMessage(message)) return { outcome: "ignored" }
 
+  const senderName = resolveSenderName(message)
+  const telegramMeta = {
+    updateId: update.update_id,
+    messageId: message.message_id,
+    chatId: message.chat.id,
+    chatType: message.chat.type,
+    date: message.date,
+    from: senderMetadata(message),
+  }
+  const baseUpsert = {
+    sourceId: scope.sourceId,
+    organizationId: scope.organizationId,
+    externalId: `${message.chat.id}:${message.message_id}`,
+    externalType: "chat_message" as const,
+    threadExternalId: String(message.chat.id),
+    sourceCreatedAt: new Date(message.date * 1000),
+  }
+
+  // Voice / audio: persist the file reference + any caption. Transcription
+  // happens at parse time (`parseTelegramItem` downloads the bytes via the
+  // stored `file_id` and runs them through the audio parser).
+  const audio = extractTelegramAudio(message)
+  if (audio) {
+    const caption = message.caption?.trim() ?? ""
+    const { id, inserted } = await upsertSourceItem({
+      ...baseUpsert,
+      metadataJson: {
+        provider: "telegram",
+        // No usable body text yet — the transcript is produced at parse time.
+        // The caption (if any) is kept for context but isn't the parse input.
+        rawText: caption,
+        text: caption,
+        senders: [senderName],
+        telegram: { ...telegramMeta, media: audio },
+      },
+    })
+    return {
+      outcome: "ingested",
+      itemId: id,
+      inserted,
+      chatId: message.chat.id,
+      kind: "voice",
+    }
+  }
+
   const text = message.text?.trim()
   if (!text) return { outcome: "ignored" }
 
@@ -159,19 +272,8 @@ async function persistTelegramMessage(
   // — these drive the bot, they aren't messages from a client.
   if (isBotCommand(text)) return { outcome: "ignored" }
 
-  const from = message.from
-  const senderName =
-    [from?.first_name, from?.last_name].filter(Boolean).join(" ").trim() ||
-    from?.username ||
-    "Telegram user"
-
   const { id, inserted } = await upsertSourceItem({
-    sourceId: scope.sourceId,
-    organizationId: scope.organizationId,
-    externalId: `${message.chat.id}:${message.message_id}`,
-    externalType: "chat_message",
-    threadExternalId: String(message.chat.id),
-    sourceCreatedAt: new Date(message.date * 1000),
+    ...baseUpsert,
     metadataJson: {
       provider: "telegram",
       // `rawText` is the body the parser reads (mirrors WhatsApp) — no
@@ -179,26 +281,17 @@ async function persistTelegramMessage(
       rawText: text,
       text,
       senders: [senderName],
-      telegram: {
-        updateId: update.update_id,
-        messageId: message.message_id,
-        chatId: message.chat.id,
-        chatType: message.chat.type,
-        date: message.date,
-        from: from
-          ? {
-              id: from.id,
-              isBot: from.is_bot,
-              username: from.username ?? null,
-              firstName: from.first_name ?? null,
-              lastName: from.last_name ?? null,
-            }
-          : null,
-      },
+      telegram: telegramMeta,
     },
   })
 
-  return { outcome: "ingested", itemId: id, inserted, chatId: message.chat.id }
+  return {
+    outcome: "ingested",
+    itemId: id,
+    inserted,
+    chatId: message.chat.id,
+    kind: "text",
+  }
 }
 
 // Drive a freshly-ingested telegram item through parse → R2 upload so it
@@ -242,6 +335,16 @@ export async function parseAndUploadTelegramItem(
   }
 }
 
+// Chat acknowledgement wording. Voice messages take a beat to transcribe, so
+// we signal that explicitly rather than implying the text is already readable.
+function ackMessage(kind: "text" | "voice", inserted: boolean): string {
+  if (!inserted) return "✅ Already received — thanks."
+  if (kind === "voice") {
+    return "🎙️ Voice message received — transcribing and adding it to your business OS sources."
+  }
+  return "✅ Received — added to your business OS sources for processing."
+}
+
 export type TelegramIngestResult =
   | { ok: true; outcome: "ingested" | "ignored"; itemId?: string; inserted?: boolean }
   | { ok: false; reason: "unauthorized" }
@@ -267,9 +370,7 @@ export async function ingestTelegramUpdate(
     await sendTelegramAck(
       ctx.botToken,
       result.chatId,
-      result.inserted
-        ? "✅ Received — added to your business OS sources for processing."
-        : "✅ Already received — thanks.",
+      ackMessage(result.kind, result.inserted),
     )
   } catch (err) {
     console.warn(

@@ -78,7 +78,9 @@ import {
   getImapCredentials,
   getGchatCredentials,
   getGdriveCredentials,
+  getTelegramCredentials,
 } from "@/server/providers/credentials"
+import { downloadTelegramFile } from "@/lib/telegram"
 import { imapProviderConfigSchema } from "@/server/providers/handlers"
 import type {
   GchatCredentials,
@@ -847,6 +849,16 @@ async function parseWhatsAppItem(ctx: ParseContext): Promise<ParseResult> {
 // call. Phase 1 produces no children (attachments land in Phase 2).
 async function parseTelegramItem(ctx: ParseContext): Promise<ParseResult> {
   const meta = ctx.metadataJson
+
+  // Voice / audio message: the bytes aren't in the DB — re-resolve them from
+  // the stored Telegram `file_id` and run them through the audio parser. The
+  // transcript becomes this row's parsed markdown directly (a Telegram DM is a
+  // single message = a single source_item, so there's no child to spawn).
+  const media = extractTelegramMediaMeta(meta)
+  if (media) {
+    return await parseTelegramVoiceItem(ctx, media)
+  }
+
   const rawText = typeof meta.rawText === "string" ? meta.rawText : ""
   if (!rawText) {
     throw new Error(
@@ -867,6 +879,63 @@ async function parseTelegramItem(ctx: ParseContext): Promise<ParseResult> {
     sourceCreatedAt: ctx.sourceCreatedAt
       ? ctx.sourceCreatedAt.toISOString()
       : null,
+  })
+
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
+
+  return {
+    parentStatus: "complete",
+    parentMarkdownBytes: byteLengthOf(parsed.markdown),
+    childInserted: 0,
+    childSkipped: 0,
+    childFailed: 0,
+  }
+}
+
+// The voice/audio descriptor ingest stamps onto a Telegram row's
+// `metadata_json.telegram.media`. Returns null for plain text messages.
+type TelegramMediaMeta = {
+  fileId: string
+  mimeType: string
+  fileName: string
+}
+
+function extractTelegramMediaMeta(
+  meta: Record<string, unknown>,
+): TelegramMediaMeta | null {
+  const telegram = meta.telegram as Record<string, unknown> | undefined
+  const media = telegram?.media as Record<string, unknown> | undefined
+  if (!media || typeof media.fileId !== "string") return null
+  return {
+    fileId: media.fileId,
+    mimeType: typeof media.mimeType === "string" ? media.mimeType : "audio/ogg",
+    fileName:
+      typeof media.fileName === "string" ? media.fileName : "telegram-voice.ogg",
+  }
+}
+
+// Transcribe a Telegram voice/audio message. Downloads the bytes via the
+// stored `file_id` (re-resolvable, so this is safe on a re-parse too) using
+// the per-source bot token, then runs the universal audio parser. The
+// transcript replaces this row's parsed markdown — same shape as the text
+// path, so cards / deals / discovery treat it identically downstream.
+async function parseTelegramVoiceItem(
+  ctx: ParseContext,
+  media: TelegramMediaMeta,
+): Promise<ParseResult> {
+  const creds = getTelegramCredentials(ctx.sourceId, ctx.credentialsRef)
+  const { bytes } = await downloadTelegramFile(creds.botToken, media.fileId)
+
+  const parsed = await parseAudioBytes({
+    bytes,
+    fileName: media.fileName,
+    mediaType: media.mimeType,
+    sourceId: ctx.parentNamespacedSourceId,
+    parentSourceId: null,
+    sourceSystem: ctx.sourceSystemLabel,
+    threadId: ctx.threadExternalId,
+    sourceCreatedAt: isoOrNull(ctx.sourceCreatedAt),
+    sourceReceivedAt: isoOrNull(ctx.sourceCreatedAt),
   })
 
   await markParsed(ctx, parsed.markdown, parsed.analysis)

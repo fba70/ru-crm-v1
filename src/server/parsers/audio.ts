@@ -332,6 +332,17 @@ function resolveModelMediaType(mediaType: string, fileName: string): string {
     return "audio/mpeg"
   }
 
+  // ogg / opus variants → audio/ogg (Gemini's documented spelling). Telegram
+  // bot voice messages are Opus-in-Ogg and report `audio/ogg`, but some
+  // clients spell it `audio/opus` or send a bare extension.
+  if (mt === "audio/opus" || mt === "audio/ogg") return "audio/ogg"
+  if (
+    (fn.endsWith(".ogg") || fn.endsWith(".oga")) &&
+    (!mt || mt === "application/octet-stream")
+  ) {
+    return "audio/ogg"
+  }
+
   return mediaType
 }
 

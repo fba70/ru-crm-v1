@@ -50,7 +50,9 @@ export const PARSER_CONFIG = {
     // m4a (AAC inside an MP4 container) is what Google Chat voice messages
     // and Apple Voice Memos produce — accept its various reported mime
     // spellings here. `audio.ts` normalises them to `audio/mp4` before the
-    // Gemini call.
+    // Gemini call. OGG/Opus is what Telegram bot voice messages
+    // (`message.voice`) arrive as — Gemini accepts `audio/ogg` natively, so
+    // `audio.ts` normalises the `audio/opus` spelling to it.
     supportedMediaTypes: [
       "audio/mpeg",
       "audio/mp3",
@@ -58,8 +60,10 @@ export const PARSER_CONFIG = {
       "audio/x-m4a",
       "audio/m4a",
       "audio/aac",
+      "audio/ogg",
+      "audio/opus",
     ] as readonly string[],
-    supportedExtensions: [".mp3", ".m4a", ".aac"] as readonly string[],
+    supportedExtensions: [".mp3", ".m4a", ".aac", ".ogg", ".oga"] as readonly string[],
   },
   video: {
     // 50 MB handles typical short clips (screen recordings, meeting

@@ -98,3 +98,30 @@ export async function getTelegramUpdates(
 export function isTelegramWebhookConflict(err: unknown): boolean {
   return err instanceof GrammyError && err.error_code === 409
 }
+
+// Download a Telegram file (voice/audio attachment) by its stable `file_id`.
+// Two hops per the Bot API: `getFile` resolves the id to a temporary
+// `file_path`, then the bytes are fetched from the file CDN with the bot
+// token in the URL. The `file_path` link is short-lived (~1h) but `file_id`
+// is stable and re-resolvable, so this is safe to call at parse time (even on
+// a re-parse) rather than persisting the bytes at ingest. Voice notes are a
+// few hundred KB, so buffering the whole body is fine.
+export async function downloadTelegramFile(
+  botToken: string,
+  fileId: string,
+): Promise<{ bytes: Buffer; filePath: string }> {
+  const file = await botApi(botToken).getFile(fileId)
+  const filePath = file.file_path
+  if (!filePath) {
+    throw new Error(`Telegram getFile returned no file_path for ${fileId}`)
+  }
+  const url = `https://api.telegram.org/file/bot${botToken}/${filePath}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(
+      `Telegram file download failed (${res.status} ${res.statusText}) for ${fileId}`,
+    )
+  }
+  const bytes = Buffer.from(await res.arrayBuffer())
+  return { bytes, filePath }
+}
