@@ -938,7 +938,22 @@ async function parseTelegramVoiceItem(
     sourceReceivedAt: isoOrNull(ctx.sourceCreatedAt),
   })
 
-  await markParsed(ctx, parsed.markdown, parsed.analysis)
+  // Backfill the message body with the transcript. At ingest a voice note has
+  // no usable text — `rawText`/`text` were set to the (usually empty) caption —
+  // so consumers that read the raw body (e.g. the `new_order` card's verbatim
+  // `orderRequest`) would otherwise fall back to the whole parsed markdown.
+  // Keep any real caption as a prefix for context.
+  const caption =
+    typeof ctx.metadataJson.rawText === "string"
+      ? ctx.metadataJson.rawText.trim()
+      : ""
+  const body =
+    caption && parsed.transcript
+      ? `${caption}\n\n${parsed.transcript}`
+      : parsed.transcript || caption
+  const metadataPatch = body ? { rawText: body, text: body } : undefined
+
+  await markParsed(ctx, parsed.markdown, parsed.analysis, metadataPatch)
 
   return {
     parentStatus: "complete",
@@ -1255,6 +1270,10 @@ async function markParsed(
   ctx: ParseContext,
   markdown: string,
   analysis: MetadataAnalysis,
+  // Optional extra fields to fold into metadata_json at parse time. Used by the
+  // Telegram voice path to backfill `rawText`/`text` with the transcript (the
+  // bytes carried no usable body text at ingest — see `parseTelegramVoiceItem`).
+  metadataPatch?: Record<string, unknown>,
 ): Promise<void> {
   const cleaned = filterAnalysisOwnOrg(analysis, ctx.ownOrg)
   const attribution = await computeOrgAttribution(ctx, markdown)
@@ -1264,7 +1283,7 @@ async function markParsed(
   // metadata_json (which holds provider-shape sync fields like
   // subject/snippet/from/to). jsonb `||` is right-biased so analysis keys
   // overwrite any colliding sync keys (none today, but defensive).
-  const merged = { ...cleaned, orgAttribution: attribution }
+  const merged = { ...cleaned, orgAttribution: attribution, ...metadataPatch }
   await db
     .update(sourceItem)
     .set({
