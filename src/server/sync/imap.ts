@@ -5,7 +5,9 @@ import {
   stampLastSyncedAt,
   CURSOR_OVERLAP_SECONDS,
   SYNC_PAGE_LIMIT,
+  windowBoundSeconds,
   type SyncResult,
+  type SyncOptions,
 } from "./_shared"
 import {
   getLatestSourceCreatedAt,
@@ -35,7 +37,10 @@ function toParticipants(
  * into the external_id (and re-checking it at parse time) is what prevents
  * fetching the WRONG message after a server renumber.
  */
-export async function syncImapEmails(sourceId: string): Promise<SyncResult> {
+export async function syncImapEmails(
+  sourceId: string,
+  opts?: SyncOptions,
+): Promise<SyncResult> {
   const ctx = await loadSource(sourceId)
   if (ctx.provider !== "imap") {
     throw new Error(
@@ -46,13 +51,28 @@ export async function syncImapEmails(sourceId: string): Promise<SyncResult> {
   const creds = getImapCredentials(ctx.id, ctx.credentialsRef)
   const { mailbox } = imapProviderConfigSchema.parse(ctx.providerConfig)
 
-  // Cursor: re-scan from 5 min before the newest item we already have so
-  // boundary messages re-upsert (dedup by (sourceId, externalId) makes the
-  // overlap a no-op). No cursor → full scan.
+  // The window's `since` only ever EXTENDS the fetch earlier (lower of the two
+  // bounds), never narrows it — so the default (period = today) degenerates to
+  // the normal incremental catch-up, while a PAST from-date re-pulls that
+  // historical window (the backfill that recovers rows behind the high-water
+  // mark). `before` caps the top so a small recovery window isn't truncated by
+  // the per-call page limit. No cursor + no window → full scan.
+  const windowSince = windowBoundSeconds(opts?.sinceIso)
+  const windowUntil = windowBoundSeconds(opts?.untilIso, { endOfDay: true })
+
   const cursor = await getLatestSourceCreatedAt(sourceId)
-  const since = cursor
-    ? new Date(cursor.getTime() - CURSOR_OVERLAP_SECONDS * 1000)
+  const cursorFloorSec = cursor
+    ? Math.floor(cursor.getTime() / 1000) - CURSOR_OVERLAP_SECONDS
     : null
+
+  let sinceSec: number | null
+  if (windowSince !== null && cursorFloorSec !== null) {
+    sinceSec = Math.min(cursorFloorSec, windowSince)
+  } else {
+    sinceSec = windowSince ?? cursorFloorSec
+  }
+  const since = sinceSec !== null ? new Date(sinceSec * 1000) : null
+  const before = windowUntil !== null ? new Date(windowUntil * 1000) : null
 
   const client = buildImapClient(creds)
   let fetched = 0
@@ -65,10 +85,12 @@ export async function syncImapEmails(sourceId: string): Promise<SyncResult> {
     // uidValidity is a bigint; serialise to string for the stable external id.
     const uidValidity = mb.uidValidity.toString()
 
-    const uids = await client.search(
-      since ? { since } : { all: true },
-      { uid: true },
-    )
+    const searchQuery = since
+      ? before
+        ? { since, before }
+        : { since }
+      : { all: true as const }
+    const uids = await client.search(searchQuery, { uid: true })
     if (!uids || uids.length === 0) {
       await stampLastSyncedAt(ctx.id)
       return { fetched: 0, inserted: 0, updated: 0 }

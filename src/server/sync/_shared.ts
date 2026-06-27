@@ -76,3 +76,33 @@ export type SyncResult = {
   inserted: number
   updated: number
 }
+
+// Optional explicit fetch window for a sync. When unset, sync is incremental
+// (newest item we already have − overlap → now). When `sinceIso` is set, the
+// provider is asked for a BOUNDED window instead — this is the only way to
+// re-pull historical mail that's already behind the incremental cursor (e.g.
+// an item whose source_item row was hard-deleted for a test: deleting one row
+// in the middle of the timeline doesn't lower the high-water mark, so plain
+// re-sync never re-requests it). Dates may be `YYYY-MM-DD` (interpreted as the
+// whole UTC day) or full ISO timestamps. `untilIso` upper-bounds the window so
+// a small range can't be truncated by the per-call page cap.
+export type SyncOptions = {
+  sinceIso?: string
+  untilIso?: string
+}
+
+// Parse a window bound. Returns unix SECONDS, or null for empty/invalid input.
+// `endOfDay` rolls a date-only string to the start of the NEXT day so the
+// named day is fully included as an exclusive upper bound.
+export function windowBoundSeconds(
+  value: string | undefined,
+  opts?: { endOfDay?: boolean },
+): number | null {
+  if (!value || !value.trim()) return null
+  const ms = Date.parse(value.trim())
+  if (Number.isNaN(ms)) return null
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+  const adjusted =
+    opts?.endOfDay && dateOnly ? ms + 24 * 60 * 60 * 1000 : ms
+  return Math.floor(adjusted / 1000)
+}

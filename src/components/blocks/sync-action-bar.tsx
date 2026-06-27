@@ -81,6 +81,8 @@ export function SyncActionBar({
               onSynced={onSynced}
               onProcessSource={onProcessSource}
               processRunning={processRunning}
+              sinceIso={processDateFrom}
+              untilIso={processDateTo}
             />
           ))}
         {sources
@@ -168,11 +170,18 @@ function SyncButton({
   onSynced,
   onProcessSource,
   processRunning,
+  sinceIso,
+  untilIso,
 }: {
   source: SystemSource
   onSynced: () => void
   onProcessSource: (sourceId: string, label: string) => void
   processRunning: boolean
+  // When the «Период обработки» range is set, sync that bounded window
+  // (a backfill that re-pulls historical mail behind the incremental cursor)
+  // instead of the default incremental pull. Empty = incremental.
+  sinceIso: string
+  untilIso: string
 }) {
   const [busy, setBusy] = useState(false)
   const ProviderIcon = getProvider(source.provider).icon
@@ -183,7 +192,11 @@ function SyncButton({
       const res = await fetch("/api/sources/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId: source.id }),
+        body: JSON.stringify({
+          sourceId: source.id,
+          ...(sinceIso ? { sinceIso } : {}),
+          ...(untilIso ? { untilIso } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Не удалось синхронизировать")

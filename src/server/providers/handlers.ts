@@ -18,7 +18,7 @@ import "server-only"
 
 import { z } from "zod"
 import type { SourceProvider } from "@/db/schema"
-import type { SyncResult } from "@/server/sync/_shared"
+import type { SyncResult, SyncOptions } from "@/server/sync/_shared"
 import { syncNylasEmails } from "@/server/sync/nylas"
 import { syncImapEmails } from "@/server/sync/imap"
 import { syncGoogleChatMessages } from "@/server/sync/gchat"
@@ -180,7 +180,10 @@ export type ProviderHandler = {
   // or are written directly at save time). The dispatcher in
   // `src/server/sync/index.ts` rejects sourceIds whose provider has a
   // null `sync` so the caller gets a clear error rather than a no-op.
-  sync: ((sourceId: string) => Promise<SyncResult>) | null
+  // `opts` carries an optional explicit fetch window (see `SyncOptions`).
+  // Providers that don't support windowed backfill (gchat/gdrive) simply
+  // omit the param — a narrower function is assignable to the wider type.
+  sync: ((sourceId: string, opts?: SyncOptions) => Promise<SyncResult>) | null
   // Parse-time "this item no longer exists at the provider" detector,
   // used by `parseSourceItem` to mark the row `'skipped'` instead of
   // `'failed'`. Null for providers where items can't disappear (dropoff,
