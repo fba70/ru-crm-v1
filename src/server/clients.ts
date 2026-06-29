@@ -287,6 +287,135 @@ export async function updateClient(
 const LOOKUP_RESEARCH_MODEL = "google/gemini-2.5-flash"
 const LOOKUP_EXTRACT_MODEL = "google/gemini-2.5-flash"
 
+// ── Direct homepage fetch (precision booster for the extract pass) ────
+//
+// Grounded google_search returns snippets, not full page bodies — so an
+// address sitting in a homepage footer / Impressum frequently never reaches
+// the model. When we already know the company's own URL, we additionally
+// fetch the homepage + a few likely contact/legal pages and feed the raw
+// text straight into the structured-extract pass as primary-source evidence.
+const FETCH_TIMEOUT_MS = 8000 // per page
+const MAX_EXTRA_PAGES = 3 // contact/impressum/about pages beyond the homepage
+const MAX_PAGE_BYTES = 400_000 // cap each page body before stripping
+const MAX_SITE_TEXT = 14_000 // cap the combined text handed to the LLM
+// Anchors whose href or label hint at where an address usually lives.
+const ADDRESS_PAGE_HINT =
+  /(contact|kontakt|contacto|contatti|impressum|imprint|about|legal|mentions[-\s]?l[eé]gales|company|firma|standort|location)/i
+// Fallback guesses used only when the homepage exposes no hinted links.
+const ADDRESS_PAGE_GUESSES = ["/contact", "/kontakt", "/impressum"]
+
+// Minimal HTML → text: drop non-content tags, turn block boundaries into
+// newlines, decode the handful of entities that matter, collapse whitespace.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<\/(p|div|li|tr|h[1-6]|section|article|footer|header|address)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t ]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+// Fetch one page → capped raw HTML, or "" on any failure (never throws).
+async function fetchPageRaw(url: string): Promise<string> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      redirect: "follow",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (compatible; TruffaloBot/1.0; +https://truffalo.ai)",
+        accept: "text/html,application/xhtml+xml",
+      },
+    })
+    if (!res.ok) return ""
+    const ct = res.headers.get("content-type") ?? ""
+    if (ct && !ct.includes("html") && !ct.includes("xml")) return ""
+    const raw = await res.text()
+    return raw.slice(0, MAX_PAGE_BYTES)
+  } catch {
+    return ""
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Same-site anchors (homepage host or a sub/parent of it) whose href/label
+// hint at an address-bearing page. Deduped, capped.
+function findAddressPageLinks(homeHtml: string, base: URL): string[] {
+  const baseHost = base.hostname
+  const sameSite = (h: string) =>
+    h === baseHost || h.endsWith("." + baseHost) || baseHost.endsWith("." + h)
+  const out = new Set<string>()
+  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(homeHtml)) && out.size < MAX_EXTRA_PAGES * 4) {
+    const href = m[1]
+    const label = m[2].replace(/<[^>]+>/g, " ")
+    if (!ADDRESS_PAGE_HINT.test(href) && !ADDRESS_PAGE_HINT.test(label)) continue
+    try {
+      const abs = new URL(href, base)
+      abs.hash = ""
+      if (sameSite(abs.hostname) && abs.toString() !== base.toString()) {
+        out.add(abs.toString())
+      }
+    } catch {
+      /* skip unparseable href */
+    }
+  }
+  return [...out].slice(0, MAX_EXTRA_PAGES)
+}
+
+/**
+ * Fetch the company's own site (homepage + up to {@link MAX_EXTRA_PAGES}
+ * hinted contact/legal pages) and return a single labelled text blob for the
+ * extract pass. Best-effort: returns "" if the homepage can't be fetched.
+ */
+async function fetchSiteTextForLookup(knownUrl: string): Promise<string> {
+  let base: URL
+  try {
+    base = new URL(knownUrl)
+  } catch {
+    return ""
+  }
+
+  const homeRaw = await fetchPageRaw(base.toString())
+  if (!homeRaw) return ""
+
+  let links = findAddressPageLinks(homeRaw, base)
+  // No hinted links on the homepage → try a few well-known paths.
+  if (links.length === 0) {
+    links = ADDRESS_PAGE_GUESSES.map((p) => new URL(p, base).toString())
+  }
+
+  const extraRaws = await Promise.all(links.map((u) => fetchPageRaw(u)))
+
+  const sections = [`# ${base.toString()}\n${htmlToText(homeRaw)}`]
+  links.forEach((u, i) => {
+    const t = htmlToText(extraRaws[i] || "")
+    if (t) sections.push(`# ${u}\n${t}`)
+  })
+
+  let combined = sections.join("\n\n----\n\n")
+  if (combined.length > MAX_SITE_TEXT) {
+    combined = combined.slice(0, MAX_SITE_TEXT) + "\n…(truncated)"
+  }
+  return combined
+}
+
 export type ClientLookupCandidate = {
   name: string
   email: string
@@ -331,7 +460,7 @@ const lookupExtractSchema = z.object({
         address: z
           .string()
           .describe(
-            "Main / headquarters office street address as a single line: 'street, city, postcode, country'. Empty string if not found.",
+            "Main / headquarters office street address as a single line, e.g. 'street, city, postcode, country'. Return whatever parts you can confirm even if incomplete (e.g. just city + country). Empty string ONLY if no address at all is found.",
           ),
         webUrl: z
           .string()
@@ -448,6 +577,13 @@ Use web search to research this company. Identify the most likely real-world org
 
 Write 2–4 short paragraphs of research notes summarising what you found. If multiple companies share this name, note them separately. Do NOT fabricate facts — only state what your search results actually confirm.`
 
+  // When we know the company's own URL, fetch its actual page text in
+  // parallel with the grounded research — grounding only sees snippets, so
+  // this is what reliably surfaces footer / Impressum addresses.
+  const sitePromise = hasKnownUrl
+    ? fetchSiteTextForLookup(knownUrl)
+    : Promise.resolve("")
+
   const research = await generateText({
     model: LOOKUP_RESEARCH_MODEL,
     system:
@@ -457,6 +593,8 @@ Write 2–4 short paragraphs of research notes summarising what you found. If mu
     // Bound the search → fetch → answer loop so the model can't spiral.
     stopWhen: stepCountIs(5),
   })
+
+  const siteText = await sitePromise
 
   // Grounded Gemini exposes the URLs it consulted on `result.sources`.
   // The Source union has both 'url' and 'document' variants — narrow to
@@ -475,8 +613,17 @@ ${knownLines}
 
 Research notes from web search (about ${knownUrl} only):
 ${research.text || "(no research output)"}
-
-The record's website URL (${knownUrl}) is the authoritative identity of this company. Return EXACTLY ONE candidate, describing the organisation behind ${knownUrl}. Set its webUrl to ${knownUrl}. Do NOT add alternative companies based on name similarity. Fill every field the research notes confirm, and use empty strings for fields the research didn't establish. Set confidence to "high".`
+${
+  siteText
+    ? `
+Raw text fetched directly from the company's own website (${knownUrl} and its contact / legal pages). This is PRIMARY-SOURCE evidence — prefer it over the research notes for address, phone, and email. The headquarters address is usually in the page footer or on an Impressum / legal-notice / contact page:
+"""
+${siteText}
+"""
+`
+    : ""
+}
+The record's website URL (${knownUrl}) is the authoritative identity of this company. Return EXACTLY ONE candidate, describing the organisation behind ${knownUrl}. Set its webUrl to ${knownUrl}. Do NOT add alternative companies based on name similarity. Fill every field the research notes or website text confirm, and use empty strings for fields neither established. Set confidence to "high".`
     : `CRM record (current fields):
 ${knownLines}
 
@@ -489,7 +636,7 @@ Based on the research notes, extract up to 3 candidate companies that could be t
     model: LOOKUP_EXTRACT_MODEL,
     output: Output.object({ schema: lookupExtractSchema }),
     system:
-      "You convert research notes about companies into structured candidate records. Never invent fields — if the research notes don't confirm a value, return an empty string for that field. Use empty arrays for the candidates list if no plausible match was found.",
+      "You convert research notes and raw company-website text into structured candidate records. Never invent fields — if neither the research notes nor the website text confirms a value, return an empty string for that field. When raw website text is provided it is primary-source evidence and outranks the research notes. Use empty arrays for the candidates list if no plausible match was found.",
     prompt: extractPrompt,
   })
 
