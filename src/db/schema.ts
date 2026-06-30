@@ -329,6 +329,7 @@ export const client = pgTable(
     email: text("email"),
     address: text("address"),
     webUrl: text("web_url"),
+    currency: text("currency").notNull().default("RUB"),
     // Extensible per-tenant custom fields (jsonb). Today only `type` is used,
     // and only for one org; every other org keeps an empty object. See
     // `src/lib/client-custom-fields.ts`.
@@ -552,7 +553,7 @@ export const deal = pgTable(
       .references(() => client.id, { onDelete: "restrict" }),
     // Nullable — operators often create a deal before a value is quoted.
     value: numeric("value", { precision: 14, scale: 2 }),
-    currency: text("currency").notNull().default("USD"),
+    currency: text("currency").notNull().default("RUB"),
     // Lifecycle status (see `dealStatus` enum). `cancelled` + `deleted` are
     // both soft-deletes hidden from the board by default; only `active` deals
     // participate in deal-discovery (identify / match / move). Distinct from
