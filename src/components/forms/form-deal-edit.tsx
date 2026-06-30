@@ -39,6 +39,7 @@ import type {
 import type { DealStatus } from "@/db/schema"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import { CURRENCY_SYMBOL } from "@/lib/deal-board"
+import { DealInitiatorPopover } from "@/components/blocks/deal-initiator-popover"
 
 // Edit-form status options. `active` is the live state; `cancelled` =
 // lost/withdrawn (kept for analytics); `deleted` = test/mistake, hidden
@@ -231,8 +232,10 @@ export default function DealEditDialog({
             {mode === "edit" && !!deal?.contacts?.length && (
               <div className="space-y-2">
                 <Label className="text-gray-400">Инициатор</Label>
-                <div className="text-sm">
-                  {deal.contacts.map((c) => c.name).join(", ")}
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {deal.contacts.map((c) => (
+                    <DealInitiatorPopover key={c.id} contactId={c.id} name={c.name} />
+                  ))}
                 </div>
               </div>
             )}
