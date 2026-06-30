@@ -228,6 +228,15 @@ export default function DealEditDialog({
               )}
             />
 
+            {mode === "edit" && !!deal?.contacts?.length && (
+              <div className="space-y-2">
+                <Label className="text-gray-400">Инициатор</Label>
+                <div className="text-sm">
+                  {deal.contacts.map((c) => c.name).join(", ")}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}
@@ -312,15 +321,6 @@ export default function DealEditDialog({
                 </FormItem>
               )}
             />
-
-            {mode === "edit" && !!deal?.contacts?.length && (
-              <div className="space-y-2">
-                <Label className="text-gray-400">Инициатор</Label>
-                <div className="text-sm">
-                  {deal.contacts.map((c) => c.name).join(", ")}
-                </div>
-              </div>
-            )}
 
             {mode === "edit" && (
               <FormField
