@@ -33,12 +33,11 @@ import { dealStageLabel } from "@/lib/deal-funnel"
 import {
   STAGE_COLOR,
   STAGE_DEFAULT,
+  aggregateByCurrency,
   dealAmount,
   filterByOwner,
-  formatAggregate,
   isTerminalStage,
   moveDirection,
-  weightedForecast,
   type OwnerFilter,
 } from "@/lib/deal-board"
 import {
@@ -67,8 +66,6 @@ function Column({
   onOpen: (deal: DealRow) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id })
-  const sum = deals.reduce((a, d) => a + dealAmount(d.value), 0)
-  const weighted = sum * stage.closureProbability
   const colorClass = STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
 
   return (
@@ -81,8 +78,17 @@ function Column({
           </span>
         </div>
         <div className="text-xs opacity-80 mt-0.5">
-          {deals.length} · {formatAggregate(sum)} · взвеш.{" "}
-          {formatAggregate(weighted)}
+          {deals.length} ·{" "}
+          {aggregateByCurrency(
+            deals.map((d) => ({ amount: dealAmount(d.value), currency: d.currency })),
+          )}{" "}
+          · взвеш.{" "}
+          {aggregateByCurrency(
+            deals.map((d) => ({
+              amount: dealAmount(d.value) * stage.closureProbability,
+              currency: d.currency,
+            })),
+          )}
         </div>
       </div>
       <div
@@ -167,9 +173,9 @@ export function DealsBoard({
   const flowStages = stages.filter((s) => !isTerminalStage(s.name))
   const terminalStages = stages.filter((s) => isTerminalStage(s.name))
 
-  const forecast = useMemo(
-    () => weightedForecast(activeDeals, stages),
-    [activeDeals, stages],
+  const probByStageId = useMemo(
+    () => new Map(stages.map((s) => [s.id, s.closureProbability])),
+    [stages],
   )
   const openCount = activeDeals.filter(
     (d) => !isTerminalStage(d.funnelStageName),
@@ -260,8 +266,19 @@ export function DealsBoard({
             </h1>
             <span className="text-sm text-muted-foreground">
               взвешенный прогноз{" "}
-              <b className="text-foreground">{formatAggregate(forecast)}</b> ·
-              открытых: <b className="text-foreground">{openCount}</b>
+              <b className="text-foreground">
+                {aggregateByCurrency(
+                  activeDeals
+                    .filter((d) => !isTerminalStage(d.funnelStageName))
+                    .map((d) => ({
+                      amount:
+                        dealAmount(d.value) *
+                        (probByStageId.get(d.funnelStageId) ?? d.funnelStageProbability),
+                      currency: d.currency,
+                    })),
+                )}
+              </b>{" "}
+              · открытых: <b className="text-foreground">{openCount}</b>
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -376,7 +393,6 @@ export function DealsBoard({
                 const items = activeDeals.filter(
                   (d) => d.funnelStageId === stage.id,
                 )
-                const sum = items.reduce((a, d) => a + dealAmount(d.value), 0)
                 return (
                   <div
                     key={stage.id}
@@ -388,7 +404,12 @@ export function DealsBoard({
                       {dealStageLabel(stage.name)} · {items.length}
                     </div>
                     <div className="text-xs opacity-80">
-                      {formatAggregate(sum)}
+                      {aggregateByCurrency(
+                        items.map((d) => ({
+                          amount: dealAmount(d.value),
+                          currency: d.currency,
+                        })),
+                      )}
                     </div>
                   </div>
                 )

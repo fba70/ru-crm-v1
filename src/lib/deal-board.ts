@@ -59,6 +59,23 @@ export function formatAggregate(n: number): string {
   return `${Math.round(n).toLocaleString("ru-RU")} ₽`
 }
 
+// Группировка сумм по валютам → строка вида "1 200 000 ₽ · 30 000 $".
+export function aggregateByCurrency(
+  entries: { amount: number; currency: string }[],
+): string {
+  const byCur = new Map<string, number>()
+  for (const e of entries) {
+    byCur.set(e.currency, (byCur.get(e.currency) ?? 0) + e.amount)
+  }
+  const parts = Array.from(byCur.entries())
+    .filter(([, n]) => Math.round(n) !== 0)
+    .map(([cur, n]) => {
+      const symbol = (CURRENCY_SYMBOL[cur.toUpperCase()] ?? cur).trim()
+      return `${Math.round(n).toLocaleString("ru-RU")} ${symbol}`
+    })
+  return parts.length ? parts.join(" · ") : "0 ₽"
+}
+
 // Взвешенный прогноз: Σ value × вероятность, по активным НЕтерминальным сделкам.
 // closureProbability — доля 0..1.
 export function weightedForecast(
