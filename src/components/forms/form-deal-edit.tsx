@@ -243,11 +243,11 @@ export default function DealEditDialog({
                 name="clientId"
                 rules={{ required: "Укажите клиента" }}
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-0">
                     <FormLabel className="text-gray-400">Клиент *</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="Выберите клиента" />
                         </SelectTrigger>
                       </FormControl>
@@ -268,13 +268,13 @@ export default function DealEditDialog({
                 name="funnelStageId"
                 rules={{ required: "Укажите этап воронки" }}
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-0">
                     <FormLabel className="text-gray-400">
                       Этап воронки *
                     </FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="Выберите этап" />
                         </SelectTrigger>
                       </FormControl>
