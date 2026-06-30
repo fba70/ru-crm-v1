@@ -131,14 +131,6 @@ async function assertContactsInOrg(
   }
 }
 
-function normaliseCurrency(input: string | undefined | null): string {
-  const raw = (input ?? "USD").trim().toUpperCase()
-  if (!/^[A-Z]{3}$/.test(raw)) {
-    throw new Error("Currency must be a 3-letter ISO code")
-  }
-  return raw
-}
-
 // Drizzle's `numeric` accepts string or number; we normalise to a fixed
 // 2-decimal string so the column store is consistent regardless of how the
 // caller framed the input (form string vs. parsed number).
@@ -485,8 +477,15 @@ export async function updateDeal(
   if (data.funnelStageId !== undefined) patch.funnelStageId = data.funnelStageId
   if (data.clientId !== undefined) patch.clientId = data.clientId
   if (data.value !== undefined) patch.value = normaliseValue(data.value)
-  if (data.currency !== undefined) {
-    patch.currency = normaliseCurrency(data.currency)
+  // Валюта сделки всегда равна валюте её клиента: при смене клиента
+  // пересчитываем, присланное data.currency игнорируем (инвариант).
+  if (data.clientId !== undefined) {
+    const clientRow = await db
+      .select({ currency: client.currency })
+      .from(client)
+      .where(eq(client.id, data.clientId))
+      .limit(1)
+    patch.currency = clientRow[0]?.currency ?? "RUB"
   }
   if (data.status !== undefined) {
     if (!dealStatus.enumValues.includes(data.status)) {

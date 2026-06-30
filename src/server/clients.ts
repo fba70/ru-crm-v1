@@ -171,6 +171,14 @@ function normalizeClientCustomFields(
   return out
 }
 
+// Допустимые валюты расчётов. Неизвестное значение приводим к RUB
+// (форма присылает корректные коды; защита от мусора через API).
+const ALLOWED_CURRENCIES = ["RUB", "USD", "EUR", "GBP", "CNY"]
+function normaliseClientCurrency(currency: string | null | undefined): string {
+  const c = (currency ?? "").toUpperCase()
+  return ALLOWED_CURRENCIES.includes(c) ? c : "RUB"
+}
+
 export async function createClient(data: {
   name: string
   namePhys?: string | null
@@ -203,7 +211,7 @@ export async function createClient(data: {
     customFields: normalizeClientCustomFields(activeOrgId, data.customFields),
     funnelPhase: data.funnelPhase ?? "awareness",
     status: data.status ?? "active",
-    currency: data.currency ?? "RUB",
+    currency: normaliseClientCurrency(data.currency),
     userId: session.user.id,
     organizationId: activeOrgId,
     createdAt: now,
@@ -273,7 +281,9 @@ export async function updateClient(
         ? { funnelPhase: data.funnelPhase }
         : {}),
       ...(data.status !== undefined ? { status: data.status } : {}),
-      ...(data.currency !== undefined ? { currency: data.currency } : {}),
+      ...(data.currency !== undefined
+        ? { currency: normaliseClientCurrency(data.currency) }
+        : {}),
     })
     .where(eq(client.id, clientId))
 }

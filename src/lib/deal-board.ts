@@ -13,6 +13,7 @@ export const CURRENCY_SYMBOL: Record<string, string> = {
   USD: "$",
   EUR: "€",
   GBP: "£",
+  CNY: "¥",
   JPY: "¥",
   CHF: "CHF ",
   CAD: "CA$",
@@ -68,7 +69,7 @@ export function aggregateByCurrency(
     byCur.set(e.currency, (byCur.get(e.currency) ?? 0) + e.amount)
   }
   const parts = Array.from(byCur.entries())
-    .filter(([, n]) => Math.round(n) !== 0)
+    .filter(([, n]) => n !== 0)
     .map(([cur, n]) => {
       const symbol = (CURRENCY_SYMBOL[cur.toUpperCase()] ?? cur).trim()
       return `${Math.round(n).toLocaleString("ru-RU")} ${symbol}`

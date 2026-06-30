@@ -75,7 +75,6 @@ export async function POST(request: NextRequest) {
       clientId,
       contactIds,
       value,
-      currency,
     } = body
     if (!name) {
       return NextResponse.json({ error: "name is required" }, { status: 400 })
@@ -99,7 +98,6 @@ export async function POST(request: NextRequest) {
       clientId,
       contactIds,
       value,
-      currency,
     })
     return NextResponse.json({ success: true, id: result.id })
   } catch (error) {
@@ -120,7 +118,6 @@ export async function PUT(request: NextRequest) {
       clientId,
       contactIds,
       value,
-      currency,
     } = body
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 })
@@ -164,7 +161,6 @@ export async function PUT(request: NextRequest) {
       clientId,
       contactIds,
       value,
-      currency,
       status,
     })
     return NextResponse.json({ success: true })
