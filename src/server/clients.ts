@@ -43,6 +43,7 @@ export type ClientRow = {
   customFields: ClientCustomFields
   funnelPhase: FunnelPhase
   status: EntityStatus
+  currency: string
   userId: string
   userName: string | null
   organizationId: string
@@ -128,6 +129,7 @@ export async function listClients(): Promise<ClientRow[]> {
     customFields: r.client.customFields ?? {},
     funnelPhase: r.client.funnelPhase,
     status: r.client.status,
+    currency: r.client.currency,
     userId: r.client.userId,
     userName: r.userName,
     organizationId: r.client.organizationId,
@@ -181,6 +183,7 @@ export async function createClient(data: {
   customFields?: ClientCustomFields | null
   funnelPhase?: FunnelPhase
   status?: EntityStatus
+  currency?: string
 }) {
   const { session, activeOrgId } = await requireOrgContext()
   if (!data.name?.trim()) throw new Error("Name is required")
@@ -200,6 +203,7 @@ export async function createClient(data: {
     customFields: normalizeClientCustomFields(activeOrgId, data.customFields),
     funnelPhase: data.funnelPhase ?? "awareness",
     status: data.status ?? "active",
+    currency: data.currency ?? "RUB",
     userId: session.user.id,
     organizationId: activeOrgId,
     createdAt: now,
@@ -222,6 +226,7 @@ export async function updateClient(
     customFields?: ClientCustomFields | null
     funnelPhase?: FunnelPhase
     status?: EntityStatus
+    currency?: string
   },
 ) {
   const { activeOrgId } = await requireOrgContext()
@@ -268,6 +273,7 @@ export async function updateClient(
         ? { funnelPhase: data.funnelPhase }
         : {}),
       ...(data.status !== undefined ? { status: data.status } : {}),
+      ...(data.currency !== undefined ? { currency: data.currency } : {}),
     })
     .where(eq(client.id, clientId))
 }

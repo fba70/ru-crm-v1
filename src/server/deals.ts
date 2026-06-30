@@ -41,7 +41,7 @@ export type DealRow = {
   updatedAt: string
 }
 
-export type DealClientOption = { id: string; name: string }
+export type DealClientOption = { id: string; name: string; currency: string }
 export type DealContactOption = {
   id: string
   name: string
@@ -224,7 +224,7 @@ export async function listDealFunnelStages(): Promise<DealFunnelStageOption[]> {
 export async function listDealClientOptions(): Promise<DealClientOption[]> {
   const { activeOrgId } = await requireOrgContext()
   const rows = await db
-    .select({ id: client.id, name: client.name })
+    .select({ id: client.id, name: client.name, currency: client.currency })
     .from(client)
     .where(
       and(
@@ -397,7 +397,6 @@ export async function createDeal(data: {
   clientId: string
   contactIds?: string[]
   value?: number | string | null
-  currency?: string | null
 }) {
   const { session, activeOrgId } = await requireOrgContext()
   if (!data.name?.trim()) throw new Error("Name is required")
@@ -410,7 +409,12 @@ export async function createDeal(data: {
   await assertContactsInOrg(contactIds, activeOrgId)
 
   const value = normaliseValue(data.value)
-  const currency = normaliseCurrency(data.currency)
+  const clientRow = await db
+    .select({ currency: client.currency })
+    .from(client)
+    .where(eq(client.id, data.clientId))
+    .limit(1)
+  const currency = clientRow[0]?.currency ?? "RUB"
 
   const id = randomUUID()
   const now = new Date()

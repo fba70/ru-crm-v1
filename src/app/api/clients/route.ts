@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
       customFields,
       funnelPhase,
       status,
+      currency,
     } = body
     if (!name) {
       return NextResponse.json({ error: "name is required" }, { status: 400 })
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
       customFields,
       funnelPhase,
       status,
+      currency,
     })
     return NextResponse.json({ success: true, id: result.id })
   } catch (error) {
@@ -75,6 +77,7 @@ export async function PUT(request: NextRequest) {
       customFields,
       funnelPhase,
       status,
+      currency,
     } = body
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 })
@@ -91,6 +94,7 @@ export async function PUT(request: NextRequest) {
       customFields,
       funnelPhase,
       status,
+      currency,
     })
     return NextResponse.json({ success: true })
   } catch (error) {
