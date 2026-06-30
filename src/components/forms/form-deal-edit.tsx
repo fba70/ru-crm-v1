@@ -38,6 +38,7 @@ import type {
 } from "@/app/api/deals/route"
 import type { DealStatus } from "@/db/schema"
 import { dealStageLabel } from "@/lib/deal-funnel"
+import { CURRENCY_SYMBOL } from "@/lib/deal-board"
 
 // Edit-form status options. `active` is the live state; `cancelled` =
 // lost/withdrawn (kept for analytics); `deleted` = test/mistake, hidden
@@ -54,7 +55,6 @@ type DealFormData = {
   funnelStageId: string
   clientId: string
   value: string
-  currency: string
   status: DealStatus
 }
 
@@ -83,7 +83,6 @@ export default function DealEditDialog({
       funnelStageId: deal?.funnelStageId ?? "",
       clientId: deal?.clientId ?? "",
       value: deal?.value ?? "",
-      currency: deal?.currency ?? "EUR",
       status: deal?.status ?? "active",
     },
   })
@@ -121,7 +120,6 @@ export default function DealEditDialog({
           funnelStageId: defaultFunnelStageId,
           clientId: deal?.clientId ?? "",
           value: deal?.value ?? "",
-          currency: deal?.currency ?? "RUB",
           status: deal?.status ?? "active",
         })
       } catch {}
@@ -148,7 +146,6 @@ export default function DealEditDialog({
                 funnelStageId: data.funnelStageId,
                 clientId: data.clientId,
                 value: numericValue,
-                currency: data.currency,
               }
             : {
                 id: deal!.id,
@@ -157,7 +154,6 @@ export default function DealEditDialog({
                 funnelStageId: data.funnelStageId,
                 clientId: data.clientId,
                 value: numericValue,
-                currency: data.currency,
                 status: data.status,
               }
         const res = await fetch("/api/deals", {
@@ -178,6 +174,12 @@ export default function DealEditDialog({
       }
     })
   }
+
+  const watchedClientId = form.watch("clientId")
+  const selectedClient = clientOptions.find((c) => c.id === watchedClientId)
+  const currencySymbol =
+    CURRENCY_SYMBOL[(selectedClient?.currency ?? "RUB").toUpperCase()] ??
+    (selectedClient?.currency ?? "RUB")
 
   const title =
     mode === "create"
@@ -284,53 +286,32 @@ export default function DealEditDialog({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <FormField
-                control={form.control}
-                name="value"
-                render={({ field }) => (
-                  <FormItem className="col-span-2">
-                    <FormLabel className="text-gray-400">Сумма</FormLabel>
-                    <FormControl>
+            <FormField
+              control={form.control}
+              name="value"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">Сумма</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                        {currencySymbol}
+                      </span>
                       <Input
+                        className="pl-7"
                         type="number"
                         step="0.01"
                         min="0"
                         inputMode="decimal"
+                        placeholder="0"
                         {...field}
-                        placeholder="0.00"
                       />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="currency"
-                rules={{
-                  required: "Укажите валюту",
-                  pattern: {
-                    value: /^[A-Za-z]{3}$/,
-                    message: "3-буквенный код ISO",
-                  },
-                }}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Валюта</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        placeholder="RUB"
-                        maxLength={3}
-                        className="uppercase"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {mode === "edit" && !!deal?.contacts?.length && (
               <div className="space-y-2">
