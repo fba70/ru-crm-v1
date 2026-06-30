@@ -76,6 +76,14 @@ const STATUS_LABEL: Record<string, string> = {
   deleted: "Удалён",
 }
 
+const CURRENCIES: { value: string; label: string }[] = [
+  { value: "RUB", label: "₽ RUB" },
+  { value: "USD", label: "$ USD" },
+  { value: "EUR", label: "€ EUR" },
+  { value: "GBP", label: "£ GBP" },
+  { value: "CNY", label: "¥ CNY" },
+]
+
 type ClientFormData = {
   name: string
   namePhys: string
@@ -90,6 +98,7 @@ type ClientFormData = {
   type: ClientType | typeof TYPE_NONE
   funnelPhase: FunnelPhase
   status: EntityStatus
+  currency: string
 }
 
 type Props = {
@@ -154,6 +163,7 @@ export default function ClientEditDialog({
       type: client?.customFields?.type ?? TYPE_NONE,
       funnelPhase: client?.funnelPhase ?? "awareness",
       status: client?.status ?? "active",
+      currency: client?.currency ?? "RUB",
     },
   })
 
@@ -171,6 +181,7 @@ export default function ClientEditDialog({
         type: client?.customFields?.type ?? TYPE_NONE,
         funnelPhase: client?.funnelPhase ?? "awareness",
         status: client?.status ?? "active",
+        currency: client?.currency ?? "RUB",
       })
     }
   }, [open, client, form])
@@ -192,8 +203,8 @@ export default function ClientEditDialog({
         }
         const payload =
           mode === "create"
-            ? { ...rest, aliases, customFields }
-            : { id: client!.id, ...rest, aliases, customFields }
+            ? { ...rest, aliases, customFields, currency: data.currency }
+            : { id: client!.id, ...rest, aliases, customFields, currency: data.currency }
         const res = await fetch("/api/clients", {
           method: mode === "create" ? "POST" : "PUT",
           headers: { "Content-Type": "application/json" },
@@ -446,6 +457,36 @@ export default function ClientEditDialog({
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="currency"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">
+                    Валюта расчётов
+                  </FormLabel>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {CURRENCIES.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {mode === "edit" && client && (
               <ContactList contacts={client.contacts} />
