@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
   listContacts,
+  getContact,
   createContact,
   updateContact,
   listClientOptions,
@@ -23,6 +24,14 @@ export async function GET(request: NextRequest) {
     if (searchParams.get("clientOptions") === "1") {
       const options = await listClientOptions()
       return NextResponse.json({ options })
+    }
+    const id = searchParams.get("id")
+    if (id) {
+      const contact = await getContact(id)
+      if (!contact) {
+        return NextResponse.json({ error: "Contact not found" }, { status: 404 })
+      }
+      return NextResponse.json({ contact })
     }
     const contacts = await listContacts()
     return NextResponse.json({ contacts })

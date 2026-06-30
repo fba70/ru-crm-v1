@@ -96,6 +96,43 @@ export async function listContacts(): Promise<ContactRow[]> {
   }))
 }
 
+export async function getContact(contactId: string): Promise<ContactRow | null> {
+  const { activeOrgId } = await requireOrgContext()
+
+  const rows = await db
+    .select({
+      contact,
+      userName: user.name,
+      clientName: client.name,
+    })
+    .from(contact)
+    .leftJoin(user, eq(contact.userId, user.id))
+    .leftJoin(client, eq(contact.clientId, client.id))
+    .where(and(eq(contact.id, contactId), eq(contact.organizationId, activeOrgId)))
+    .limit(1)
+
+  const r = rows[0]
+  if (!r) return null
+
+  return {
+    id: r.contact.id,
+    name: r.contact.name,
+    nameNative: r.contact.nameNative,
+    aliases: r.contact.aliases,
+    phone: r.contact.phone,
+    email: r.contact.email,
+    position: r.contact.position,
+    clientId: r.contact.clientId,
+    clientName: r.clientName,
+    status: r.contact.status,
+    userId: r.contact.userId,
+    userName: r.userName,
+    organizationId: r.contact.organizationId,
+    createdAt: r.contact.createdAt.toISOString(),
+    updatedAt: r.contact.updatedAt.toISOString(),
+  }
+}
+
 export type ClientOption = { id: string; name: string }
 
 export async function listClientOptions(): Promise<ClientOption[]> {
