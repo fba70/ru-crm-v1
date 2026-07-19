@@ -8,6 +8,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Sparkles } from "lucide-react"
 import type { DealRow } from "@/app/api/deals/route"
+import type { Confidence } from "@/server/deals-mock"
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("ru-RU", {
@@ -18,9 +19,27 @@ function formatDate(iso: string): string {
   })
 }
 
+const CONFIDENCE_LABEL: Record<Confidence, string> = {
+  low: "низкая",
+  medium: "средняя",
+  high: "высокая",
+}
+
 // Показывает происхождение последнего изменения сделки (reasoning/changes),
 // если оно есть. Иначе ничего не рендерит.
-export function DealProvenance({ deal }: { deal: DealRow }) {
+//
+// `source` и `confidence` — МОК (из /api/deals/intel). TODO(backend): источник
+// изменения (ссылка на письмо/звонок/сообщение) и уверенность агента должны
+// приходить структурно на самой сделке.
+export function DealProvenance({
+  deal,
+  source = null,
+  confidence = null,
+}: {
+  deal: DealRow
+  source?: string | null
+  confidence?: Confidence | null
+}) {
   if (!deal.reasoning && !deal.changes) return null
   return (
     <Popover>
@@ -54,6 +73,20 @@ export function DealProvenance({ deal }: { deal: DealRow }) {
           <div>
             <div className="text-xs text-muted-foreground">Обоснование</div>
             <div className="whitespace-pre-wrap">{deal.reasoning}</div>
+          </div>
+        )}
+        {source && (
+          <div>
+            <div className="text-xs text-muted-foreground">Источник</div>
+            {/* TODO(backend): сделать кликабельной ссылкой на исходное
+                письмо/звонок/сообщение, когда появится реальный источник. */}
+            <div className="text-sky-600 dark:text-sky-400">{source}</div>
+          </div>
+        )}
+        {confidence && (
+          <div className="flex justify-between">
+            <div className="text-xs text-muted-foreground">Уверенность</div>
+            <div className="text-xs">{CONFIDENCE_LABEL[confidence]}</div>
           </div>
         )}
         <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
