@@ -1,6 +1,6 @@
 "use client"
 
-import { useDraggable } from "@dnd-kit/core"
+import { useDraggable, useDroppable } from "@dnd-kit/core"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -115,6 +115,13 @@ export function DealKanbanCard({
     id: deal.id,
     disabled: !isActive || hasProposal,
   })
+  // Карточка ещё и droppable — для точной вставки before/after в колонке
+  // (collisionDetection в board.tsx предпочитает card-цели колоночной).
+  // Drag остаётся на всей карточке; клик-vs-drag разведён justDraggedRef в board.
+  const { setNodeRef: setDropRef } = useDroppable({
+    id: `card:${deal.id}`,
+    data: { type: "card" as const, stageId: deal.funnelStageId, dealId: deal.id },
+  })
 
   // Инвариант: у активной сделки без предложения обязан быть следующий шаг.
   // Показываем только после загрузки данных (иначе ложное срабатывание).
@@ -127,7 +134,11 @@ export function DealKanbanCard({
 
   return (
     <Card
-      ref={setNodeRef}
+      ref={(node) => {
+        setNodeRef(node)
+        setDropRef(node)
+      }}
+      data-deal-id={deal.id}
       {...attributes}
       {...listeners}
       className={`group p-3 space-y-2 bg-card border-muted transition-colors hover:border-primary/40 hover:bg-accent/30 ${

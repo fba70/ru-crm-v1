@@ -7,10 +7,14 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  KeyboardSensor,
   PointerSensor,
-  useDroppable,
+  pointerWithin,
+  rectIntersection,
   useSensor,
   useSensors,
+  type Announcements,
+  type CollisionDetection,
 } from "@dnd-kit/core"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,14 +26,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Sparkles, ListTree, Flag } from "lucide-react"
+import { Plus, Sparkles, ListTree } from "lucide-react"
 import { toast } from "sonner"
 import type {
   DealRow,
   DealFunnelStageOption,
   DealClientOption,
 } from "@/app/api/deals/route"
-import type { DealIntel, DealProposal } from "@/server/deals-mock"
+import type { DealProposal } from "@/server/deals-mock"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import {
   STAGE_COLOR,
@@ -41,10 +45,7 @@ import {
   moveDirection,
   type OwnerFilter,
 } from "@/lib/deal-board"
-import {
-  DealKanbanCard,
-  DealKanbanCardOverlay,
-} from "@/components/blocks/deal-kanban-card"
+import { DealKanbanCardOverlay } from "@/components/blocks/deal-kanban-card"
 import {
   DealMoveDialog,
   type PendingMove,
@@ -52,139 +53,26 @@ import {
 import DealEditDialog from "@/components/forms/form-deal-edit"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
 import { DealDetailDrawer } from "@/components/blocks/deal-detail-drawer"
-import { DealProposalGhost } from "@/components/blocks/deal-proposal-ghost"
 import { DealDecisionFeed } from "@/components/blocks/deal-decision-feed"
-import { useBoardIntel, type NextStep } from "@/hooks/use-board-intel"
+import { useBoardIntel } from "@/hooks/use-board-intel"
+import { computePosition } from "@/lib/kanban-move"
+import { Column } from "./deals-kanban/column"
+import { Rail } from "./deals-kanban/rail"
+import { useBoardStore, type SortMode } from "./deals-kanban/store"
 
 const ALL = "__all__"
 
-function Column({
-  stage,
-  deals,
-  ghosts,
-  intelById,
-  nextStepByDeal,
-  dealsWithProposal,
-  commitments,
-  slim,
-  pending,
-  intelLoaded,
-  hideDeals,
-  onChanged,
-  onOpen,
-  onAccept,
-  onReject,
-}: {
-  stage: DealFunnelStageOption
-  deals: DealRow[]
-  ghosts: DealProposal[]
-  intelById: Record<string, DealIntel>
-  nextStepByDeal: Record<string, NextStep | null>
-  dealsWithProposal: Set<string>
-  commitments: string[]
-  slim: boolean
-  pending: boolean
-  intelLoaded: boolean
-  // Режим «только предложения»: обычные карточки скрыты, видны только ghost.
-  hideDeals: boolean
-  onChanged: () => void
-  onOpen: (deal: DealRow) => void
-  onAccept: (id: string) => void
-  onReject: (id: string, reason: string) => void
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: stage.id })
-  const colorClass = STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
+type OverData = { type?: "card" | "column"; stageId?: string; dealId?: string }
 
-  // Пустая стадия вне перетаскивания — узкая вертикальная колонка (как в
-  // прототипе). Во время drag все колонки разворачиваются, чтобы оставаться
-  // валидными drop-таргетами.
-  if (slim) {
-    return (
-      <div
-        ref={setNodeRef}
-        className="w-11 shrink-0"
-        title="Стадия пуста — развернётся при появлении сделок"
-      >
-        <div
-          className={`rounded-lg border p-2 h-44 flex items-center justify-center ${colorClass}`}
-        >
-          <div className="[writing-mode:vertical-rl] rotate-180 flex items-center gap-2 text-xs">
-            <span className="font-medium">{dealStageLabel(stage.name)}</span>
-            <span className="opacity-70">
-              пусто · {Math.round(stage.closureProbability * 100)}%
-            </span>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const firstCommit = commitments[0]
-
-  return (
-    <div className="w-64 shrink-0 flex flex-col gap-2">
-      <div className={`rounded-lg border p-2.5 ${colorClass}`}>
-        <div className="flex items-baseline justify-between text-sm font-medium">
-          <span>{dealStageLabel(stage.name)}</span>
-          <span className="text-xs opacity-70">
-            {Math.round(stage.closureProbability * 100)}%
-          </span>
-        </div>
-        <div className="text-xs opacity-80 mt-0.5">
-          {deals.length} ·{" "}
-          {aggregateByCurrency(
-            deals.map((d) => ({ amount: dealAmount(d.value), currency: d.currency })),
-          )}{" "}
-          · взвеш.{" "}
-          {aggregateByCurrency(
-            deals.map((d) => ({
-              amount: dealAmount(d.value) * stage.closureProbability,
-              currency: d.currency,
-            })),
-          )}
-        </div>
-        {firstCommit && (
-          <div className="flex items-start gap-1.5 text-xs opacity-70 mt-1.5 pt-1.5 border-t border-black/5 dark:border-white/10">
-            <Flag className="h-3 w-3 mt-0.5 shrink-0" />
-            <span className="line-clamp-2">
-              {firstCommit.toLowerCase()}
-              {commitments.length > 1 ? ` +${commitments.length - 1}` : ""}
-            </span>
-          </div>
-        )}
-      </div>
-      <div
-        ref={setNodeRef}
-        className={`flex flex-col gap-2 min-h-24 rounded-lg transition-colors ${
-          isOver ? "outline outline-2 outline-dashed outline-primary" : ""
-        }`}
-      >
-        {ghosts.map((p) => (
-          <div key={p.id} data-proposal-ghost>
-            <DealProposalGhost
-              proposal={p}
-              pending={pending}
-              onAccept={onAccept}
-              onReject={onReject}
-            />
-          </div>
-        ))}
-        {!hideDeals &&
-          deals.map((d) => (
-            <DealKanbanCard
-              key={d.id}
-              deal={d}
-              onChanged={onChanged}
-              onOpen={onOpen}
-              nextStep={nextStepByDeal[d.id] ?? null}
-              intel={intelById[d.id]}
-              hasProposal={dealsWithProposal.has(d.id)}
-              intelLoaded={intelLoaded}
-            />
-          ))}
-      </div>
-    </div>
-  )
+// Collision: prefer VISIBLE card droppables (precise before/after), fall back to
+// the column body, then rect intersection. Off-screen cards aren't mounted, so
+// they aren't droppables — composes with collapse (collapsed cols are Rails).
+const collisionDetection: CollisionDetection = (args) => {
+  const pointer = pointerWithin(args)
+  const cardHits = pointer.filter((c) => String(c.id).startsWith("card:"))
+  if (cardHits.length > 0) return cardHits
+  if (pointer.length > 0) return pointer
+  return rectIntersection(args)
 }
 
 export function DealsBoard({
@@ -226,8 +114,14 @@ export function DealsBoard({
   const boardScrollRef = useRef<HTMLDivElement>(null)
   const [isPending, startTransition] = useTransition()
 
+  const refresh = () => {
+    router.refresh()
+    refetchBoard()
+  }
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
   )
 
   const filtered = useMemo(() => {
@@ -259,8 +153,20 @@ export function DealsBoard({
     [filtered, includeCancelled, includeDeleted],
   )
 
-  const flowStages = stages.filter((s) => !isTerminalStage(s.name))
+  const flowStages = useMemo(
+    () => stages.filter((s) => !isTerminalStage(s.name)),
+    [stages],
+  )
   const terminalStages = stages.filter((s) => isTerminalStage(s.name))
+
+  // Store: группировка по стадиям, per-column сортировка, сворачивание,
+  // оптимистичный reorder внутри колонки (moveOnly+position без диалога).
+  const store = useBoardStore({
+    deals: boardDeals,
+    stages: flowStages,
+    onChanged: refresh,
+    boardId: currentUserId,
+  })
 
   const probByStageId = useMemo(
     () => new Map(stages.map((s) => [s.id, s.closureProbability])),
@@ -295,18 +201,37 @@ export function DealsBoard({
   // «схлопывается» в пустоту (и кнопка авто-гаснет, когда предложений не стало).
   const proposalsOnlyActive = proposalsOnly && visibleProposals.length > 0
 
-  const dealsByStage = (stageId: string) =>
-    boardDeals.filter((d) => d.funnelStageId === stageId)
-
-  const activeDeal = activeId
-    ? (activeDeals.find((d) => d.id === activeId) ?? null)
-    : null
+  const activeDeal = activeId ? (store.dealById(activeId) ?? null) : null
 
   const openDeal = openDealId
     ? (deals.find((d) => d.id === openDealId) ?? null)
     : null
 
-  const dragging = activeId !== null
+  const stageLabelOf = (stageId?: string) => {
+    const s = stages.find((st) => st.id === stageId)
+    return s ? dealStageLabel(s.name) : null
+  }
+
+  const announcements: Announcements = {
+    onDragStart({ active }) {
+      const d = store.dealById(String(active.id))
+      return d ? `Взята сделка «${d.name}».` : undefined
+    },
+    onDragOver({ over }) {
+      const label = stageLabelOf((over?.data.current as OverData)?.stageId)
+      return label ? `Над колонкой «${label}».` : undefined
+    },
+    onDragEnd({ active, over }) {
+      const d = store.dealById(String(active.id))
+      const label = stageLabelOf((over?.data.current as OverData)?.stageId)
+      return d && label
+        ? `Сделка «${d.name}» перемещена в «${label}».`
+        : "Перемещение отменено."
+    },
+    onDragCancel() {
+      return "Перемещение отменено."
+    },
+  }
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id))
@@ -321,18 +246,58 @@ export function DealsBoard({
     }, 0)
     const { active, over } = event
     if (!over) return
-    const deal = activeDeals.find((d) => d.id === active.id)
-    const toStage = stages.find((s) => s.id === over.id)
-    if (!deal || !toStage) return
-    if (deal.funnelStageId === toStage.id) return
+    const dealId = String(active.id)
+    const overData = over.data.current as OverData | undefined
+    const toStageId = overData?.stageId
+    if (!toStageId) return
+    const moving = boardDeals.find((d) => d.id === dealId)
+    if (!moving) return
+    const fromStageId = moving.funnelStageId
+
+    // Перемещение ВНУТРИ колонки (стадия не меняется) → оптимистичный reorder,
+    // без диалога (механика fba70).
+    if (toStageId === fromStageId) {
+      const targetCol = store.columns.find((c) => c.stage.id === toStageId)
+      const targetMode: SortMode = targetCol?.mode ?? "manual"
+      let beforeId: string | null = null
+      let afterId: string | null = null
+      if (overData?.type === "card" && overData.dealId) {
+        if (overData.dealId === dealId) return // сброшено на себя
+        const activeRect = active.rect.current.translated
+        const overRect = over.rect
+        const insertAfter =
+          activeRect != null
+            ? activeRect.top + activeRect.height / 2 >
+              overRect.top + overRect.height / 2
+            : false
+        const disp = (targetCol?.cards ?? []).filter((c) => c.id !== dealId)
+        const overIdx = disp.findIndex((c) => c.id === overData.dealId)
+        if (overIdx === -1) {
+          beforeId = disp.at(-1)?.id ?? null
+        } else if (insertAfter) {
+          beforeId = disp[overIdx].id
+          afterId = disp[overIdx + 1]?.id ?? null
+        } else {
+          beforeId = disp[overIdx - 1]?.id ?? null
+          afterId = disp[overIdx].id
+        }
+      }
+      store.move(dealId, toStageId, beforeId, afterId, targetMode)
+      return
+    }
+
+    // Смена стадии → наш диалог с заметкой (ours приоритетнее).
+    const toStage = stages.find((s) => s.id === toStageId)
+    if (!toStage) return
     if (isTerminalStage(toStage.name)) {
       toast("Терминальные стадии защищены — закрытие через карточку сделки")
       return
     }
-    const fromStage = stages.find((s) => s.id === deal.funnelStageId)
+    if (store.collapsed[toStageId]) store.expand(toStageId)
+    const fromStage = stages.find((s) => s.id === fromStageId)
     setPendingMove({
-      dealId: deal.id,
-      dealName: deal.name,
+      dealId: moving.id,
+      dealName: moving.name,
       toStageId: toStage.id,
       fromLabel: dealStageLabel(fromStage?.name ?? ""),
       toLabel: dealStageLabel(toStage.name),
@@ -343,6 +308,23 @@ export function DealsBoard({
   function confirmMove(note: string) {
     if (!pendingMove) return
     const move = pendingMove
+    // Append в конец целевой колонки (по manual-порядку), чтобы порядок внутри
+    // стадии остался консистентным при кросс-стадийном переводе.
+    const targetCards = boardDeals.filter(
+      (d) => d.funnelStageId === move.toStageId && d.id !== move.dealId,
+    )
+    const lastKeyed =
+      targetCards
+        .map((d) => d.position)
+        .filter((p): p is string => Boolean(p))
+        .sort()
+        .at(-1) ?? null
+    let position: string | null = null
+    try {
+      position = computePosition(lastKeyed, null)
+    } catch {
+      position = null
+    }
     startTransition(async () => {
       try {
         const res = await fetch("/api/deals", {
@@ -353,6 +335,7 @@ export function DealsBoard({
             move: true,
             funnelStageId: move.toStageId,
             note,
+            position,
           }),
         })
         if (!res.ok) {
@@ -362,8 +345,7 @@ export function DealsBoard({
         }
         toast.success(`Переведено: ${move.toLabel}`)
         setPendingMove(null)
-        router.refresh()
-        refetchBoard()
+        refresh()
       } catch {
         toast.error("Не удалось перевести сделку")
       }
@@ -384,8 +366,7 @@ export function DealsBoard({
           return
         }
         toast.success("Предложение принято")
-        router.refresh()
-        refetchBoard()
+        refresh()
       } catch {
         toast.error("Не удалось принять предложение")
       }
@@ -557,6 +538,8 @@ export function DealsBoard({
         <DndContext
           id="deals-board"
           sensors={sensors}
+          collisionDetection={collisionDetection}
+          accessibility={{ announcements }}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDragCancel={() => setActiveId(null)}
@@ -565,30 +548,28 @@ export function DealsBoard({
             ref={boardScrollRef}
             className="flex-1 min-h-0 flex gap-2 overflow-x-auto px-4 pb-4 items-start"
           >
-            {flowStages.map((stage) => {
-              const stageDeals = dealsByStage(stage.id)
-              const stageGhosts = proposalsByStage.get(stage.id) ?? []
-              const isEmpty = proposalsOnlyActive
-                ? stageGhosts.length === 0
-                : stageDeals.length === 0 && stageGhosts.length === 0
-              return (
+            {store.columns.map((column) => {
+              const stageGhosts = proposalsByStage.get(column.stage.id) ?? []
+              return store.collapsed[column.stage.id] ? (
+                <Rail
+                  key={column.stage.id}
+                  stage={column.stage}
+                  count={column.cards.length}
+                  onExpand={() => store.expand(column.stage.id)}
+                />
+              ) : (
                 <Column
-                  key={stage.id}
-                  stage={stage}
-                  deals={stageDeals}
+                  key={column.stage.id}
+                  column={column}
                   ghosts={stageGhosts}
                   intelById={board.intel}
                   nextStepByDeal={board.nextStepByDeal}
                   dealsWithProposal={dealsWithProposal}
-                  commitments={board.commitments[stage.id] ?? []}
-                  slim={isEmpty && !dragging}
+                  commitments={board.commitments[column.stage.id] ?? []}
                   pending={isPending}
                   intelLoaded={!boardLoading}
                   hideDeals={proposalsOnlyActive}
-                  onChanged={() => {
-                    router.refresh()
-                    refetchBoard()
-                  }}
+                  onChanged={refresh}
                   onOpen={(d) => {
                     if (justDraggedRef.current) return
                     setOpenDealId(d.id)
@@ -596,6 +577,8 @@ export function DealsBoard({
                   }}
                   onAccept={handleAccept}
                   onReject={handleReject}
+                  onCollapse={() => store.toggleCollapse(column.stage.id)}
+                  onSortChange={(mode) => store.setSort(column.stage.id, mode)}
                 />
               )
             })}
@@ -657,10 +640,7 @@ export function DealsBoard({
         stages={stages}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
-        onChanged={() => {
-          router.refresh()
-          refetchBoard()
-        }}
+        onChanged={refresh}
       />
       <DealDecisionFeed
         open={feedOpen}
