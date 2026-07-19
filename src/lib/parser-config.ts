@@ -25,6 +25,18 @@ export const PARSER_CONFIG = {
     // File-extension fallback when a provider hands us an unknown content
     // type (some Nylas/Chat responses report application/octet-stream).
     supportedExtensions: [".jpg", ".jpeg", ".png"] as readonly string[],
+    // Decorative-inline-image triage (see `src/lib/image-triage.ts`). Applied
+    // ONLY to inline (cid:) email images — the logos / signature graphics /
+    // social badges / header-footer banners / tracking pixels that pollute
+    // source items with no real content. Explicit attachments bypass this.
+    // Skipped images are still recorded as audit rows (parse_error = reason),
+    // just excluded from parsed content + discovery, and cost no LLM call.
+    decorative: {
+      trackingPixelMax: 3, // ≤3px on either axis → tracking pixel / spacer
+      iconMaxDimension: 200, // ≤200px on BOTH axes → logo / icon / badge
+      bannerShortSideMax: 120, // thin strip: short side ≤120px …
+      bannerAspectRatio: 4.5, // … and long/short ≥4.5 → header/footer banner
+    },
   },
   audio: {
     // 10 MB ≈ 10–15 min of 128 kbps mp3 — comfortable for voice memos and
@@ -38,7 +50,9 @@ export const PARSER_CONFIG = {
     // m4a (AAC inside an MP4 container) is what Google Chat voice messages
     // and Apple Voice Memos produce — accept its various reported mime
     // spellings here. `audio.ts` normalises them to `audio/mp4` before the
-    // Gemini call.
+    // Gemini call. OGG/Opus is what Telegram bot voice messages
+    // (`message.voice`) arrive as — Gemini accepts `audio/ogg` natively, so
+    // `audio.ts` normalises the `audio/opus` spelling to it.
     supportedMediaTypes: [
       "audio/mpeg",
       "audio/mp3",
@@ -46,8 +60,10 @@ export const PARSER_CONFIG = {
       "audio/x-m4a",
       "audio/m4a",
       "audio/aac",
+      "audio/ogg",
+      "audio/opus",
     ] as readonly string[],
-    supportedExtensions: [".mp3", ".m4a", ".aac"] as readonly string[],
+    supportedExtensions: [".mp3", ".m4a", ".aac", ".ogg", ".oga"] as readonly string[],
   },
   video: {
     // 50 MB handles typical short clips (screen recordings, meeting

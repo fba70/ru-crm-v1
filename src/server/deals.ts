@@ -34,6 +34,9 @@ export type DealRow = {
   value: string | null
   currency: string
   status: DealStatus
+  // Fractional-indexing key for manual kanban order within a stage; null until
+  // the deal is first dragged (board sorts null to the end by updatedAt).
+  position: string | null
   userId: string
   userName: string | null
   organizationId: string
@@ -323,6 +326,7 @@ export async function listDeals(
     value: r.deal.value,
     currency: r.deal.currency,
     status: r.deal.status,
+    position: r.deal.position,
     userId: r.deal.userId,
     userName: r.userName,
     organizationId: r.deal.organizationId,
@@ -374,6 +378,7 @@ export async function getDeal(dealId: string): Promise<DealRow | null> {
     value: r.deal.value,
     currency: r.deal.currency,
     status: r.deal.status,
+    position: r.deal.position,
     userId: r.deal.userId,
     userName: r.userName,
     organizationId: r.deal.organizationId,
@@ -532,25 +537,36 @@ export async function setDealStatus(dealId: string, status: DealStatus) {
   await db.update(deal).set({ status }).where(eq(deal.id, dealId))
 }
 
-// Перевод сделки по воронке вручную (drag&drop в канбане). Ставит стадию,
-// пишет заметку-основание в `changes` (provenance ручного перевода).
-// `reasoning` не трогаем — оно за discovery-агентом.
+// Перевод сделки по воронке вручную (drag&drop в канбане / кросс-стадийный
+// перевод через диалог). Ставит стадию, пишет заметку-основание в `changes`
+// (provenance ручного перевода). `reasoning` не трогаем — оно за discovery-
+// агентом. Опционально ставит `position` (append в целевую колонку) — при
+// кросс-стадийном переводе с заметкой, чтобы порядок внутри стадии остался
+// консистентным.
 export async function moveDealStage(
   dealId: string,
   funnelStageId: string,
   note: string | null,
+  opts?: { position?: string | null },
 ) {
   const { activeOrgId } = await requireOrgContext()
   await assertDealInOrg(dealId, activeOrgId)
   await assertFunnelStageAccessible(funnelStageId, activeOrgId)
 
   const trimmed = note?.trim()
+  const position = opts?.position
   // Всегда переписываем `changes` (заметка или null), чтобы при переводе без
   // заметки в provenance не оставался устаревший текст прошлого изменения.
   // `updatedAt` обновляется автоматически через $onUpdate в схеме.
   await db
     .update(deal)
-    .set({ funnelStageId, changes: trimmed || null })
+    .set({
+      funnelStageId,
+      changes: trimmed || null,
+      ...(typeof position === "string" && position.length > 0
+        ? { position }
+        : {}),
+    })
     .where(eq(deal.id, dealId))
 }
 
@@ -625,4 +641,26 @@ export async function removeDealContact(dealId: string, contactId: string) {
         eq(dealContact.contactId, contactId),
       ),
     )
+}
+
+// Kanban drag: move a deal to a column (funnel stage) at a manual-order slot.
+// The CLIENT computes `position` via fractional-indexing (computePosition in
+// src/lib/kanban-move.ts) from the neighbours at the drop point; the server
+// only validates tenant + stage ownership and writes both fields. This is the
+// only path that sets `deal.position`. (`updatedAt` bumps via $onUpdate — a
+// drag counts as a touch, same as the stage-move dropdown.)
+export async function moveDeal(
+  dealId: string,
+  data: { funnelStageId: string; position: string },
+) {
+  const { activeOrgId } = await requireOrgContext()
+  await assertDealInOrg(dealId, activeOrgId)
+  await assertFunnelStageAccessible(data.funnelStageId, activeOrgId)
+  if (typeof data.position !== "string" || data.position.length === 0) {
+    throw new Error("Invalid position")
+  }
+  await db
+    .update(deal)
+    .set({ funnelStageId: data.funnelStageId, position: data.position })
+    .where(eq(deal.id, dealId))
 }

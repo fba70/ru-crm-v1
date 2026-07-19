@@ -12,7 +12,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "@/db/schema"
-import { aliasedTable, and, eq, desc } from "drizzle-orm"
+import { aliasedTable, and, eq, desc, inArray } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
 
@@ -208,7 +208,10 @@ export async function listTaskClientOptions(): Promise<TaskClientOption[]> {
     .where(
       and(
         eq(client.organizationId, activeOrgId),
-        eq(client.status, "active"),
+        // active + initial: auto-discovered (initial) clients are valid task
+        // targets too — mirrors the deal pickers, and lets a card's
+        // identified client prefill stick even before it's reviewed.
+        inArray(client.status, ["active", "initial"]),
       ),
     )
     .orderBy(client.name)
@@ -221,7 +224,10 @@ export async function listTaskContactOptions(
   const { activeOrgId } = await requireOrgContext()
   const conditions = [
     eq(contact.organizationId, activeOrgId),
-    eq(contact.status, "active"),
+    // active + initial, same rationale as listTaskClientOptions — so a card's
+    // identified (often auto-discovered) contact prefill survives the form's
+    // option-validity check.
+    inArray(contact.status, ["active", "initial"]),
   ]
   if (clientId) {
     conditions.push(eq(contact.clientId, clientId))

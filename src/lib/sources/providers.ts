@@ -15,6 +15,7 @@
 
 import {
   Mail,
+  Inbox,
   MessageSquare,
   HardDrive,
   Upload,
@@ -81,12 +82,21 @@ export type ProviderMetadata = {
   // (no remote source for the cron to fetch) and for aichat (sessions
   // arrive pre-parsed at save-time, nothing for the pipeline to do).
   defaultAutomatedParsingIsAllowed: boolean
+  // The `metadata_json` field holding the AUTHOR/sender side, read at parse
+  // time by org-attribution (`extractAuthorEmails`) — see refs/org-attribution.md.
+  // MUST point at the sender field only (directionality): `from` for email
+  // (envelope sender), `participants` for gchat/gdrive (message sender / file
+  // owner). `null` for providers with no author side (dropoff / whatsapp /
+  // aichat / telegram) → no author emails → classified by content, so a member
+  // dropping a client's file is correctly NOT us.
+  authorEmailField: string | null
   capabilities: ProviderCapabilities
 }
 
 export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
   nylas: {
     provider: "nylas",
+    authorEmailField: "from",
     label: "Email",
     description: "Email messages synced from a Nylas-connected mailbox.",
     icon: Mail,
@@ -102,8 +112,28 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
       supportsManualFetch: false,
     },
   },
+  imap: {
+    provider: "imap",
+    authorEmailField: "from",
+    label: "Email (IMAP)",
+    description:
+      "Email messages synced directly from an IMAP mailbox (no Nylas).",
+    icon: Inbox,
+    defaultName: "Emails",
+    defaultProviderConfig: { mailbox: "INBOX" },
+    defaultAutomatedParsingIsAllowed: true,
+    capabilities: {
+      supportsRemoteSync: true,
+      supportsArchiveUpload: false,
+      supportsDropoffUpload: false,
+      hasRawBytesPersisted: true,
+      supportsAutomatedPipeline: true,
+      supportsManualFetch: false,
+    },
+  },
   gchat: {
     provider: "gchat",
+    authorEmailField: "participants",
     label: "Google Chat",
     description: "Messages and attachments from a Google Chat space.",
     icon: MessageSquare,
@@ -121,6 +151,7 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
   },
   gdrive: {
     provider: "gdrive",
+    authorEmailField: "participants",
     label: "Google Drive",
     description: "Files synced from a Google Drive folder.",
     icon: HardDrive,
@@ -138,6 +169,7 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
   },
   dropoff: {
     provider: "dropoff",
+    authorEmailField: null,
     label: "Files Drop Off",
     description: "Ad-hoc files uploaded via the Drop Off dialog.",
     icon: Upload,
@@ -155,6 +187,7 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
   },
   whatsapp: {
     provider: "whatsapp",
+    authorEmailField: null,
     label: "WhatsApp Archive",
     description: "WhatsApp chat archives uploaded as a folder export.",
     icon: MessageCircle,
@@ -172,6 +205,7 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
   },
   aichat: {
     provider: "aichat",
+    authorEmailField: null,
     label: "AI Chat",
     description: "Save AI-Chat data to the system context.",
     icon: Bot,
@@ -189,6 +223,7 @@ export const PROVIDERS: Record<SourceProvider, ProviderMetadata> = {
   },
   telegram: {
     provider: "telegram",
+    authorEmailField: null,
     label: "Telegram",
     description: "Messages forwarded or DM'd to a per-org Telegram bot.",
     icon: Send,
@@ -230,6 +265,7 @@ export function getProvider(p: SourceProvider | string): ProviderMetadata {
     defaultName: p,
     defaultProviderConfig: {},
     defaultAutomatedParsingIsAllowed: false,
+    authorEmailField: null,
     capabilities: {
       supportsRemoteSync: false,
       supportsArchiveUpload: false,

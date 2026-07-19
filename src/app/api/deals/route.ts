@@ -8,6 +8,7 @@ import {
   updateDeal,
   setDealStatus,
   moveDealStage,
+  moveDeal,
   getDeal,
 } from "@/server/deals"
 import { dealStatus, type DealStatus } from "@/db/schema"
@@ -112,6 +113,8 @@ export async function PUT(request: NextRequest) {
       id,
       statusOnly,
       status,
+      moveOnly,
+      position,
       name,
       description,
       funnelStageId,
@@ -122,7 +125,10 @@ export async function PUT(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 })
     }
-    // Перевод стадии из канбана: ставит funnelStageId + заметку-основание.
+    // Кросс-стадийный перевод через диалог: ставит funnelStageId + заметку-
+    // основание (наш путь). `position` (append в целевую колонку) может
+    // прийти вместе с note — прокидываем в moveDealStage, чтобы порядок
+    // внутри стадии оставался консистентным.
     if (body.move) {
       if (!funnelStageId) {
         return NextResponse.json(
@@ -130,7 +136,32 @@ export async function PUT(request: NextRequest) {
           { status: 400 },
         )
       }
-      await moveDealStage(id, funnelStageId, body.note ?? null)
+      await moveDealStage(id, funnelStageId, body.note ?? null, {
+        position:
+          typeof position === "string" && position.length > 0
+            ? position
+            : null,
+      })
+      return NextResponse.json({ success: true })
+    }
+    // `moveOnly` is the kanban drag shortcut: set the target column (funnel
+    // stage) + the client-computed fractional-index `position`. Distinct from
+    // the full update so a drag never touches name/value/contacts (used for
+    // within-column reorder — optimistic, no dialog).
+    if (moveOnly) {
+      if (!funnelStageId) {
+        return NextResponse.json(
+          { error: "funnelStageId is required" },
+          { status: 400 },
+        )
+      }
+      if (typeof position !== "string" || position.length === 0) {
+        return NextResponse.json(
+          { error: "position is required" },
+          { status: 400 },
+        )
+      }
+      await moveDeal(id, { funnelStageId, position })
       return NextResponse.json({ success: true })
     }
     const isValidStatus = (s: unknown): s is DealStatus =>

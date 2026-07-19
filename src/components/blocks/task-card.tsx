@@ -30,6 +30,7 @@ const TYPE_LABELS: Record<TaskType, string> = {
   email: "Email",
   offer: "Предложение",
   docs: "Документы",
+  support: "Поддержка",
   other: "Другое",
 }
 
@@ -54,6 +55,7 @@ const TYPE_COLOR: Record<TaskType, string> = {
   email: "bg-purple-500/15 text-purple-600 dark:text-purple-300",
   offer: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
   docs: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
+  support: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
   other: "bg-gray-500/15 text-gray-600 dark:text-gray-300",
 }
 

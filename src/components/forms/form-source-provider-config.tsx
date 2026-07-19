@@ -78,6 +78,15 @@ export function FormSourceProviderConfig({
             onSaved={onSaved}
           />
         )}
+        {provider === "imap" && (
+          <ImapFields
+            sourceId={sourceId}
+            initialConfig={initialConfig}
+            endpoint={endpoint}
+            onClose={() => onOpenChange(false)}
+            onSaved={onSaved}
+          />
+        )}
         {provider === "gchat" && (
           <GchatFields
             sourceId={sourceId}
@@ -183,6 +192,78 @@ function NylasFields(props: Omit<FieldsProps, "initialConfig">) {
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={props.onClose}>
           Закрыть
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+// IMAP: the only routing config is which mailbox folder to sync. Exact server
+// folder name (e.g. "INBOX", "[Gmail]/All Mail"). The host/credentials live on
+// the Credentials form.
+function ImapFields({
+  sourceId,
+  initialConfig,
+  endpoint,
+  onClose,
+  onSaved,
+}: FieldsProps) {
+  const [mailbox, setMailbox] = useState(
+    typeof initialConfig.mailbox === "string" && initialConfig.mailbox
+      ? initialConfig.mailbox
+      : "INBOX",
+  )
+  const [busy, setBusy] = useState(false)
+
+  async function handleSave() {
+    if (!mailbox.trim()) {
+      toast.error("Укажите название папки (mailbox)")
+      return
+    }
+    setBusy(true)
+    const out = await submitConfig({
+      endpoint,
+      sourceId,
+      providerConfig: { mailbox: mailbox.trim() },
+    })
+    setBusy(false)
+    if (!out.ok) {
+      toast.error(formatError(out.error, out.issues))
+      return
+    }
+    toast.success("Настройки провайдера сохранены")
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <div className="space-y-4 py-2">
+      <div className="space-y-2">
+        <Label htmlFor="imap-mailbox">Папка (mailbox)</Label>
+        <Input
+          id="imap-mailbox"
+          value={mailbox}
+          onChange={(e) => setMailbox(e.target.value)}
+          placeholder="INBOX"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <p className="text-xs text-muted-foreground">
+          Точное название папки IMAP, из которой читать письма — так, как его
+          возвращает сервер (например{" "}
+          <code className="px-1 bg-muted rounded text-[11px]">INBOX</code> или{" "}
+          <code className="px-1 bg-muted rounded text-[11px]">
+            [Gmail]/All Mail
+          </code>
+          ). По умолчанию — <code className="text-[11px]">INBOX</code>.
+        </p>
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
+          Отмена
+        </Button>
+        <Button type="button" onClick={handleSave} disabled={busy}>
+          {busy ? "Сохранение…" : "Сохранить"}
         </Button>
       </DialogFooter>
     </div>

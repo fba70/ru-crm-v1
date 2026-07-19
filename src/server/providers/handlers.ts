@@ -18,12 +18,14 @@ import "server-only"
 
 import { z } from "zod"
 import type { SourceProvider } from "@/db/schema"
-import type { SyncResult } from "@/server/sync/_shared"
+import type { SyncResult, SyncOptions } from "@/server/sync/_shared"
 import { syncNylasEmails } from "@/server/sync/nylas"
+import { syncImapEmails } from "@/server/sync/imap"
 import { syncGoogleChatMessages } from "@/server/sync/gchat"
 import { syncGoogleDriveFiles } from "@/server/sync/gdrive"
 import {
   isNylasItemMissing,
+  isImapItemMissing,
   isGoogleChatItemMissing,
   isGoogleDriveItemMissing,
 } from "@/server/parsers/_provider-errors"
@@ -37,6 +39,18 @@ export const nylasCredentialsSchema = z.object({
   grantId: z.string().min(1, "grantId is required"),
 })
 export type NylasCredentials = z.infer<typeof nylasCredentialsSchema>
+
+// IMAP: per-org raw mailbox credentials. Unlike Nylas (one opaque grantId),
+// IMAP needs the full connection tuple. `secure=true` = implicit TLS on 993;
+// `secure=false` = STARTTLS on 143. No env fallback — strictly per-org.
+export const imapCredentialsSchema = z.object({
+  host: z.string().min(1, "host is required"),
+  port: z.coerce.number().int().min(1).max(65535).default(993),
+  secure: z.boolean().default(true),
+  user: z.string().min(1, "user is required"),
+  password: z.string().min(1, "password is required"),
+})
+export type ImapCredentials = z.infer<typeof imapCredentialsSchema>
 
 // Google Chat: per-org service account JSON (for DWD impersonation) plus
 // the Workspace user to impersonate. Pasted as raw JSON so the form can
@@ -129,6 +143,13 @@ export type ProviderCredentialsSchema = z.ZodType | null
 export const nylasProviderConfigSchema = z.object({})
 export type NylasProviderConfig = z.infer<typeof nylasProviderConfigSchema>
 
+// IMAP non-secret routing: which mailbox folder to sync. Exact server name
+// (e.g. "INBOX", "[Gmail]/All Mail"). Read at sync + parse time.
+export const imapProviderConfigSchema = z.object({
+  mailbox: z.string().min(1).default("INBOX"),
+})
+export type ImapProviderConfig = z.infer<typeof imapProviderConfigSchema>
+
 export const gchatProviderConfigSchema = z.object({
   spaceId: z
     .string()
@@ -159,7 +180,10 @@ export type ProviderHandler = {
   // or are written directly at save time). The dispatcher in
   // `src/server/sync/index.ts` rejects sourceIds whose provider has a
   // null `sync` so the caller gets a clear error rather than a no-op.
-  sync: ((sourceId: string) => Promise<SyncResult>) | null
+  // `opts` carries an optional explicit fetch window (see `SyncOptions`).
+  // Providers that don't support windowed backfill (gchat/gdrive) simply
+  // omit the param — a narrower function is assignable to the wider type.
+  sync: ((sourceId: string, opts?: SyncOptions) => Promise<SyncResult>) | null
   // Parse-time "this item no longer exists at the provider" detector,
   // used by `parseSourceItem` to mark the row `'skipped'` instead of
   // `'failed'`. Null for providers where items can't disappear (dropoff,
@@ -179,6 +203,12 @@ export const HANDLERS: Record<SourceProvider, ProviderHandler> = {
     isItemMissing: isNylasItemMissing,
     credentialsSchema: nylasCredentialsSchema,
     providerConfigSchema: nylasProviderConfigSchema,
+  },
+  imap: {
+    sync: syncImapEmails,
+    isItemMissing: isImapItemMissing,
+    credentialsSchema: imapCredentialsSchema,
+    providerConfigSchema: imapProviderConfigSchema,
   },
   gchat: {
     sync: syncGoogleChatMessages,

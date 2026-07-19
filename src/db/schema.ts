@@ -213,9 +213,26 @@ export const entityStatus = pgEnum("entity_status", [
   "suspended",
   "initial",
   "deleted",
+  // `blocked` — a real but business-irrelevant entity, suppressed by the
+  // discovery blocklist (see `discovery_blocklist` + refs/blocklist.md).
+  // Hidden from default lists and treated as ABSENT by discovery/dedup (like
+  // `deleted`), but NOT auto-revived — the dictionary keeps it suppressed.
+  "blocked",
 ])
 
 export type EntityStatus = (typeof entityStatus.enumValues)[number]
+
+// Discovery blocklist entry kind (see refs/blocklist.md). `match_key` is the
+// normalised canonical form per kind: lower(email) | bare host | companyMatchKey
+// | personMatchKey.
+export const blocklistKind = pgEnum("blocklist_kind", [
+  "email",
+  "domain",
+  "company",
+  "person",
+])
+
+export type BlocklistKind = (typeof blocklistKind.enumValues)[number]
 
 // Order lifecycle. `draft` (internal) → `awaiting_client` (handed to the
 // client for review/confirm via a guest link) → `confirmed` (back to
@@ -315,6 +332,33 @@ export const dealContactRole = pgEnum("deal_contact_role", [
 ])
 export type DealContactRole = (typeof dealContactRole.enumValues)[number]
 
+// Batch web-enrichment state for a client (see refs/enrich-clients.md).
+// NULL = never processed OR last run failed → the batch worklist (NULL is the
+// resumability anchor). `enriched` = a match was applied (auto or via review),
+// terminal. `review` = the name matched several companies → parked in the
+// manual queue, with the options stored in `enrichment_candidates`. `no_match`
+// = web search found nothing usable, terminal.
+export const enrichmentStatus = pgEnum("enrichment_status", [
+  "enriched",
+  "review",
+  "no_match",
+])
+
+export type EnrichmentStatus = (typeof enrichmentStatus.enumValues)[number]
+
+// Local mirror of `ClientLookupCandidate` (src/server/clients.ts) so the
+// schema module has no dependency on the server/LLM module. Stored in
+// `client.enrichment_candidates` so the review dialog needs no new web call.
+export type ClientLookupCandidateJson = {
+  name: string
+  email: string
+  phone: string
+  address: string
+  webUrl: string
+  confidence: "high" | "medium" | "low"
+  whyMatch: string
+}
+
 export const client = pgTable(
   "client",
   {
@@ -345,6 +389,13 @@ export const client = pgTable(
     aliases: text("aliases").array(),
     funnelPhase: funnelPhase("funnel_phase").notNull().default("awareness"),
     status: entityStatus("status").notNull().default("active"),
+    // Batch web-enrichment bookkeeping (refs/enrich-clients.md). NULL =
+    // unprocessed/failed (the worklist). Candidates are parked here only while
+    // status='review' so the manual disambiguation dialog needs no new web call.
+    enrichmentStatus: enrichmentStatus("enrichment_status"),
+    enrichmentCandidates: jsonb("enrichment_candidates").$type<
+      ClientLookupCandidateJson[]
+    >(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -361,6 +412,7 @@ export const client = pgTable(
     index("client_organizationId_idx").on(table.organizationId),
     index("client_userId_idx").on(table.userId),
     index("client_status_idx").on(table.status),
+    index("client_enrichmentStatus_idx").on(table.enrichmentStatus),
   ],
 )
 
@@ -410,12 +462,73 @@ export const contact = pgTable(
   ],
 )
 
+// Org-scoped blocklist dictionary (see refs/blocklist.md). The AUTHORITATIVE
+// source of truth for suppressing business-irrelevant entities BEFORE discovery
+// materialises a client/contact row (a row flag can't do that — most blocked
+// entities have no row yet, and blocking is by domain/name, not by row). Keyed
+// the same way the engines read `metadata_json`: lower(email) / bare host /
+// companyMatchKey / personMatchKey.
+export const discoveryBlocklist = pgTable(
+  "discovery_blocklist",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: blocklistKind("kind").notNull(),
+    // Normalised canonical form (the dedup key): lower(email) | bare host |
+    // companyMatchKey | personMatchKey. Makes "ООО АСТ" / "AST" / "АСТ" collapse
+    // to one entry.
+    matchKey: text("match_key").notNull(),
+    // Raw value as entered, for display.
+    label: text("label").notNull(),
+    // Optional operator "why" note.
+    note: text("note"),
+    // Provenance — which source item raised it, if blocked from a candidate.
+    sourceItemId: text("source_item_id"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("discovery_blocklist_organizationId_idx").on(table.organizationId),
+    // Adding the same block twice is a no-op (onConflictDoNothing).
+    uniqueIndex("discovery_blocklist_org_kind_key_uidx").on(
+      table.organizationId,
+      table.kind,
+      table.matchKey,
+    ),
+  ],
+)
+
+// Append-only audit of admin "source teardown" runs (see refs/source-teardown.md).
+// Records the blast radius of each hard-delete so the destructive op is
+// traceable. Never read by app logic. `source_id` / `source_name` are stored
+// flat (no FK) so the log survives even if the source is later removed.
+export const teardownLog = pgTable("teardown_log", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  sourceId: text("source_id").notNull(),
+  sourceName: text("source_name").notNull(),
+  adminUserId: text("admin_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  // { sourceItems, r2Objects, cards, clients, contacts, deals, tasks }
+  counts: jsonb("counts").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
 export const taskType = pgEnum("task_type", [
   "meet",
   "call",
   "email",
   "offer",
   "docs",
+  // Customer-support task — created when an operator accepts a `support` card.
+  "support",
   "other",
 ])
 
@@ -559,6 +672,12 @@ export const deal = pgTable(
     // participate in deal-discovery (identify / match / move). Distinct from
     // the funnel `Rejected` stage, which is a visible sales outcome.
     status: dealStatus("status").notNull().default("active"),
+    // Fractional-indexing key for manual kanban ordering WITHIN a funnel
+    // stage (column). Nullable: legacy rows + LLM-discovered deals may have no
+    // key until first dragged; the board treats null as "unordered, sort to
+    // the end by updatedAt". Set/refreshed by `moveDeal` on drag. See
+    // `src/lib/kanban-move.ts` (computePosition) + `refs/kanban-spec.md`.
+    position: text("position"),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -577,6 +696,8 @@ export const deal = pgTable(
     index("deal_clientId_idx").on(table.clientId),
     index("deal_funnelStageId_idx").on(table.funnelStageId),
     index("deal_status_idx").on(table.status),
+    // Composite index for the per-column ordered read (stage + manual order).
+    index("deal_stage_position_idx").on(table.funnelStageId, table.position),
   ],
 )
 
@@ -618,6 +739,10 @@ export const cardCategory = pgEnum("card_category", [
   // "Create order" button that opens the New Order dialog on /products
   // prefilled with the client + that message (→ the order-from-request flow).
   "new_order",
+  // A customer-support request: complaint about product quality, a delivery
+  // problem, a product issue/question. High priority; accepting it spawns a
+  // `support`-type task. See `src/app/CLAUDE.md` § "Support cards".
+  "support",
 ])
 
 export type CardCategory = (typeof cardCategory.enumValues)[number]
@@ -697,6 +822,27 @@ export const cardUser = pgTable(
   (table) => [
     primaryKey({ columns: [table.cardId, table.userId] }),
     index("card_user_userId_idx").on(table.userId),
+  ],
+)
+
+// Many-to-many: contacts identified by the analysis (the external
+// sender of the source item, matched to an org contact by email at
+// generation time). Drives the "Принять" → create-task prefill so the
+// spawned task carries the related contact. Composite PK doubles as the
+// dedup index on (cardId, contactId); cascades on either side.
+export const cardContact = pgTable(
+  "card_contact",
+  {
+    cardId: text("card_id")
+      .notNull()
+      .references(() => card.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.cardId, table.contactId] }),
+    index("card_contact_contactId_idx").on(table.contactId),
   ],
 )
 
@@ -830,6 +976,15 @@ export const order = pgTable(
     // returns it as a string; the API/UI parse to number). Recomputed from
     // the line items whenever they change.
     totalAmount: numeric("total_amount", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    // Per-client discount snapshotted onto the order at save time (a whole
+    // percent 0–100, sourced from `client.custom_fields.discount`). Re-synced
+    // from the client on every internal create/update; guest qty edits keep it.
+    // The discount AMOUNT and the discounted total are DERIVED on read (see
+    // `computeOrderDiscount`) from `total_amount` × this percent — never stored,
+    // so a guest qty change recomputes them without extra writes.
+    discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
       .notNull()
       .default("0"),
     currency: text("currency").notNull().default("RUB"),
@@ -1049,6 +1204,12 @@ export type SourceType = (typeof sourceType.enumValues)[number]
 // a separate migration step.
 export const sourceProvider = pgEnum("source_provider", [
   "nylas",
+  // Email over a raw IMAP mailbox (no Nylas). Per-org credentials
+  // (host/port/secure/user/password) in `credentials_ref`; the mailbox
+  // folder lives in `provider_config`. Envelope-only incremental sync
+  // (cursor + UIDVALIDITY-stamped external_id); the body is fetched lazily
+  // at parse time and reuses the Nylas email LLM pipeline verbatim.
+  "imap",
   "gchat",
   "gdrive",
   "dropoff",
@@ -1226,6 +1387,22 @@ export const r2UploadStatus = pgEnum("r2_upload_status", [
 
 export type R2UploadStatus = (typeof r2UploadStatus.enumValues)[number]
 
+// Parse-time authorship classification of a source item (see
+// refs/org-attribution.md). `own_org` = authored BY the owning org (a teammate
+// sender, or our own no-sender document); `external` = an outside party;
+// `unknown` = undetermined (the default, so existing rows fill on migration
+// with no backfill). Directionality: only the SENDER/author side counts —
+// recipients of an inbound client email never make it ours. The full evidence
+// `{ value, confidence, matchedOn, reason }` lives in
+// `metadata_json.orgAttribution`; this column is the queryable projection.
+export const orgAttribution = pgEnum("org_attribution", [
+  "own_org",
+  "external",
+  "unknown",
+])
+
+export type OrgAttribution = (typeof orgAttribution.enumValues)[number]
+
 export const sourceItem = pgTable(
   "source_item",
   {
@@ -1268,6 +1445,12 @@ export const sourceItem = pgTable(
     parseStatus: parseStatus("parse_status").notNull().default("pending"),
     parsedAt: timestamp("parsed_at"),
     parseError: text("parse_error"),
+    // Parse-time authorship verdict (refs/org-attribution.md). Default
+    // 'unknown'; recomputed on every (re)parse. Evidence lives in
+    // metadata_json.orgAttribution.
+    orgAttribution: orgAttribution("org_attribution")
+      .notNull()
+      .default("unknown"),
     // Bumped when a parser's prompt / schema / pipeline changes — lets the
     // re-parse job find rows produced by older versions.
     parserVersion: text("parser_version"),
@@ -1344,6 +1527,11 @@ export const sourceItem = pgTable(
     index("source_item_r2UploadStatus_pending_idx")
       .on(table.r2UploadStatus)
       .where(sql`${table.r2UploadStatus} in ('pending', 'failed')`),
+    // First-party lookups (AI-chat company-knowledge scoping, internal-doc
+    // filters) stay tiny regardless of table size.
+    index("source_item_org_attribution_own_idx")
+      .on(table.organizationId)
+      .where(sql`${table.orgAttribution} = 'own_org'`),
   ],
 )
 
@@ -1602,6 +1790,7 @@ export type SourceItem = typeof sourceItem.$inferSelect
 export type Card = typeof card.$inferSelect
 export type CardClient = typeof cardClient.$inferSelect
 export type CardUser = typeof cardUser.$inferSelect
+export type CardContact = typeof cardContact.$inferSelect
 
 export const ruleRelations = relations(rule, ({ one }) => ({
   user: one(user, {
@@ -1759,6 +1948,18 @@ export const cardRelations = relations(card, ({ one, many }) => ({
   }),
   clients: many(cardClient),
   users: many(cardUser),
+  contacts: many(cardContact),
+}))
+
+export const cardContactRelations = relations(cardContact, ({ one }) => ({
+  card: one(card, {
+    fields: [cardContact.cardId],
+    references: [card.id],
+  }),
+  contact: one(contact, {
+    fields: [cardContact.contactId],
+    references: [contact.id],
+  }),
 }))
 
 export const cardClientRelations = relations(cardClient, ({ one }) => ({
@@ -1805,4 +2006,5 @@ export const schema = {
   card,
   cardClient,
   cardUser,
+  cardContact,
 }

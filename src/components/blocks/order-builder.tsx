@@ -54,6 +54,7 @@ import type { OrderLinkMeta } from "@/server/order-links"
 import {
   ORDER_STATUS_COLOR,
   ORDER_STATUS_LABEL,
+  computeOrderDiscount,
   formatOrderAmount,
   formatOrderDate,
   isOrderEditable,
@@ -112,6 +113,11 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   // When on, products without enough catalog stock can't be added and line
   // quantities are capped at available stock. Per-session UI guard (not saved).
   const [stockOnly, setStockOnly] = useState(true)
+  // The order's stored discount % (from `getOrder` on hydrate). Used as the
+  // preview fallback when the selected client isn't in the options list (e.g.
+  // a suspended client, or options not loaded yet). The effective preview
+  // discount derives from the selected client option when available — see below.
+  const [orderDiscount, setOrderDiscount] = useState(0)
 
   const [clientOptions, setClientOptions] = useState<OrderClientOption[]>([])
   const clientsLoaded = useRef(false)
@@ -139,6 +145,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setLines([])
     setLink(null)
     setStockOnly(true)
+    setOrderDiscount(0)
   }, [])
 
   const openNew = useCallback(() => {
@@ -157,6 +164,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setCurrency(o.currency)
     setLink(o.link)
     setStockOnly(true)
+    setOrderDiscount(o.discountPercent)
     setLines(
       o.items.map((i) => ({
         productId: i.productId,
@@ -298,6 +306,20 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   }, [])
 
   const total = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0)
+
+  // Discount preview. For an EDITABLE order (create / draft / confirmed) show
+  // the selected client's CURRENT discount — that's what the server will
+  // snapshot on save — falling back to the stored percent until options load.
+  // For a READ-ONLY order (awaiting_client / finalized / cancelled) show the
+  // order's STORED percent (what was actually applied), matching the table +
+  // guest views. Re-derives automatically when `clientOptions` finishes loading.
+  const discountPercent = readOnly
+    ? orderDiscount
+    : (clientOptions.find((o) => o.id === clientId)?.discount ?? orderDiscount)
+  const { discountAmount, discountedTotal } = computeOrderDiscount(
+    total,
+    discountPercent,
+  )
 
   // Save the draft content. Returns the order id (existing or freshly created)
   // or null on failure. Promotes a new order into edit mode so subsequent
@@ -444,6 +466,9 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     currency,
     lines,
     total,
+    discountPercent,
+    discountAmount,
+    discountedTotal,
     link,
     clientOptions,
     stockOnly,
@@ -708,6 +733,9 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
     currency,
     lines,
     total,
+    discountPercent,
+    discountAmount,
+    discountedTotal,
     link,
     clientOptions,
     stockOnly,
@@ -912,21 +940,57 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                 </Table>
               </div>
 
-              {/* Total + actions. */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Итого: </span>
-                  <span className="font-semibold tabular-nums">
-                    {formatOrderAmount(total, currency)}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {" "}
-                    · {lines.length}{" "}
-                    {plural(lines.length, ["позиция", "позиции", "позиций"])}
-                  </span>
+              {/* Order summary — a visually distinct block (Итого / Скидка /
+                  Итого со скидкой), always shown, then the actions row. */}
+              <div className="space-y-3">
+                <div className="rounded-lg border-2 border-primary/20 bg-muted/50 p-4 shadow-sm space-y-2 dark:bg-muted/20">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Итого
+                      <span className="text-xs">
+                        {" "}
+                        · {lines.length}{" "}
+                        {plural(lines.length, ["позиция", "позиции", "позиций"])}
+                      </span>
+                    </span>
+                    <span
+                      className={
+                        discountPercent > 0
+                          ? "tabular-nums text-muted-foreground line-through"
+                          : "tabular-nums font-medium"
+                      }
+                    >
+                      {formatOrderAmount(total, currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Скидка
+                      {discountPercent > 0 ? ` · ${discountPercent}%` : ""}
+                    </span>
+                    <span
+                      className={
+                        discountPercent > 0
+                          ? "tabular-nums text-amber-600 dark:text-amber-400"
+                          : "tabular-nums text-muted-foreground"
+                      }
+                    >
+                      {discountPercent > 0
+                        ? `−${formatOrderAmount(discountAmount, currency)}`
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t pt-2">
+                    <span className="text-base font-medium">
+                      Итого со скидкой
+                    </span>
+                    <span className="text-xl font-semibold tabular-nums">
+                      {formatOrderAmount(discountedTotal, currency)}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   {/* Draft (create or edit): full editing + send. */}
                   {!readOnly && status !== "confirmed" && (
                     <>

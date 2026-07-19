@@ -46,8 +46,8 @@ export default function RulesPage() {
             ruleType="Custom"
             canEdit
             showUserColumn
-            showOrgFilter={isAdmin}
-            showOrgColumn
+            showOrgFilter={false}
+            showOrgColumn={false}
           />
         </CardContent>
       </Card>

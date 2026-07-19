@@ -5,6 +5,15 @@ import nylas from "@/lib/nylas"
 import { PARSER_CONFIG } from "@/lib/parser-config"
 import type { NylasCredentials } from "@/server/providers/handlers"
 import {
+  buildCalendarContext,
+  buildMeetingSection,
+  eventEmails,
+  eventParticipantPairs,
+  isIcsAttachment,
+  parseIcsToEvent,
+  type CalendarEvent,
+} from "@/server/parsers/ics"
+import {
   assembleMarkdown,
   buildFrontmatter,
   emailsToDomainUrls,
@@ -244,61 +253,42 @@ export async function parseEmailMessage(
     ...(msg.bcc ?? []).map((p) => p.email || ""),
   ])
 
-  const bodyUrls = extractUrls(`${bodyHtml}\n${bodyText}`)
-  const participantDomainUrls = emailsToDomainUrls([...senders, ...recipients])
-  const urls = uniqueStrings([...bodyUrls, ...participantDomainUrls])
+  // Calendar (.ics) invite: decode the first one carried by this email and
+  // fold it into THIS item (metadata + markdown). Best-effort — a malformed
+  // invite (or a failed download) must never fail the email parse.
+  const calendarEvent = await extractCalendarEvent(msg, creds)
 
   const sourceCreatedAt = msg.date
     ? new Date(msg.date * 1000).toISOString()
     : null
-  const nowIso = new Date().toISOString()
 
-  const { output: analysis } = await generateText({
-    model: PARSER_CONFIG.text.model,
-    output: Output.object({ schema: analysisSchema }),
-    system: SYSTEM_PROMPT,
-    prompt: buildLlmPrompt({ subject, senders, recipients, bodyText }),
-  })
-
-  // Junk filter: short-circuit before assembling markdown. The thrown
-  // error is converted to parseStatus = 'skipped' by parseSourceItem so
-  // the row stays as an audit record but never re-parses.
-  if (analysis.relevance.isJunk) {
-    throw new EmailFilteredError(
-      analysis.relevance.category ?? "other",
-      analysis.relevance.reason || "(no reason provided)",
-    )
-  }
-
-  const frontmatterFields: SourceFrontmatter = {
+  // Run the shared email LLM pipeline (prompt → Gemini → junk filter →
+  // frontmatter + markdown + analysis). Identical for Nylas and IMAP, so it
+  // lives in one place; the provider-specific work is only the body fetch +
+  // attachment byte retrieval.
+  const { markdown, analysis } = await analyzeAndAssembleEmail({
     sourceId: `nylas:${msg.id}`,
-    parentSourceId: null,
-    threadId: msg.threadId ?? null,
     sourceSystem: "Email",
-    sourceCreatedAt,
-    sourceReceivedAt: sourceCreatedAt,
-    processedAt: nowIso,
-    language: analysis.language || "en",
+    subject,
     senders,
     recipients,
-    mentions: analysis.mentions,
-    companies: analysis.companies,
-    products: analysis.products,
-    urls,
-  }
-
-  const markdown = assembleMarkdown(
-    buildFrontmatter(frontmatterFields),
-    analysis.summary,
-    analysis.contentMarkdown,
-  )
+    bodyHtml,
+    bodyText,
+    sourceCreatedAt,
+    threadId: msg.threadId ?? null,
+    calendarEvent,
+  })
 
   // Keep inline attachments — they're often CID-referenced images embedded
   // in the HTML body (<img src="cid:…">) and the user wants those parsed
-  // the same as regular attachments.
+  // the same as regular attachments. Exclude the `.ics` itself: it's already
+  // folded into this item's metadata + markdown, and the format-parser
+  // dispatch has no .ics handler (it would become a noise "unsupported type"
+  // child).
   const attachments: NylasAttachmentRef[] =
     msg.attachments
       ?.filter((a) => !!a.id)
+      .filter((a) => !isIcsAttachment(a.contentType, a.filename))
       .map((a) => ({
         attachmentId: a.id!,
         filename: a.filename ?? "unknown",
@@ -322,6 +312,127 @@ export async function parseEmailMessage(
     sourceCreatedAt,
     messageId: msg.id,
     threadId: msg.threadId ?? null,
+    analysis,
+  }
+}
+
+// Deterministic email fields handed to the shared LLM pipeline. The provider
+// parsers (Nylas / IMAP) extract these their own way (Nylas SDK vs
+// mailparser) then delegate the identical analysis + markdown assembly here.
+export type EmailLlmInput = {
+  // Namespaced frontmatter source id, e.g. "nylas:<id>" / "imap:<uidv>:<uid>".
+  sourceId: string
+  // `source_system` frontmatter label (always "Email" today).
+  sourceSystem: string
+  subject: string
+  senders: string[]
+  recipients: string[]
+  // HTML body (for URL extraction); may be "" when only plain text is present.
+  bodyHtml: string
+  // Plain-text body fed to the LLM.
+  bodyText: string
+  sourceCreatedAt: string | null
+  threadId: string | null
+  // Decoded calendar invite folded into this email, or null.
+  calendarEvent: CalendarEvent | null
+}
+
+/**
+ * The shared email analysis + assembly pipeline. One Gemini pass produces the
+ * `MetadataAnalysis`; a junk classification short-circuits via
+ * `EmailFilteredError` (unless a real calendar invite overrides it); the body
+ * is assembled into the frontmatter + `## Meeting` markdown. Reused verbatim by
+ * both `parseEmailMessage` (Nylas) and `parseImapMessage` (IMAP) so the two
+ * produce identical markdown + analysis shapes.
+ */
+export async function analyzeAndAssembleEmail(
+  input: EmailLlmInput,
+): Promise<{ markdown: string; analysis: MetadataAnalysis }> {
+  const {
+    sourceId,
+    sourceSystem,
+    subject,
+    senders,
+    recipients,
+    bodyHtml,
+    bodyText,
+    sourceCreatedAt,
+    threadId,
+    calendarEvent,
+  } = input
+
+  const bodyUrls = extractUrls(`${bodyHtml}\n${bodyText}`)
+  const participantDomainUrls = emailsToDomainUrls([
+    ...senders,
+    ...recipients,
+    ...(calendarEvent ? eventEmails(calendarEvent) : []),
+  ])
+  const urls = uniqueStrings([...bodyUrls, ...participantDomainUrls])
+
+  const nowIso = new Date().toISOString()
+
+  const { output: analysis } = await generateText({
+    model: PARSER_CONFIG.text.model,
+    output: Output.object({ schema: analysisSchema }),
+    system: SYSTEM_PROMPT,
+    prompt: buildLlmPrompt({
+      subject,
+      senders,
+      recipients,
+      bodyText,
+      calendarContext: calendarEvent
+        ? buildCalendarContext(calendarEvent)
+        : null,
+    }),
+  })
+
+  // Junk filter: short-circuit before assembling markdown. The thrown
+  // error is converted to parseStatus = 'skipped' by parseSourceItem so
+  // the row stays as an audit record but never re-parses. A real calendar
+  // invite always survives — even a bare (body-less) invite carries a full
+  // attendee roster + meeting we want, so it overrides the classifier.
+  if (analysis.relevance.isJunk && !calendarEvent) {
+    throw new EmailFilteredError(
+      analysis.relevance.category ?? "other",
+      analysis.relevance.reason || "(no reason provided)",
+    )
+  }
+  if (calendarEvent && analysis.relevance.isJunk) {
+    analysis.relevance = { isJunk: false, category: null, reason: "" }
+  }
+
+  const frontmatterFields: SourceFrontmatter = {
+    sourceId,
+    parentSourceId: null,
+    threadId,
+    sourceSystem,
+    sourceCreatedAt,
+    sourceReceivedAt: sourceCreatedAt,
+    processedAt: nowIso,
+    language: analysis.language || "en",
+    senders,
+    recipients,
+    mentions: analysis.mentions,
+    companies: analysis.companies,
+    products: analysis.products,
+    urls,
+  }
+
+  // Fold the meeting into the body markdown. For a bare invite (the LLM
+  // returned "(filtered)" / empty body) the `## Meeting` section becomes the
+  // whole content instead of being dropped.
+  const contentMarkdown = calendarEvent
+    ? mergeMeetingIntoContent(analysis.contentMarkdown, calendarEvent)
+    : analysis.contentMarkdown
+
+  const markdown = assembleMarkdown(
+    buildFrontmatter(frontmatterFields),
+    analysis.summary,
+    contentMarkdown,
+  )
+
+  return {
+    markdown,
     analysis: {
       language: analysis.language || "en",
       summary: analysis.summary,
@@ -342,7 +453,44 @@ export async function parseEmailMessage(
         analysis.participantDetails ?? [],
         new Set([...senders, ...recipients].map((e) => e.trim().toLowerCase())),
       ),
+      // Authoritative roster from the .ics invite (organizer + attendees).
+      // Only present on calendar emails; discovery reads it as a canonical
+      // participant source. Omitted entirely for non-calendar rows.
+      ...(calendarEvent
+        ? { participants: eventParticipantPairs(calendarEvent) }
+        : {}),
     },
+  }
+}
+
+/**
+ * Detect + decode the first iCalendar (.ics) attachment on a Nylas message.
+ * Downloads the bytes (one extra Nylas call per invite) and parses the first
+ * VEVENT. Returns null when there is no .ics, the download fails, or the blob
+ * is unparseable — strictly best-effort so it can never fail the email parse.
+ */
+async function extractCalendarEvent(
+  msg: { id: string; attachments?: NylasAttachmentRef[] | unknown[] },
+  creds: NylasCredentials,
+): Promise<CalendarEvent | null> {
+  const list = (msg.attachments ?? []) as Array<{
+    id?: string | null
+    filename?: string | null
+    contentType?: string | null
+  }>
+  const ics = list.find(
+    (a) => a?.id && isIcsAttachment(a.contentType, a.filename),
+  )
+  if (!ics?.id) return null
+  try {
+    const buffer = await nylas.attachments.downloadBytes({
+      identifier: creds.grantId,
+      attachmentId: ics.id,
+      queryParams: { messageId: msg.id },
+    })
+    return parseIcsToEvent(new Uint8Array(buffer))
+  } catch {
+    return null
   }
 }
 
@@ -352,7 +500,7 @@ export async function parseEmailMessage(
  * the HTML and never surface as Nylas attachments, so they have to be
  * extracted here.
  */
-function extractBodyDataUriImages(html: string): InlineBodyImage[] {
+export function extractBodyDataUriImages(html: string): InlineBodyImage[] {
   if (!html) return []
   const out: InlineBodyImage[] = []
   const seen = new Set<string>()
@@ -389,14 +537,15 @@ function buildLlmPrompt(args: {
   senders: string[]
   recipients: string[]
   bodyText: string
+  calendarContext?: string | null
 }): string {
-  const { subject, senders, recipients, bodyText } = args
+  const { subject, senders, recipients, bodyText, calendarContext } = args
   const truncated =
     bodyText.length > 60_000
       ? `${bodyText.slice(0, 60_000)}\n\n[...truncated, ${bodyText.length - 60_000} additional characters omitted]`
       : bodyText
 
-  return [
+  const lines = [
     `Subject: ${subject}`,
     `From: ${senders.join(", ") || "(unknown)"}`,
     `To: ${recipients.join(", ") || "(unknown)"}`,
@@ -404,10 +553,42 @@ function buildLlmPrompt(args: {
     "--- BEGIN MESSAGE BODY ---",
     truncated || "(empty body)",
     "--- END MESSAGE BODY ---",
-  ].join("\n")
+  ]
+
+  // A calendar invite carries its own roster + topic. Inject it so the model
+  // extracts organisations/people even when the email has no human body, and
+  // tell it explicitly NOT to junk the message.
+  if (calendarContext && calendarContext.trim()) {
+    lines.push(
+      "",
+      "--- BEGIN CALENDAR INVITE (.ics) ---",
+      calendarContext.trim(),
+      "--- END CALENDAR INVITE (.ics) ---",
+      "",
+      "This email carries a calendar meeting invitation. It is business-relevant content, not noise: set relevance.isJunk = false. Extract the organisations + people involved from BOTH the invite details above and any message body.",
+    )
+  }
+
+  return lines.join("\n")
 }
 
-function htmlToPlainText(html: string): string {
+/**
+ * Prepend a deterministic `## Meeting` section to the email body markdown.
+ * For a bare invite (empty body, or the "(filtered)" placeholder) the meeting
+ * section becomes the entire content. Shared by the email parsers so the
+ * invite is folded into the same item rather than dropped or split off.
+ */
+export function mergeMeetingIntoContent(
+  contentMarkdown: string,
+  event: CalendarEvent,
+): string {
+  const section = buildMeetingSection(event)
+  const body = (contentMarkdown ?? "").trim()
+  if (!body || body === "(filtered)") return section
+  return `${section}\n\n${body}`
+}
+
+export function htmlToPlainText(html: string): string {
   if (!html) return ""
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")

@@ -4,8 +4,10 @@ import { db } from "@/db/drizzle"
 import {
   card,
   cardClient,
+  cardContact,
   cardUser,
   client,
+  contact,
   member,
   rule,
   source,
@@ -64,11 +66,16 @@ const cardOutputSchema = z.object({
     "MOMENTUM",
     "LOG_ONLY",
     "NEW_ORDER",
+    "SUPPORT",
   ]),
   message: z.object({
     analysis: z.string(),
     recommendation: z.string(),
   }),
+  // A concise, action-oriented task title (3-5 words) summarising what the
+  // operator should DO about this card — used to prefill the task name when
+  // they click "Принять". Same language as analysis/recommendation.
+  taskTitle: z.string(),
   clients: z.array(z.string()),
   users: z.array(z.string()),
 })
@@ -94,6 +101,8 @@ function normaliseCategory(c: string): CardCategory {
       return "log_only"
     case "NEW_ORDER":
       return "new_order"
+    case "SUPPORT":
+      return "support"
     default:
       throw new Error(`Unmapped category: ${c}`)
   }
@@ -140,6 +149,23 @@ function partyEmails(meta: Record<string, unknown>): EmailParty[] {
     }
   }
   return out
+}
+
+// The external participant's email for an item — the contact who reached out.
+// Walks from/to/cc/bcc/participants in order (so `from`, the sender, wins) and
+// returns the first address NOT on one of the owner's own domains. Null when
+// the item has no external email party (e.g. Telegram DMs carry no email).
+function externalContactEmail(
+  meta: Record<string, unknown>,
+  ownOrg: OwnOrgIdentity,
+): string | null {
+  for (const p of partyEmails(meta)) {
+    const email = (p.email ?? "").trim().toLowerCase()
+    if (!email) continue
+    if (ownOrg.isOwnDomain(extractEmailDomain(email))) continue
+    return email
+  }
+  return null
 }
 
 // Keys under which an item participates in a conversation. Two items belong
@@ -378,6 +404,25 @@ export async function generateCards(
     .innerJoin(user, eq(member.userId, user.id))
     .where(eq(member.organizationId, activeOrgId))
 
+  // Contacts with an email, keyed by lowercased email so a card can be linked
+  // to the external sender deterministically (no LLM name-matching for
+  // contacts — email is authoritative, same posture as discovery).
+  const orgContacts = await db
+    .select({ id: contact.id, email: contact.email })
+    .from(contact)
+    .where(
+      and(
+        eq(contact.organizationId, activeOrgId),
+        inArray(contact.status, ["active", "initial"]),
+        isNotNull(contact.email),
+      ),
+    )
+  const contactByEmail = new Map(
+    orgContacts
+      .filter((c) => c.email)
+      .map((c) => [c.email!.trim().toLowerCase(), c.id]),
+  )
+
   const clientByName = new Map(orgClients.map((c) => [normaliseName(c.name), c.id]))
   const userByName = new Map(orgUsers.map((u) => [normaliseName(u.name), u.id]))
 
@@ -576,6 +621,15 @@ export async function generateCards(
         ),
       )
 
+      // Resolve the related contact from the source item's external sender
+      // email (deterministic — no LLM name match). Null when the item has no
+      // external email party or the sender isn't a known contact.
+      const itemMeta = (item.metadataJson ?? {}) as Record<string, unknown>
+      const senderEmail = externalContactEmail(itemMeta, ownOrg)
+      const matchedContactId = senderEmail
+        ? contactByEmail.get(senderEmail) ?? null
+        : null
+
       // For "new_order" cards, stamp the VERBATIM client message so the
       // card's "Create order" button can prefill the New Order dialog's
       // request field unchanged. Prefer the raw source text
@@ -603,6 +657,9 @@ export async function generateCards(
           analysis: output.message.analysis ?? "",
           recommendation: output.message.recommendation ?? "",
           ...(orderRequest ? { orderRequest } : {}),
+          ...(output.taskTitle?.trim()
+            ? { taskTitle: output.taskTitle.trim() }
+            : {}),
         },
         sourceItemId: item.id,
         ruleId: ruleRow.id,
@@ -616,6 +673,11 @@ export async function generateCards(
         await db
           .insert(cardUser)
           .values(matchedUserIds.map((uid) => ({ cardId, userId: uid })))
+      }
+      if (matchedContactId) {
+        await db
+          .insert(cardContact)
+          .values({ cardId, contactId: matchedContactId })
       }
       result.cardsCreated++
       itemIdsToStamp.push(item.id)
@@ -699,18 +761,20 @@ Return JSON matching this exact shape (every field is required):
   {
     "relevant": boolean,
     "priority": "normal" | "high",
-    "category": "CLIENT_ACTIVITY" | "COLLEAGUES_ACTIVITY" | "BUSINESS_INFO" | "ACTION_REQUIRED" | "AMBIGUITY" | "DATA_INTELLIGENCE" | "MOMENTUM" | "LOG_ONLY" | "NEW_ORDER",
+    "category": "CLIENT_ACTIVITY" | "COLLEAGUES_ACTIVITY" | "BUSINESS_INFO" | "ACTION_REQUIRED" | "AMBIGUITY" | "DATA_INTELLIGENCE" | "MOMENTUM" | "LOG_ONLY" | "NEW_ORDER" | "SUPPORT",
     "message": { "analysis": "...", "recommendation": "..." },
+    "taskTitle": "...",   // concise 3-5 word action-oriented task title (same language as the message); summarises what to DO
     "clients": ["..."],   // names from the Known clients list above; [] if none match
     "users":   ["..."]    // names from the Known users list above;   [] if none match
   }
 
 Rules:
 - If the source is RELEVANT per the rule's case definitions, set relevant=true and fill all fields meaningfully.
+- "taskTitle" must be a specific 3-5 word imperative summary of the recommended action (e.g. "Перезвонить клиенту по оплате"), NOT the category name. Make it meaningful and distinct per card.
 - If the source is NOT relevant (e.g. the rule's Case 8 / discard case), set relevant=false and use placeholder values for the rest:
     priority: "normal", category: "BUSINESS_INFO",
     message: { "analysis": "", "recommendation": "" },
-    clients: [], users: []
+    taskTitle: "", clients: [], users: []
   Those placeholders are ignored on the server when relevant=false.
 - Never return null, never omit a field.
 

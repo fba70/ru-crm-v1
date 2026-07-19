@@ -94,6 +94,12 @@ export type AudioParseInput = {
 
 export type ParsedAudio = {
   markdown: string
+  // The diarised speech as plain text (no timestamps / headings), speaker-
+  // prefixed only when the recording has more than one speaker. Callers that
+  // need the spoken words as a message body — e.g. a Telegram voice order whose
+  // `metadata_json.rawText` would otherwise be the empty caption — stamp this
+  // instead of re-deriving it from the rendered markdown.
+  transcript: string
   metadata: {
     sourceId: string
     sourceSystem: string
@@ -197,6 +203,14 @@ For audio specifically: the 'author/sender' is each of the SPEAKERS — don't in
     segments,
   })
 
+  // Plain-text transcript for callers that want the spoken words as a message
+  // body. Speaker-prefixed only when diarisation found more than one voice.
+  const transcript = segments
+    .filter((s) => s.transcript)
+    .map((s) => (speakers.length > 1 ? `${s.speaker}: ${s.transcript}` : s.transcript))
+    .join("\n")
+    .trim()
+
   const markdown = assembleMarkdown(
     buildFrontmatter(frontmatterFields),
     analysis.summary,
@@ -205,6 +219,7 @@ For audio specifically: the 'author/sender' is each of the SPEAKERS — don't in
 
   return {
     markdown,
+    transcript,
     metadata: {
       sourceId: input.sourceId,
       sourceSystem: input.sourceSystem,
@@ -330,6 +345,17 @@ function resolveModelMediaType(mediaType: string, fileName: string): string {
     (!mt || mt === "application/octet-stream")
   ) {
     return "audio/mpeg"
+  }
+
+  // ogg / opus variants → audio/ogg (Gemini's documented spelling). Telegram
+  // bot voice messages are Opus-in-Ogg and report `audio/ogg`, but some
+  // clients spell it `audio/opus` or send a bare extension.
+  if (mt === "audio/opus" || mt === "audio/ogg") return "audio/ogg"
+  if (
+    (fn.endsWith(".ogg") || fn.endsWith(".oga")) &&
+    (!mt || mt === "application/octet-stream")
+  ) {
+    return "audio/ogg"
   }
 
   return mediaType

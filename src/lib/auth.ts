@@ -52,6 +52,16 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day (every 1 day the session expiration is updated)
     freshAge: 0, // 5 minutes, 0 to disable freshness checks
+    // Serve the session from a short-lived signed cookie instead of hitting
+    // the DB on every request. Without this, every navigation does a fresh
+    // Neon lookup, and a single transient serverless blip makes getSession()
+    // return null → the (protected) layout redirects to /sign-in, which reads
+    // as a random mid-session logout. The cookie is refreshed from the DB
+    // every 5 min (and on sign-in / sign-out), so it stays current.
+    cookieCache: {
+      enabled: true,
+      maxAge: 5 * 60, // 5 minutes
+    },
     additionalFields: {
       activeOrganizationId: {
         type: "string",
@@ -61,10 +71,13 @@ export const auth = betterAuth({
         type: "string",
         returned: true,
       },
-      activeOrganizationLogo: {
-        type: "string",
-        returned: true,
-      },
+      // NOTE: the org logo is intentionally NOT a session field. Logos are
+      // stored as base64 data URLs (often 100KB+), and `cookieCache` serialises
+      // every returned session field into the signed session cookie — a large
+      // logo blows past the ~16KB HTTP header limit → 431 Request Header Fields
+      // Too Large on every authenticated request (and fails on Vercel too). The
+      // sidebar loads the logo server-side from the `organization` table instead
+      // (see (protected)/layout.tsx + AppSidebar `orgLogo` prop).
       activeOrganizationSlug: {
         type: "string",
         returned: true,
@@ -147,7 +160,7 @@ export const auth = betterAuth({
               ...session,
               activeOrganizationId: organization?.id,
               activeOrganizationName: organization?.name,
-              activeOrganizationLogo: organization?.logo,
+              // Logo intentionally omitted — see additionalFields note above.
               activeOrganizationSlug: organization?.slug,
             },
           }

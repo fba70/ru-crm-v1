@@ -61,6 +61,7 @@ function CredentialsCell({
   const meta = getProvider(row.provider)
   const needsCreds =
     row.provider === "nylas" ||
+    row.provider === "imap" ||
     row.provider === "gchat" ||
     row.provider === "gdrive" ||
     row.provider === "telegram"
@@ -107,6 +108,7 @@ function ConfigCell({
   // botUsername.
   const hasConfigurable =
     row.provider === "nylas" ||
+    row.provider === "imap" ||
     row.provider === "gchat" ||
     row.provider === "gdrive" ||
     row.provider === "telegram"

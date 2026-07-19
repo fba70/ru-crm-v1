@@ -19,7 +19,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-import { Loader, Plus, Sparkles, X } from "lucide-react"
+import { Ban, Loader, Plus, Sparkles, X } from "lucide-react"
 import type { ClientRow } from "@/app/api/clients/route"
 import type { ContactRow } from "@/app/api/contacts/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
@@ -27,6 +27,9 @@ import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ClientCard } from "@/components/blocks/client-card"
 import { ContactCard } from "@/components/blocks/contact-card"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
+import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
+import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
+import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
 
 const PAGE_SIZE = 6
 // Clients + Contacts share one merged tab with two stacked grids; 3 cards
@@ -132,6 +135,9 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<ClientRow[]>([])
   const [contacts, setContacts] = useState<ContactRow[]>([])
   const [loading, setLoading] = useState(true)
+  // Owner-only: drives the blocklist management button + per-entity/candidate
+  // Block actions. Best-effort gate (the server is the real one).
+  const [canBlock, setCanBlock] = useState(false)
 
   const [clientNameFilter, setClientNameFilter] = useState("")
   const [clientEmailFilter, setClientEmailFilter] = useState("")
@@ -156,6 +162,20 @@ export default function ClientsPage() {
   const refreshAll = useCallback(async () => {
     await Promise.all([loadClients(), loadContacts()])
   }, [loadClients, loadContacts])
+
+  // Resolve whether the current user can manage the blocklist (org owner).
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/blocklist")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d) setCanBlock(Boolean(d.canManage))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -228,17 +248,27 @@ export default function ClientsPage() {
   const clientGrid = useMemo(
     () =>
       clientPaged.pageItems.map((c) => (
-        <ClientCard key={c.id} client={c} onChanged={refreshAll} />
+        <ClientCard
+          key={c.id}
+          client={c}
+          onChanged={refreshAll}
+          canBlock={canBlock}
+        />
       )),
-    [clientPaged.pageItems, refreshAll],
+    [clientPaged.pageItems, refreshAll, canBlock],
   )
 
   const contactGrid = useMemo(
     () =>
       contactPaged.pageItems.map((c) => (
-        <ContactCard key={c.id} contact={c} onChanged={refreshAll} />
+        <ContactCard
+          key={c.id}
+          contact={c}
+          onChanged={refreshAll}
+          canBlock={canBlock}
+        />
       )),
-    [contactPaged.pageItems, refreshAll],
+    [contactPaged.pageItems, refreshAll, canBlock],
   )
 
   const hasClientFilters =
@@ -270,8 +300,10 @@ export default function ClientsPage() {
       <div className="w-full max-w-7xl px-4 space-y-4">
         {/* Shared toolbar for both sections */}
         <div className="flex justify-end gap-2 flex-wrap">
+          <MagicDiscoverButton onApplied={refreshAll} />
           <DiscoverDialog
             onApplied={refreshAll}
+            canBlock={canBlock}
             trigger={
               <Button size="sm" variant="default">
                 <Sparkles className="h-4 w-4 mr-1" />
@@ -279,6 +311,7 @@ export default function ClientsPage() {
               </Button>
             }
           />
+          <ClientEnrichControl refreshKey={clients.length} onChanged={refreshAll} />
           <ClientEditDialog
             mode="create"
             onSuccess={refreshAll}
@@ -299,6 +332,17 @@ export default function ClientsPage() {
               </Button>
             }
           />
+          {canBlock && (
+            <ClientBlocklistDialog
+              onChanged={refreshAll}
+              trigger={
+                <Button size="sm" variant="outline">
+                  <Ban className="h-4 w-4 mr-1" />
+                  Список блокировки
+                </Button>
+              }
+            />
+          )}
         </div>
 
         <Card>

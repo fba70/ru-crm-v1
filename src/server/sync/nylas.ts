@@ -11,14 +11,23 @@ import {
   SYNC_PAGE_LIMIT,
   loadSource,
   stampLastSyncedAt,
+  windowBoundSeconds,
   type SyncResult,
+  type SyncOptions,
 } from "./_shared"
 
-// Pulls inbox messages from Nylas since the last fetched item's date,
-// upserts each into source_item. Attachments are NOT created here —
-// they're discovered at parse time and persisted as child source_items
-// by the parse pipeline (parent_source_item_id → this row).
-export async function syncNylasEmails(sourceId: string): Promise<SyncResult> {
+// Pulls inbox messages from Nylas, upserts each into source_item.
+// Two modes:
+//   • Incremental (default): from the newest item we already have − overlap.
+//   • Windowed backfill (`opts.sinceIso` set): a bounded [since, until] range,
+//     IGNORING the incremental cursor — the only way to re-pull historical mail
+//     that's already behind the high-water mark (e.g. a hard-deleted test row).
+// Attachments are NOT created here — they're discovered at parse time and
+// persisted as child source_items by the parse pipeline.
+export async function syncNylasEmails(
+  sourceId: string,
+  opts?: SyncOptions,
+): Promise<SyncResult> {
   const ctx = await loadSource(sourceId)
   if (ctx.provider !== "nylas") {
     throw new Error(
@@ -28,10 +37,27 @@ export async function syncNylasEmails(sourceId: string): Promise<SyncResult> {
 
   const { grantId } = getNylasCredentials(ctx.id, ctx.credentialsRef)
 
+  // The window's `since` only ever EXTENDS the fetch earlier (lower of the two
+  // bounds), never narrows it — so the default (period = today) degenerates to
+  // the normal incremental catch-up and can't silently drop late mail from
+  // prior days, while a PAST from-date re-pulls that historical window (the
+  // backfill that recovers rows behind the high-water mark). `until` caps the
+  // top so a small recovery window isn't truncated by the per-call page limit.
+  const windowSince = windowBoundSeconds(opts?.sinceIso)
+  const windowUntil = windowBoundSeconds(opts?.untilIso, { endOfDay: true })
+
   const cursor = await getLatestSourceCreatedAt(sourceId)
-  const receivedAfter = cursor
+  const cursorFloor = cursor
     ? Math.floor(cursor.getTime() / 1000) - CURSOR_OVERLAP_SECONDS
-    : undefined
+    : null
+
+  let receivedAfter: number | undefined
+  if (windowSince !== null && cursorFloor !== null) {
+    receivedAfter = Math.min(cursorFloor, windowSince)
+  } else {
+    receivedAfter = windowSince ?? cursorFloor ?? undefined
+  }
+  const receivedBefore = windowUntil ?? undefined
 
   const response = await nylas.messages.list({
     identifier: grantId,
@@ -39,6 +65,7 @@ export async function syncNylasEmails(sourceId: string): Promise<SyncResult> {
       limit: SYNC_PAGE_LIMIT,
       in: ["INBOX"],
       ...(receivedAfter !== undefined ? { receivedAfter } : {}),
+      ...(receivedBefore !== undefined ? { receivedBefore } : {}),
     },
   })
 

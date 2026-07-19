@@ -8,11 +8,23 @@ import {
   sourceItem,
   type ParseStatus,
   type SourceItemKind,
+  type OrgAttribution,
 } from "@/db/schema"
 import type { MetadataAnalysis } from "@/server/parsers/_shared"
-import { loadOwnOrgIdentity, type OwnOrgIdentity } from "@/server/org-identity"
+import {
+  loadOwnOrgIdentity,
+  getOrgIdentity,
+  type OwnOrgIdentity,
+} from "@/server/org-identity"
+import {
+  extractAuthorEmails,
+  resolveOrgAttribution,
+  type OrgAttributionResult,
+} from "@/server/parsers/org-attribution"
 import { companyMatchKey } from "@/lib/translit-ru"
 import { extractWebsiteDomain } from "@/lib/email-domain"
+import { PARSER_CONFIG } from "@/lib/parser-config"
+import { triageInlineImage } from "@/lib/image-triage"
 import nylas from "@/lib/nylas"
 import { downloadChatAttachmentBytes } from "@/lib/google-chat"
 import {
@@ -21,6 +33,7 @@ import {
   type NylasAttachmentRef,
   type InlineBodyImage,
 } from "@/server/parsers/text"
+import { parseImapMessage, type ImapAttachment } from "@/server/parsers/imap"
 import { parseChatMessage, type ChatAttachmentRef } from "@/server/parsers/chat"
 import { parseWhatsAppGroup } from "@/server/parsers/whatsapp"
 import { parseTelegramMessage } from "@/server/parsers/telegram"
@@ -62,9 +75,13 @@ import {
 } from "@/server/parsers/_provider-errors"
 import {
   getNylasCredentials,
+  getImapCredentials,
   getGchatCredentials,
   getGdriveCredentials,
+  getTelegramCredentials,
 } from "@/server/providers/credentials"
+import { downloadTelegramFile } from "@/lib/telegram"
+import { imapProviderConfigSchema } from "@/server/providers/handlers"
 import type {
   GchatCredentials,
   NylasCredentials,
@@ -114,6 +131,9 @@ export async function reparseSourceItem(itemId: string): Promise<void> {
       r2UploadedAt: null,
       markdownR2Key: null,
       markdownR2SizeBytes: null,
+      // Reset authorship so the next parse recomputes from scratch
+      // (refs/org-attribution.md).
+      orgAttribution: "unknown",
       // Re-parsing produces fresh metadata. Clear the unified discovery
       // stamp so the next applyDiscovery() run re-considers this row.
       discoveryScannedAt: null,
@@ -150,6 +170,7 @@ type ParseContext = {
   externalId: string
   provider:
     | "nylas"
+    | "imap"
     | "gchat"
     | "gdrive"
     | "dropoff"
@@ -176,6 +197,11 @@ type ParseContext = {
   // consumers (discovery, cards, deals, chat search) never see the owner's own
   // org as if it were a client. No-op when the org profile has no website/email.
   ownOrg: OwnOrgIdentity
+  // The parent's org-attribution verdict, computed by `markParsed` and read by
+  // `insertParsedChild` so children inherit it (an attachment of our own email
+  // is ours). Mutated in-place during the parent's `markParsed`; children are
+  // always inserted afterwards, so it's set by the time they read it.
+  orgAttributionValue?: OrgAttribution
 }
 
 export async function parseSourceItem(itemId: string): Promise<ParseResult> {
@@ -191,6 +217,8 @@ export async function parseSourceItem(itemId: string): Promise<ParseResult> {
     switch (ctx.provider) {
       case "nylas":
         return await parseNylasItem(ctx)
+      case "imap":
+        return await parseImapItem(ctx)
       case "gchat":
         return await parseGoogleChatItem(ctx)
       case "gdrive":
@@ -292,6 +320,9 @@ async function loadParseContext(itemId: string): Promise<ParseContext> {
     switch (row.provider) {
       case "nylas":
         return `nylas:${row.externalId}`
+      case "imap":
+        // externalId is "<uidValidity>:<uid>".
+        return `imap:${row.externalId}`
       case "gchat": {
         // externalId is full "spaces/X/messages/Y"; the message id is the
         // trailing segment.
@@ -316,6 +347,8 @@ async function loadParseContext(itemId: string): Promise<ParseContext> {
   const sourceSystemLabel = (() => {
     switch (row.provider) {
       case "nylas":
+        return "Email"
+      case "imap":
         return "Email"
       case "gchat":
         return "Google Chat"
@@ -390,7 +423,7 @@ async function parseNylasItem(ctx: ParseContext): Promise<ParseResult> {
   const parsed = await parseEmailMessage(ctx.externalId, creds)
 
   // Parent row → complete with markdown.
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   let inserted = 0
   let skipped = 0
@@ -484,6 +517,9 @@ async function parseNylasAttachment(
     attSourceId,
     externalType: "attachment",
     meta,
+    // Nylas delivers cid: inline images as attachments — flag image ones so
+    // the decorative triage runs (signature logos / banners / tracking GIFs).
+    isInlineImage: kind === "image" && ref.isInline,
   })
 }
 
@@ -492,12 +528,50 @@ async function parseNylasInlineImage(
   index: number,
   ctx: ParseContext,
 ): Promise<ChildOutcome> {
-  const sid = `nylas-inline:${ctx.externalId}:${index}`
+  return parseInlineImageOrSkip(
+    img,
+    `nylas-inline:${ctx.externalId}:${index}`,
+    ctx,
+  )
+}
+
+// Shared inline-image flow for the email providers (Nylas + IMAP). Inline
+// (cid:) images are mostly decorative chrome — logos, signature graphics,
+// social badges, header/footer banners, tracking pixels — that bring no
+// content. Two cheap filters drop them before they become source items:
+//   1. A header-only dimension/filename triage (no LLM call) catches the
+//      obvious junk (tiny icons, thin banners, 1×1 pixels).
+//   2. Whatever survives is parsed, and the model's `isBoilerplate` verdict
+//      skips high-res logos/banners that slipped past the size gate.
+// Either way a skipped image is recorded as an audit row (with the reason in
+// parse_error), just kept out of parsed content + discovery. Explicit file
+// attachments do NOT go through here — they're treated as intentional.
+async function parseInlineImageOrSkip(
+  img: InlineBodyImage,
+  sid: string,
+  ctx: ParseContext,
+): Promise<ChildOutcome> {
   const meta = {
     fileName: img.filename,
     contentType: img.mediaType,
     byteSize: img.bytes.byteLength,
   }
+
+  const triage = triageInlineImage(
+    { bytes: img.bytes, fileName: img.filename },
+    PARSER_CONFIG.image.decorative,
+  )
+  if (triage.skip) {
+    await insertSkippedChild({
+      ctx,
+      externalId: sid,
+      externalType: "inline_image",
+      meta,
+      reason: triage.reason,
+    })
+    return { inserted: 0, skipped: 1, failed: 0 }
+  }
+
   try {
     const result = await parseImageBytes({
       bytes: img.bytes,
@@ -510,6 +584,16 @@ async function parseNylasInlineImage(
       sourceCreatedAt: isoOrNull(ctx.sourceCreatedAt),
       sourceReceivedAt: isoOrNull(ctx.sourceCreatedAt),
     })
+    if (result.decorative) {
+      await insertSkippedChild({
+        ctx,
+        externalId: sid,
+        externalType: "inline_image",
+        meta,
+        reason: "decorative image (logo/banner/icon)",
+      })
+      return { inserted: 0, skipped: 1, failed: 0 }
+    }
     await insertParsedChild({
       ctx,
       externalId: sid,
@@ -530,6 +614,100 @@ async function parseNylasInlineImage(
   }
 }
 
+// ── IMAP (email) ──────────────────────────────────────────────────────
+
+async function parseImapItem(ctx: ParseContext): Promise<ParseResult> {
+  const creds = getImapCredentials(ctx.sourceId, ctx.credentialsRef)
+  // The mailbox folder is denormalised onto each item's metadata_json at
+  // sync time (defaults to INBOX if absent on an old row).
+  const { mailbox } = imapProviderConfigSchema.parse(ctx.metadataJson)
+
+  const parsed = await parseImapMessage({
+    externalId: ctx.externalId,
+    mailbox,
+    namespacedSourceId: ctx.parentNamespacedSourceId,
+    creds,
+  })
+
+  // Parent row → complete with markdown.
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
+
+  let inserted = 0
+  let skipped = 0
+  let failed = 0
+
+  // Real attachments — bytes already in hand (mailparser), so no per-file
+  // download (unlike Nylas).
+  for (let i = 0; i < parsed.attachments.length; i++) {
+    const result = await parseImapAttachment(parsed.attachments[i], i, ctx)
+    inserted += result.inserted
+    skipped += result.skipped
+    failed += result.failed
+  }
+
+  // Inline (cid:) images that mailparser folded into the HTML as data: URIs.
+  for (let i = 0; i < parsed.bodyInlineImages.length; i++) {
+    const result = await parseImapInlineImage(parsed.bodyInlineImages[i], i, ctx)
+    inserted += result.inserted
+    skipped += result.skipped
+    failed += result.failed
+  }
+
+  return {
+    parentStatus: "complete",
+    parentMarkdownBytes: byteLengthOf(parsed.markdown),
+    childInserted: inserted,
+    childSkipped: skipped,
+    childFailed: failed,
+  }
+}
+
+async function parseImapAttachment(
+  att: ImapAttachment,
+  index: number,
+  ctx: ParseContext,
+): Promise<ChildOutcome> {
+  const attSourceId = `imap-att:${ctx.externalId}:${index}`
+  const meta = {
+    fileName: att.filename,
+    contentType: att.contentType,
+    byteSize: att.bytes.byteLength,
+  }
+
+  const kind = detectAttachmentKind(att.contentType, att.filename)
+  if (!kind) {
+    await insertSkippedChild({
+      ctx,
+      externalId: attSourceId,
+      externalType: "attachment",
+      meta,
+      reason: "unsupported type",
+    })
+    return { inserted: 0, skipped: 1, failed: 0 }
+  }
+
+  return runAttachmentParser({
+    ctx,
+    kind,
+    bytes: att.bytes,
+    attSourceId,
+    externalType: "attachment",
+    meta,
+  })
+}
+
+async function parseImapInlineImage(
+  img: InlineBodyImage,
+  index: number,
+  ctx: ParseContext,
+): Promise<ChildOutcome> {
+  return parseInlineImageOrSkip(
+    img,
+    `imap-inline:${ctx.externalId}:${index}`,
+    ctx,
+  )
+}
+
 // ── Google Chat ───────────────────────────────────────────────────────
 
 async function parseGoogleChatItem(ctx: ParseContext): Promise<ParseResult> {
@@ -538,7 +716,7 @@ async function parseGoogleChatItem(ctx: ParseContext): Promise<ParseResult> {
   // sync stores the same in externalId.
   const parsed = await parseChatMessage(ctx.externalId, creds)
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   let inserted = 0
   let skipped = 0
@@ -652,7 +830,7 @@ async function parseWhatsAppItem(ctx: ParseContext): Promise<ParseResult> {
     endTimestamp,
   })
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
 
   return {
     parentStatus: "complete",
@@ -671,6 +849,16 @@ async function parseWhatsAppItem(ctx: ParseContext): Promise<ParseResult> {
 // call. Phase 1 produces no children (attachments land in Phase 2).
 async function parseTelegramItem(ctx: ParseContext): Promise<ParseResult> {
   const meta = ctx.metadataJson
+
+  // Voice / audio message: the bytes aren't in the DB — re-resolve them from
+  // the stored Telegram `file_id` and run them through the audio parser. The
+  // transcript becomes this row's parsed markdown directly (a Telegram DM is a
+  // single message = a single source_item, so there's no child to spawn).
+  const media = extractTelegramMediaMeta(meta)
+  if (media) {
+    return await parseTelegramVoiceItem(ctx, media)
+  }
+
   const rawText = typeof meta.rawText === "string" ? meta.rawText : ""
   if (!rawText) {
     throw new Error(
@@ -693,7 +881,79 @@ async function parseTelegramItem(ctx: ParseContext): Promise<ParseResult> {
       : null,
   })
 
-  await markParsed(ctx.itemId, parsed.markdown, parsed.analysis, ctx.ownOrg)
+  await markParsed(ctx, parsed.markdown, parsed.analysis)
+
+  return {
+    parentStatus: "complete",
+    parentMarkdownBytes: byteLengthOf(parsed.markdown),
+    childInserted: 0,
+    childSkipped: 0,
+    childFailed: 0,
+  }
+}
+
+// The voice/audio descriptor ingest stamps onto a Telegram row's
+// `metadata_json.telegram.media`. Returns null for plain text messages.
+type TelegramMediaMeta = {
+  fileId: string
+  mimeType: string
+  fileName: string
+}
+
+function extractTelegramMediaMeta(
+  meta: Record<string, unknown>,
+): TelegramMediaMeta | null {
+  const telegram = meta.telegram as Record<string, unknown> | undefined
+  const media = telegram?.media as Record<string, unknown> | undefined
+  if (!media || typeof media.fileId !== "string") return null
+  return {
+    fileId: media.fileId,
+    mimeType: typeof media.mimeType === "string" ? media.mimeType : "audio/ogg",
+    fileName:
+      typeof media.fileName === "string" ? media.fileName : "telegram-voice.ogg",
+  }
+}
+
+// Transcribe a Telegram voice/audio message. Downloads the bytes via the
+// stored `file_id` (re-resolvable, so this is safe on a re-parse too) using
+// the per-source bot token, then runs the universal audio parser. The
+// transcript replaces this row's parsed markdown — same shape as the text
+// path, so cards / deals / discovery treat it identically downstream.
+async function parseTelegramVoiceItem(
+  ctx: ParseContext,
+  media: TelegramMediaMeta,
+): Promise<ParseResult> {
+  const creds = getTelegramCredentials(ctx.sourceId, ctx.credentialsRef)
+  const { bytes } = await downloadTelegramFile(creds.botToken, media.fileId)
+
+  const parsed = await parseAudioBytes({
+    bytes,
+    fileName: media.fileName,
+    mediaType: media.mimeType,
+    sourceId: ctx.parentNamespacedSourceId,
+    parentSourceId: null,
+    sourceSystem: ctx.sourceSystemLabel,
+    threadId: ctx.threadExternalId,
+    sourceCreatedAt: isoOrNull(ctx.sourceCreatedAt),
+    sourceReceivedAt: isoOrNull(ctx.sourceCreatedAt),
+  })
+
+  // Backfill the message body with the transcript. At ingest a voice note has
+  // no usable text — `rawText`/`text` were set to the (usually empty) caption —
+  // so consumers that read the raw body (e.g. the `new_order` card's verbatim
+  // `orderRequest`) would otherwise fall back to the whole parsed markdown.
+  // Keep any real caption as a prefix for context.
+  const caption =
+    typeof ctx.metadataJson.rawText === "string"
+      ? ctx.metadataJson.rawText.trim()
+      : ""
+  const body =
+    caption && parsed.transcript
+      ? `${caption}\n\n${parsed.transcript}`
+      : parsed.transcript || caption
+  const metadataPatch = body ? { rawText: body, text: body } : undefined
+
+  await markParsed(ctx, parsed.markdown, parsed.analysis, metadataPatch)
 
   return {
     parentStatus: "complete",
@@ -716,7 +976,7 @@ async function parseGoogleDriveItem(ctx: ParseContext): Promise<ParseResult> {
   }
 
   const bodyBlock = parsed.blocks[0]
-  await markParsed(ctx.itemId, bodyBlock.markdown, bodyBlock.analysis, ctx.ownOrg)
+  await markParsed(ctx, bodyBlock.markdown, bodyBlock.analysis)
 
   let inserted = 0
   for (let i = 1; i < parsed.blocks.length; i++) {
@@ -763,6 +1023,11 @@ type RunAttachmentInput = {
   attSourceId: string
   externalType: SourceItemKind
   meta: AttachmentMeta
+  // True when this is an INLINE (cid:) email image — Nylas surfaces those as
+  // attachments with `isInline: true`. Such images get the decorative triage
+  // (logo / banner / icon / tracking-pixel filter); explicit file attachments
+  // do not. See `parseInlineImageOrSkip` for the matching data-URI path.
+  isInlineImage?: boolean
 }
 
 async function runAttachmentParser(
@@ -882,7 +1147,24 @@ async function runAttachmentParser(
       })
       return { inserted: 1, skipped: 0, failed: 0 }
     }
-    // image
+    // image — inline (cid:) images get the decorative pre-filter; explicit
+    // attachments are treated as intentional content and parsed as-is.
+    if (input.isInlineImage) {
+      const triage = triageInlineImage(
+        { bytes, fileName: meta.fileName },
+        PARSER_CONFIG.image.decorative,
+      )
+      if (triage.skip) {
+        await insertSkippedChild({
+          ctx,
+          externalId: attSourceId,
+          externalType,
+          meta,
+          reason: triage.reason,
+        })
+        return { inserted: 0, skipped: 1, failed: 0 }
+      }
+    }
     const r = await parseImageBytes({
       ...commonInput,
       bytes,
@@ -892,6 +1174,16 @@ async function runAttachmentParser(
         inferImageMediaType(meta.fileName),
       ),
     })
+    if (input.isInlineImage && r.decorative) {
+      await insertSkippedChild({
+        ctx,
+        externalId: attSourceId,
+        externalType,
+        meta,
+        reason: "decorative image (logo/banner/icon)",
+      })
+      return { inserted: 0, skipped: 1, failed: 0 }
+    }
     await insertParsedChild({
       ctx,
       externalId: attSourceId,
@@ -951,17 +1243,47 @@ async function classifyAndInsertChildError(args: {
 
 // ── DB writes ────────────────────────────────────────────────────────
 
+// Parents only — classify authorship (refs/org-attribution.md). Bails to
+// `unknown` with no org. The deterministic path short-circuits for email/chat
+// with a resolvable sender; only ambiguous documents reach the LLM judge.
+async function computeOrgAttribution(
+  ctx: ParseContext,
+  markdown: string,
+): Promise<OrgAttributionResult> {
+  if (!ctx.organizationId) {
+    return { value: "unknown", confidence: "low", matchedOn: [], reason: "No organization" }
+  }
+  const orgIdentity = await getOrgIdentity(ctx.organizationId)
+  const authorEmails = extractAuthorEmails(ctx.metadataJson, ctx.provider)
+  return resolveOrgAttribution({
+    authorEmails,
+    contentHaystack: markdown,
+    orgIdentity,
+    organizationId: ctx.organizationId,
+    // WhatsApp transcripts are conversational — authorship is meaningless, so
+    // never pay for the judge there.
+    enableLlmJudge: ctx.provider !== "whatsapp",
+  })
+}
+
 async function markParsed(
-  itemId: string,
+  ctx: ParseContext,
   markdown: string,
   analysis: MetadataAnalysis,
-  ownOrg: OwnOrgIdentity,
+  // Optional extra fields to fold into metadata_json at parse time. Used by the
+  // Telegram voice path to backfill `rawText`/`text` with the transcript (the
+  // bytes carried no usable body text at ingest — see `parseTelegramVoiceItem`).
+  metadataPatch?: Record<string, unknown>,
 ): Promise<void> {
-  const cleaned = filterAnalysisOwnOrg(analysis, ownOrg)
-  // Merge the LLM analysis into the existing metadata_json (which holds
-  // provider-shape sync fields like subject/snippet/from/to). jsonb `||`
-  // is right-biased so analysis keys overwrite any colliding sync keys
-  // (none today, but defensive against future additions).
+  const cleaned = filterAnalysisOwnOrg(analysis, ctx.ownOrg)
+  const attribution = await computeOrgAttribution(ctx, markdown)
+  // Children created after this read inherit the verdict via ctx.
+  ctx.orgAttributionValue = attribution.value
+  // Merge the LLM analysis (+ the attribution evidence) into the existing
+  // metadata_json (which holds provider-shape sync fields like
+  // subject/snippet/from/to). jsonb `||` is right-biased so analysis keys
+  // overwrite any colliding sync keys (none today, but defensive).
+  const merged = { ...cleaned, orgAttribution: attribution, ...metadataPatch }
   await db
     .update(sourceItem)
     .set({
@@ -970,9 +1292,10 @@ async function markParsed(
       parserModel: PARSER_MODEL,
       parsedMarkdown: markdown,
       parseError: null,
-      metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(cleaned)}::jsonb`,
+      orgAttribution: attribution.value,
+      metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(merged)}::jsonb`,
     })
-    .where(eq(sourceItem.id, itemId))
+    .where(eq(sourceItem.id, ctx.itemId))
 }
 
 async function insertParsedChild(args: {
@@ -1008,6 +1331,9 @@ async function insertParsedChild(args: {
       parsedAt: now,
       parserModel: PARSER_MODEL,
       parsedMarkdown: args.markdown,
+      // Children inherit the parent's authorship verdict (set on ctx during the
+      // parent's markParsed, which always runs before children are inserted).
+      orgAttribution: args.ctx.orgAttributionValue ?? "unknown",
       metadataJson: cleaned,
     })
     .onConflictDoUpdate({
@@ -1021,6 +1347,7 @@ async function insertParsedChild(args: {
         filename: args.meta.fileName,
         mimeType: args.meta.contentType,
         sizeBytes: args.meta.byteSize || null,
+        orgAttribution: args.ctx.orgAttributionValue ?? "unknown",
         metadataJson: sql`COALESCE(${sourceItem.metadataJson}, '{}'::jsonb) || ${JSON.stringify(cleaned)}::jsonb`,
       },
     })

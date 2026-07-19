@@ -43,13 +43,22 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   closed: "Закрыто",
 }
 
-const TYPES: TaskType[] = ["meet", "call", "email", "offer", "docs", "other"]
+const TYPES: TaskType[] = [
+  "meet",
+  "call",
+  "email",
+  "offer",
+  "docs",
+  "support",
+  "other",
+]
 const TYPE_LABELS: Record<TaskType, string> = {
   meet: "Встреча",
   call: "Звонок",
   email: "Email",
   offer: "Предложение",
   docs: "Документы",
+  support: "Поддержка",
   other: "Другое",
 }
 
@@ -270,7 +279,7 @@ export default function TasksPage() {
 
       <Card className="w-full max-w-7xl">
         <CardHeader>
-          <CardTitle>Канбан-доска</CardTitle>
+          <CardTitle>Задачи</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex justify-end mb-3">

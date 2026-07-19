@@ -45,12 +45,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# claude
-CLAUDE.md
-/src/app/CLAUDE.md
-/src/lib/CLAUDE.md
-PHASE2.md
-
 # memo
 stale-ui-updates.md
 

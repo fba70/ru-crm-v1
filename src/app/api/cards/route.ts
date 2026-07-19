@@ -14,6 +14,7 @@ export {
   type CardMessage,
   type CardClientRef,
   type CardUserRef,
+  type CardContactRef,
 } from "@/server/cards"
 
 function errorResponse(error: unknown) {
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       ruleId,
       clientIds,
       userIds,
+      contactIds,
     } = body
     if (!category) {
       return NextResponse.json(
@@ -72,6 +74,7 @@ export async function POST(request: NextRequest) {
       ruleId,
       clientIds,
       userIds,
+      contactIds,
     })
     return NextResponse.json({ success: true, id: result.id })
   } catch (error) {
@@ -93,6 +96,7 @@ export async function PUT(request: NextRequest) {
       ruleId,
       clientIds,
       userIds,
+      contactIds,
     } = body
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 })
@@ -119,6 +123,7 @@ export async function PUT(request: NextRequest) {
       ruleId,
       clientIds,
       userIds,
+      contactIds,
     })
     return NextResponse.json({ success: true })
   } catch (error) {

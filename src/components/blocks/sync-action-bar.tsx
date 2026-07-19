@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { FolderUp, Loader, Upload } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { FolderUp, Loader, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 import type { SystemSource } from "@/server/sources"
 import { getProvider, PROVIDER_LIST } from "@/lib/sources/providers"
@@ -31,11 +32,30 @@ function plural(n: number, forms: [string, string, string]): string {
 export function SyncActionBar({
   sources,
   onSynced,
+  onProcessSource,
+  processRunning,
+  processDateFrom,
+  processDateTo,
+  onProcessDateFromChange,
+  onProcessDateToChange,
   onOpenDropoffUpload,
   onOpenWhatsAppUpload,
 }: {
   sources: SystemSource[]
   onSynced: () => void
+  // Called after a successful sync/fetch to chain into the parse→upload
+  // run scoped to that source (label shown in the shared progress bar).
+  onProcessSource: (sourceId: string, label: string) => void
+  // True while a shared process run is in flight — disables sync buttons
+  // so a second run can't be stacked on top.
+  processRunning: boolean
+  // "Processing period" — YYYY-MM-DD bounds (empty = all). Scopes which fetched
+  // items the sync→process chain parses+uploads, by source_created_at. NOT a
+  // table filter — purely the processing work-set.
+  processDateFrom: string
+  processDateTo: string
+  onProcessDateFromChange: (v: string) => void
+  onProcessDateToChange: (v: string) => void
   onOpenDropoffUpload: () => void
   onOpenWhatsAppUpload: () => void
 }) {
@@ -55,13 +75,69 @@ export function SyncActionBar({
         {sources
           .filter((s) => getProvider(s.provider).capabilities.supportsRemoteSync)
           .map((s) => (
-            <SyncButton key={s.id} source={s} onSynced={onSynced} />
+            <SyncButton
+              key={s.id}
+              source={s}
+              onSynced={onSynced}
+              onProcessSource={onProcessSource}
+              processRunning={processRunning}
+              sinceIso={processDateFrom}
+              untilIso={processDateTo}
+            />
           ))}
         {sources
           .filter((s) => getProvider(s.provider).capabilities.supportsManualFetch)
           .map((s) => (
-            <TelegramFetchButton key={s.id} source={s} onSynced={onSynced} />
+            <TelegramFetchButton
+              key={s.id}
+              source={s}
+              onSynced={onSynced}
+              onProcessSource={onProcessSource}
+              processRunning={processRunning}
+            />
           ))}
+
+        {/* Processing period — bounds which fetched items get parsed+uploaded
+            after a sync (by source_created_at). Empty = all. */}
+        <div className="flex items-center gap-1.5 rounded-md border px-2 py-1">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            Период обработки:
+          </span>
+          <Input
+            type="date"
+            aria-label="Период обработки: с"
+            value={processDateFrom}
+            max={processDateTo || undefined}
+            onChange={(e) => onProcessDateFromChange(e.target.value)}
+            disabled={processRunning}
+            className="h-7 w-35 text-xs"
+          />
+          <span className="text-xs text-muted-foreground">—</span>
+          <Input
+            type="date"
+            aria-label="Период обработки: по"
+            value={processDateTo}
+            min={processDateFrom || undefined}
+            onChange={(e) => onProcessDateToChange(e.target.value)}
+            disabled={processRunning}
+            className="h-7 w-35 text-xs"
+          />
+          {(processDateFrom || processDateTo) && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              title="Сбросить период (обрабатывать все)"
+              disabled={processRunning}
+              onClick={() => {
+                onProcessDateFromChange("")
+                onProcessDateToChange("")
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {hasArchiveSource && (
@@ -92,9 +168,20 @@ export function SyncActionBar({
 function SyncButton({
   source,
   onSynced,
+  onProcessSource,
+  processRunning,
+  sinceIso,
+  untilIso,
 }: {
   source: SystemSource
   onSynced: () => void
+  onProcessSource: (sourceId: string, label: string) => void
+  processRunning: boolean
+  // When the «Период обработки» range is set, sync that bounded window
+  // (a backfill that re-pulls historical mail behind the incremental cursor)
+  // instead of the default incremental pull. Empty = incremental.
+  sinceIso: string
+  untilIso: string
 }) {
   const [busy, setBusy] = useState(false)
   const ProviderIcon = getProvider(source.provider).icon
@@ -105,7 +192,11 @@ function SyncButton({
       const res = await fetch("/api/sources/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId: source.id }),
+        body: JSON.stringify({
+          sourceId: source.id,
+          ...(sinceIso ? { sinceIso } : {}),
+          ...(untilIso ? { untilIso } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Не удалось синхронизировать")
@@ -118,6 +209,10 @@ function SyncButton({
         `${source.name}: синхронизировано — получено ${fetched} (${inserted} новых, ${updated} обновлено)`,
       )
       onSynced()
+      // Chain straight into parse → upload for this source's backlog
+      // (incl. the rows we just fetched). The run shows its own progress
+      // bar + toasts; no-ops cleanly if there's nothing to process.
+      onProcessSource(source.id, source.name)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
       toast.error(`Синхронизация ${source.name}: ${msg}`)
@@ -132,14 +227,14 @@ function SyncButton({
       size="sm"
       className="h-8"
       onClick={handleClick}
-      disabled={busy}
+      disabled={busy || processRunning}
     >
       {busy ? (
         <Loader className="h-4 w-4 mr-2 animate-spin" />
       ) : (
         <ProviderIcon className="h-4 w-4 mr-2" />
       )}
-      Синхронизировать {source.name}
+      {source.name}
     </Button>
   )
 }
@@ -153,9 +248,13 @@ function SyncButton({
 function TelegramFetchButton({
   source,
   onSynced,
+  onProcessSource,
+  processRunning,
 }: {
   source: SystemSource
   onSynced: () => void
+  onProcessSource: (sourceId: string, label: string) => void
+  processRunning: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const ProviderIcon = getProvider(source.provider).icon
@@ -186,6 +285,10 @@ function TelegramFetchButton({
         )
       }
       onSynced()
+      // Drain the fetched messages through parse → upload. Safe even
+      // when the webhook is active (the work-set is just whatever is
+      // pending) — no-ops if there's nothing to do.
+      onProcessSource(source.id, source.name)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Неизвестная ошибка"
       toast.error(`Получение ${source.name}: ${msg}`)
@@ -200,14 +303,14 @@ function TelegramFetchButton({
       size="sm"
       className="h-8"
       onClick={handleClick}
-      disabled={busy}
+      disabled={busy || processRunning}
     >
       {busy ? (
         <Loader className="h-4 w-4 mr-2 animate-spin" />
       ) : (
         <ProviderIcon className="h-4 w-4 mr-2" />
       )}
-      Получить {source.name}
+      {source.name}
     </Button>
   )
 }

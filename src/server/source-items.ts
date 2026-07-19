@@ -153,8 +153,58 @@ export async function getSourceItemByExternalId(
 
 export type SourceItemListStatus = "pending" | "processed"
 
+// Unified-table view buckets (the merged "Источники организации" tab).
+// Derived from the two durable status columns:
+//   • needs_work — parse pending/processing/failed, OR parsed-but-unshipped.
+//                  The operator's work queue. Naturally drains to zero, so
+//                  the route applies NO default date window to it.
+//   • errors     — parse failed, OR upload failed (the retry list).
+//   • done       — parse complete + uploaded, OR skipped (terminal).
+//   • all        — every state.
+// 'done'/'all' grow unbounded, so the route pins a default date window
+// for those (but not for needs_work/errors).
+export type SourceItemView = "needs_work" | "done" | "errors" | "all"
+
+// WHERE clause for a unified-table view. `all` returns undefined (no
+// parse/upload constraint). Includes children (no parent-id restriction)
+// so an attachment that still needs shipping shows up in needs_work.
+function viewClause(view: SourceItemView) {
+  switch (view) {
+    case "needs_work":
+      return or(
+        inArray(sourceItem.parseStatus, ["pending", "processing", "failed"]),
+        and(
+          eq(sourceItem.parseStatus, "complete"),
+          inArray(sourceItem.r2UploadStatus, ["pending", "failed"]),
+        ),
+      )
+    case "errors":
+      return or(
+        eq(sourceItem.parseStatus, "failed"),
+        and(
+          eq(sourceItem.parseStatus, "complete"),
+          eq(sourceItem.r2UploadStatus, "failed"),
+        ),
+      )
+    case "done":
+      return or(
+        and(
+          eq(sourceItem.parseStatus, "complete"),
+          eq(sourceItem.r2UploadStatus, "complete"),
+        ),
+        eq(sourceItem.parseStatus, "skipped"),
+      )
+    case "all":
+      return undefined
+  }
+}
+
 export type SourceItemListFilters = {
-  status: SourceItemListStatus
+  // Legacy two-table split (kept for any caller still on it). Ignored
+  // when `view` is provided.
+  status?: SourceItemListStatus
+  // Unified-table view bucket. Takes precedence over `status`.
+  view?: SourceItemView
   // Required tenant scope. Items are returned only when
   // `source_item.organization_id` matches. Pass null for the platform-
   // wide system view (returns rows whose org is null — i.e. attached to
@@ -211,7 +261,8 @@ export type SourceItemListResult = {
 export async function listSourceItems(
   filters: SourceItemListFilters,
 ): Promise<SourceItemListResult> {
-  const { status, organizationId, sourceId, q, dateFrom, dateTo } = filters
+  const { status, view, organizationId, sourceId, q, dateFrom, dateTo } =
+    filters
   const limit = Math.min(filters.limit ?? 25, 100)
   const offset = Math.max(filters.offset ?? 0, 0)
 
@@ -226,8 +277,11 @@ export async function listSourceItems(
   // Processed + onlyNeedsUpload narrows further to rows that still
   // need shipping: parseStatus='complete' (skipped excluded — no
   // markdown to ship) AND r2UploadStatus IN (pending, failed).
-  const statusClause =
-    status === "processed"
+  // `view` (unified table) takes precedence; otherwise fall back to the
+  // legacy pending/processed split.
+  const statusClause = view
+    ? viewClause(view)
+    : status === "processed"
       ? filters.onlyNeedsUpload
         ? and(
             eq(sourceItem.parseStatus, "complete"),
@@ -625,6 +679,93 @@ export async function listPendingR2UploadIds(
     ids: rows.map((r) => r.id),
     total: totalRows[0]?.n ?? 0,
     cap: R2_BATCH_HARD_CAP,
+  }
+}
+
+// ── Unified process-candidate IDs ────────────────────────────────────
+//
+// Powers the merged "Обработать все (N)" control on the org-sources tab.
+// Returns ids of every item needing ANY work — parse OR upload — within
+// the caller's filter context:
+//   (parseStatus IN ('pending','failed'))
+//   OR (parseStatus = 'complete' AND r2UploadStatus IN ('pending','failed'))
+// 'processing' is excluded (in-flight; a click mustn't double-run it).
+// No parent-id restriction: a root that still needs parsing AND an
+// already-parsed child that still needs shipping both qualify. The
+// per-item `processSourceItem` is idempotent, so re-running is safe.
+
+export type ProcessBatchFilters = {
+  organizationId: string | null // null = system view
+  scope: R2BatchScope
+  sourceId?: string
+  filenameSearch?: string
+  dateFrom?: Date
+  dateTo?: Date
+  limit?: number
+}
+
+export type ProcessBatchResult = {
+  ids: string[]
+  total: number
+  cap: number
+}
+
+const PROCESS_BATCH_HARD_CAP = 500
+
+export async function listProcessItemIds(
+  filters: ProcessBatchFilters,
+): Promise<ProcessBatchResult> {
+  const limit = Math.min(
+    filters.limit ?? PROCESS_BATCH_HARD_CAP,
+    PROCESS_BATCH_HARD_CAP,
+  )
+
+  const orgClause =
+    filters.organizationId === null
+      ? isNull(sourceItem.organizationId)
+      : eq(sourceItem.organizationId, filters.organizationId)
+
+  const where = and(
+    orgClause,
+    or(
+      inArray(sourceItem.parseStatus, ["pending", "failed"]),
+      and(
+        eq(sourceItem.parseStatus, "complete"),
+        inArray(sourceItem.r2UploadStatus, ["pending", "failed"]),
+      ),
+    ),
+    filters.sourceId ? eq(sourceItem.sourceId, filters.sourceId) : undefined,
+    filters.filenameSearch && filters.filenameSearch.trim().length > 0
+      ? or(
+          ilike(sourceItem.filename, `%${filters.filenameSearch.trim()}%`),
+          sql`${sourceItem.metadataJson}::text ILIKE ${`%${filters.filenameSearch.trim()}%`}`,
+        )
+      : undefined,
+    filters.dateFrom ? gte(sourceItem.sourceCreatedAt, filters.dateFrom) : undefined,
+    filters.dateTo ? lte(sourceItem.sourceCreatedAt, filters.dateTo) : undefined,
+  )
+
+  const [rows, totalRows] = await Promise.all([
+    db
+      .select({ id: sourceItem.id })
+      .from(sourceItem)
+      .innerJoin(source, eq(source.id, sourceItem.sourceId))
+      .where(where)
+      // Oldest-first for stable partial-run + retry ordering, matching
+      // the parse/upload batch helpers and the cron pipeline.
+      .orderBy(asc(sourceItem.sourceCreatedAt))
+      .limit(limit),
+    db
+      .select({ n: count() })
+      .from(sourceItem)
+      .innerJoin(source, eq(source.id, sourceItem.sourceId))
+      .where(where),
+  ])
+
+  return {
+    ids: rows.map((r) => r.id),
+    total: totalRows[0]?.n ?? 0,
+    cap: PROCESS_BATCH_HARD_CAP,
   }
 }
 

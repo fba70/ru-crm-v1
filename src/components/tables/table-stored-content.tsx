@@ -467,12 +467,14 @@ export function TableStoredContent({
           <TableHeader>
             <TableRow>
               <TableHead className="w-40">Дата</TableHead>
-              <TableHead className="w-32">Источник</TableHead>
-              <TableHead className="w-40">MIME</TableHead>
-              <TableHead>Имя файла / Заголовок</TableHead>
+              <TableHead className="w-28">Источник</TableHead>
+              <TableHead className="w-28">MIME</TableHead>
+              <TableHead className="whitespace-normal">
+                Имя файла / Заголовок
+              </TableHead>
               <TableHead className="w-24">Разбор</TableHead>
               <TableHead className="w-24">Загрузка</TableHead>
-              <TableHead className="w-16">Просмотр</TableHead>
+              <TableHead className="w-20">Просмотр</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

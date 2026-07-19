@@ -8,6 +8,7 @@ import { TableAdminUsers } from "@/components/tables/table-admin-users"
 import { TableAdminOrgs } from "@/components/tables/table-admin-orgs"
 import { TableAdminSources } from "@/components/tables/table-admin-sources"
 import { TableAdminTemplates } from "@/components/tables/table-admin-templates"
+import { AdminTeardown } from "@/components/blocks/admin-teardown"
 
 export default function SettingsPage() {
   const { data: session, isPending } = authClient.useSession()
@@ -43,6 +44,7 @@ export default function SettingsPage() {
             <TabsTrigger value="organizations">Организации</TabsTrigger>
             <TabsTrigger value="templates">Шаблоны</TabsTrigger>
             <TabsTrigger value="sources">Источники</TabsTrigger>
+            <TabsTrigger value="teardown">Сброс источника</TabsTrigger>
             <TabsTrigger value="settings">Настройки</TabsTrigger>
           </TabsList>
 
@@ -90,6 +92,18 @@ export default function SettingsPage() {
             <Card>
               <CardContent className="pt-6">
                 <TableAdminSources />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent
+            value="teardown"
+            forceMount
+            className="mt-4 data-[state=inactive]:hidden"
+          >
+            <Card>
+              <CardContent className="pt-6">
+                <AdminTeardown />
               </CardContent>
             </Card>
           </TabsContent>

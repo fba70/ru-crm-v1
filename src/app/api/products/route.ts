@@ -54,6 +54,15 @@ export async function GET(request: NextRequest) {
       const n = Number.parseFloat(v)
       return Number.isFinite(n) ? n : undefined
     }
+    // Repeated multi-value filters (export-relevant: country/region/color),
+    // read via getAll — NOT comma-split, since some region values contain commas.
+    const list = (key: string) => {
+      const arr = searchParams
+        .getAll(key)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      return arr.length > 0 ? arr : undefined
+    }
     const inStockRaw = searchParams.get("inStock")
     const inStock: ProductInStock | undefined =
       inStockRaw === "in" || inStockRaw === "out" ? inStockRaw : undefined
@@ -81,6 +90,9 @@ export async function GET(request: NextRequest) {
       aging: str("aging"),
       bottleVolume: str("bottleVolume"),
       countryName: str("countryName"),
+      colors: list("colors"),
+      countryNames: list("countryNames"),
+      regions: list("regions"),
       appelacion: str("appelacion"),
       rating: str("rating"),
       awards: str("awards"),

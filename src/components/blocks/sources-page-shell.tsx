@@ -9,8 +9,19 @@ import { TableStoredContent } from "@/components/tables/table-stored-content"
 import { DropoffUploadDialog } from "@/components/blocks/dropoff-upload-dialog"
 import { WhatsAppArchiveDialog } from "@/components/blocks/whatsapp-archive-dialog"
 import { SyncActionBar } from "@/components/blocks/sync-action-bar"
+import { ProcessRunBar } from "@/components/blocks/process-controls"
+import { useProcessRun } from "@/components/blocks/use-process-run"
 import { WorkflowStatistics } from "@/components/blocks/workflow-statistics"
 import type { SourceSummary } from "@/server/sources"
+
+// Local-date "YYYY-MM-DD" for `<input type="date">` (the default processing
+// period is today → today).
+function todayInputDate(): string {
+  const d = new Date()
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const dd = String(d.getDate()).padStart(2, "0")
+  return `${d.getFullYear()}-${mm}-${dd}`
+}
 
 // Client wrapper that owns the cross-component refresh + drop-off
 // upload-dialog state. Lives here (not on the page) so the page itself
@@ -133,10 +144,11 @@ export function SourcesPageShell({
   )
 }
 
-// Org sources view — action bar + Pending + Processed. The underlying
-// table component still accepts a `scope` prop ("org" | "system") for
-// future template-management surfaces; here we always pass "org" since
-// org members never see system rows directly.
+// Org sources view — one action bar + one unified table. The single
+// `useProcessRun` instance is shared by the per-source "Синхронизировать
+// и обработать" buttons AND the table's "Обработать все" control, so
+// only one parse→upload run is ever in flight and both feed the same
+// progress bar.
 function SourcesScope({
   sources,
   refreshKey,
@@ -150,6 +162,15 @@ function SourcesScope({
   onOpenDropoffUpload: () => void
   onOpenWhatsAppUpload: () => void
 }) {
+  const proc = useProcessRun({ onRefresh: onBumpRefresh })
+  // "Processing period" — bounds which fetched items the sync→process chain
+  // parses+uploads (and the table listing below), by `source_created_at`.
+  // **Defaults to today → today** (empty = all). `<input type="date">` yields
+  // YYYY-MM-DD, which is exactly what /process-ids + /items expect. Clear it
+  // via the × in the action bar to process/show the whole backlog.
+  const [procDateFrom, setProcDateFrom] = useState(todayInputDate)
+  const [procDateTo, setProcDateTo] = useState(todayInputDate)
+
   if (sources.length === 0) {
     return (
       <Card>
@@ -165,36 +186,45 @@ function SourcesScope({
       <SyncActionBar
         sources={sources}
         onSynced={onBumpRefresh}
+        onProcessSource={(sourceId, label) =>
+          proc.run(
+            {
+              scope: "org",
+              sourceId,
+              dateFromIso: procDateFrom || undefined,
+              dateToIso: procDateTo || undefined,
+            },
+            { label },
+          )
+        }
+        processRunning={proc.running}
+        processDateFrom={procDateFrom}
+        processDateTo={procDateTo}
+        onProcessDateFromChange={setProcDateFrom}
+        onProcessDateToChange={setProcDateTo}
         onOpenDropoffUpload={onOpenDropoffUpload}
         onOpenWhatsAppUpload={onOpenWhatsAppUpload}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">В очереди</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <TableSourceItems
-            status="pending"
-            scope="org"
-            sources={sources}
-            refreshKey={refreshKey}
-            onActionComplete={onBumpRefresh}
-          />
-        </CardContent>
-      </Card>
+      <ProcessRunBar
+        progress={proc.progress}
+        onCancel={proc.cancel}
+        cancelRequested={proc.cancelRequested.current}
+      />
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Обработано</CardTitle>
+          <CardTitle className="text-base">Материалы источников</CardTitle>
         </CardHeader>
         <CardContent>
           <TableSourceItems
-            status="processed"
-            scope="org"
             sources={sources}
             refreshKey={refreshKey}
             onActionComplete={onBumpRefresh}
+            processRunning={proc.running}
+            onRunAll={proc.run}
+            periodFrom={procDateFrom}
+            periodTo={procDateTo}
           />
         </CardContent>
       </Card>
