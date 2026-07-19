@@ -102,22 +102,17 @@ export function AppSidebar({
         <SidebarHeader>
           {open ? (
             <div className="flex flex-row gap-3 items-center justify-between">
-              <div className="flex flex-col gap-1 min-w-0">
-                <BrandLogo
-                  src="/sd-logo-long-title.svg"
-                  className="h-6 w-[126px] text-logo"
-                />
-                <p className="text-[11px] leading-tight text-muted-foreground whitespace-nowrap">
-                  Операционная система продаж
-                </p>
-              </div>
+              <BrandLogo
+                src="/sd-logo-long-title.svg"
+                className="h-6 w-[126px] text-logo"
+              />
               <SidebarTrigger aria-label="Свернуть меню" className="cursor-pointer" />
             </div>
           ) : (
             // Свёрнутое состояние: логотип, а при наведении на него проявляется
             // кнопка разворота меню (логотип уходит в прозрачность).
             <div className="group relative flex items-center justify-center">
-              <BrandMark className="size-10 rounded-xl transition-opacity group-hover:opacity-0" />
+              <BrandMark className="size-6 rounded-xl transition-opacity group-hover:opacity-0" />
               <SidebarTrigger
                 aria-label="Развернуть меню"
                 className="absolute cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"

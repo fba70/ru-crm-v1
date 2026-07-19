@@ -31,10 +31,12 @@ export default async function DashboardLayout({
   return (
     <SidebarProvider
       style={
-        // Ширина сайдбара под содержимое: задаётся самым широким элементом —
-        // слоганом «Операционная система продаж» под логотипом (в одну строку,
-        // без переноса). Дефолта 11rem/14rem не хватало.
-        { "--sidebar-width": "16rem" } as React.CSSProperties
+        // Ширина развёрнутого сайдбара — впритык к контенту. НЕ используем
+        // max-content: у shadcn пустой gap-спейсер (sidebar-gap) тогда даёт
+        // ширину 0 и fixed-панель наезжает на контент — ширина ОБОИХ элементов
+        // должна быть одним конкретным значением. 13rem покрывает самый широкий
+        // элемент (шапка: лого 126px + триггер), заметно у́же прежних 16rem.
+        { "--sidebar-width": "13rem" } as React.CSSProperties
       }
     >
       <AppSidebar session={session} orgLogo={orgLogo} />
