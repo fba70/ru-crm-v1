@@ -555,6 +555,12 @@ export function DealsBoard({
                   key={column.stage.id}
                   stage={column.stage}
                   count={column.cards.length}
+                  amount={aggregateByCurrency(
+                    column.cards.map((d) => ({
+                      amount: dealAmount(d.value),
+                      currency: d.currency,
+                    })),
+                  )}
                   onExpand={() => store.expand(column.stage.id)}
                 />
               ) : (
