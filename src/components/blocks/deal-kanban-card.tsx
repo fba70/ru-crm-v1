@@ -25,7 +25,6 @@ import type { DealRow } from "@/app/api/deals/route"
 import type { DealIntel, IntelBadge } from "@/server/deals-mock"
 import type { NextStep } from "@/hooks/use-board-intel"
 import DealEditDialog from "@/components/forms/form-deal-edit"
-import { DealProvenance } from "@/components/blocks/deal-provenance"
 import { formatAmount } from "@/lib/deal-board"
 
 // Мок-бейджи (из /api/deals/intel) несут имя lucide-иконки в kebab-case.
@@ -128,9 +127,9 @@ export function DealKanbanCard({
   const invariantBroken = intelLoaded && isActive && !hasProposal && !nextStep
   const isStale = Boolean(intel?.isStale)
   const badges = intel?.badges ?? []
-  const hasProvenance = Boolean(deal.reasoning || deal.changes)
-  const hasBadgeRow =
-    hasProvenance || badges.length > 0 || isStale || hasProposal
+  // Происхождение (reasoning/changes) на карточке НЕ показываем — детали
+  // раскрываются в дравере сделки.
+  const hasBadgeRow = badges.length > 0 || isStale || hasProposal
 
   return (
     <Card
@@ -217,11 +216,6 @@ export function DealKanbanCard({
 
       {hasBadgeRow && (
         <div className="flex flex-wrap gap-1">
-          <DealProvenance
-            deal={deal}
-            source={intel?.provenanceSource}
-            confidence={intel?.confidence}
-          />
           {badges.map((b, i) => {
             const Icon = BADGE_ICON[b.icon]
             return (

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Pencil } from "lucide-react"
+import { Pencil, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import type { DealRow, DealFunnelStageOption } from "@/app/api/deals/route"
 import type { TaskRow } from "@/app/api/tasks/route"
@@ -193,6 +193,29 @@ export function DealDetailDrawer({
             </Select>
           </div>
         </SheetHeader>
+
+        {/* Происхождение сделки (reasoning/changes) — подробно, только здесь;
+            на карточках доски больше не показывается. */}
+        {(deal.reasoning || deal.changes) && (
+          <div className="mx-4 mt-3 rounded-lg border bg-violet-500/5 p-3 text-sm space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+              <Sparkles className="h-3.5 w-3.5" />
+              Происхождение
+            </div>
+            {deal.changes && (
+              <div>
+                <div className="text-xs text-muted-foreground">Изменение</div>
+                <div className="whitespace-pre-wrap">{deal.changes}</div>
+              </div>
+            )}
+            {deal.reasoning && (
+              <div>
+                <div className="text-xs text-muted-foreground">Обоснование</div>
+                <div className="whitespace-pre-wrap">{deal.reasoning}</div>
+              </div>
+            )}
+          </div>
+        )}
 
         <Tabs defaultValue="tasks" className="flex-1 min-h-0 flex flex-col">
           <TabsList className="mx-4 mt-3 w-fit">
