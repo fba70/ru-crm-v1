@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import ElectricBorder from "@/components/ui/electric-border/ElectricBorder"
-import Image from "next/image"
+import { BrandLogo } from "@/components/blocks/brand-logo"
 import { useTheme } from "next-themes"
 
 const subscribe = () => () => {}
@@ -35,20 +35,16 @@ export function HomeContent() {
       >
         <div className="h-auto w-95 flex flex-col items-center justify-center p-4">
           <div className="flex flex-col p-12 pb-4 h-full items-center justify-center">
-            <Image
-              src="/logo.png"
-              alt="Logo"
-              width={300}
-              height={300}
-              loading="eager"
-              className="rounded-2xl"
+            <BrandLogo
+              src="/sd-logo-vert.svg"
+              className="h-40 w-[178px] text-[#003049] dark:text-logo"
             />
             <p className="text-6xl font-bold mt-4 bg-linear-to-r from-orange-500 via-pink-500 to-blue-400 bg-clip-text text-transparent"></p>
           </div>
 
           <div className="flex flex-col p-12 pt-4 items-center justify-center">
             <p className={`${subtitleColor} text-2xl text-center`}>
-              AI-native Business Operating System
+              Операционная система продаж
             </p>
           </div>
         </div>

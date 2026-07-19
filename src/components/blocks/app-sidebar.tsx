@@ -31,7 +31,8 @@ import { Logout } from "./logout"
 import { ModeSwitcher } from "./mode-switcher"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import Image from "next/image"
+import { BrandMark } from "./brand-mark"
+import { BrandLogo } from "./brand-logo"
 import Link from "next/link"
 import { NotificationsDrawer } from "./notifications-drawer"
 import type { getServerSession } from "@/lib/get-session"
@@ -94,17 +95,14 @@ export function AppSidebar({ session }: { session: AuthSession }) {
         <SidebarHeader>
           {open ? (
             <div className="flex flex-row gap-3 items-center justify-between">
-              <div className="flex flex-row gap-3 items-center min-w-0">
-                <Image
-                  src="/logo.png"
-                  alt="Logo"
-                  width={28}
-                  height={28}
-                  className="mt-1 rounded-full shrink-0"
+              <div className="flex flex-col gap-1 min-w-0">
+                <BrandLogo
+                  src="/sd-logo-long-title.svg"
+                  className="h-6 w-[126px] text-logo"
                 />
-                <h1 className="text-lg font-bold whitespace-nowrap bg-linear-to-r from-orange-500 via-pink-500 to-blue-400 bg-clip-text text-transparent">
-                  business OS
-                </h1>
+                <p className="text-[11px] leading-tight text-muted-foreground whitespace-nowrap">
+                  Операционная система продаж
+                </p>
               </div>
               <SidebarTrigger aria-label="Свернуть меню" className="cursor-pointer" />
             </div>
@@ -112,13 +110,7 @@ export function AppSidebar({ session }: { session: AuthSession }) {
             // Свёрнутое состояние: логотип, а при наведении на него проявляется
             // кнопка разворота меню (логотип уходит в прозрачность).
             <div className="group relative flex items-center justify-center">
-              <Image
-                src="/logo.png"
-                alt="Logo"
-                width={40}
-                height={40}
-                className="mt-1 rounded-full transition-opacity group-hover:opacity-0"
-              />
+              <BrandMark className="size-10 rounded-xl transition-opacity group-hover:opacity-0" />
               <SidebarTrigger
                 aria-label="Развернуть меню"
                 className="absolute cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
@@ -138,7 +130,7 @@ export function AppSidebar({ session }: { session: AuthSession }) {
                       href={item.url}
                       className={`flex items-center p-2 rounded-md ${
                         pathname === item.url
-                          ? "bg-gray-200 dark:bg-gray-600 text-orange-400"
+                          ? "bg-gray-200 dark:bg-gray-600 text-primary"
                           : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-white"
                       }`}
                     >
@@ -163,7 +155,7 @@ export function AppSidebar({ session }: { session: AuthSession }) {
                 href={"/account"}
                 className={`flex items-center p-2 rounded-md ${
                   pathname === "/account"
-                    ? "bg-gray-200 dark:bg-gray-600 text-orange-400"
+                    ? "bg-gray-200 dark:bg-gray-600 text-primary"
                     : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-white"
                 }`}
               >
@@ -179,7 +171,7 @@ export function AppSidebar({ session }: { session: AuthSession }) {
                   href={"/settings"}
                   className={`flex items-center p-2 rounded-md ${
                     pathname === "/settings"
-                      ? "bg-gray-200 dark:bg-gray-600 text-orange-400"
+                      ? "bg-gray-200 dark:bg-gray-600 text-primary"
                       : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-white"
                   }`}
                 >

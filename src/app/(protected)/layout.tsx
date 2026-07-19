@@ -15,9 +15,9 @@ export default async function DashboardLayout({
     <SidebarProvider
       style={
         // Ширина сайдбара под содержимое: задаётся самым широким элементом —
-        // шапкой «логотип + business OS + кнопка». Узкого дефолта (11rem) не
-        // хватало, из-за чего заголовок переносился на две строки.
-        { "--sidebar-width": "14rem" } as React.CSSProperties
+        // слоганом «Операционная система продаж» под логотипом (в одну строку,
+        // без переноса). Дефолта 11rem/14rem не хватало.
+        { "--sidebar-width": "16rem" } as React.CSSProperties
       }
     >
       <AppSidebar session={session} />

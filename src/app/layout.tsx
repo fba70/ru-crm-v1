@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "AI-native Business Operating System",
-  description: "Demo web application",
+  title: "SALES DAILY — операционная система продаж",
+  description: "Операционная система продаж",
 }
 
 export default function RootLayout({
