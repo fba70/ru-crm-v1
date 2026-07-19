@@ -99,6 +99,7 @@ export function ClientDetailShell({
       customFields: detail.customFields,
       funnelPhase: detail.funnelPhase,
       status: detail.status,
+      currency: detail.currency,
       userId: detail.userId,
       userName: detail.userName,
       organizationId: detail.organizationId,

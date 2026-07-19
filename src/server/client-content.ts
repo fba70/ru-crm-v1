@@ -59,6 +59,7 @@ export type ClientDetail = {
   customFields: ClientCustomFields
   funnelPhase: FunnelPhase
   status: EntityStatus
+  currency: string
   userId: string
   userName: string | null
   organizationId: string
@@ -90,6 +91,7 @@ export async function getClientDetail(
       customFields: client.customFields,
       funnelPhase: client.funnelPhase,
       status: client.status,
+      currency: client.currency,
       userId: client.userId,
       organizationId: client.organizationId,
       createdAt: client.createdAt,
@@ -148,6 +150,7 @@ export async function getClientDetail(
     customFields: row.customFields ?? {},
     funnelPhase: row.funnelPhase,
     status: row.status,
+    currency: row.currency,
     userId: row.userId,
     userName,
     organizationId: row.organizationId,

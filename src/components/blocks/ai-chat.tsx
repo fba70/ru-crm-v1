@@ -101,6 +101,7 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
+import { BrandMark } from "./brand-mark"
 import { FoundSourcesCard } from "@/components/blocks/found-sources-card"
 import {
   EntityCandidatesCard,
@@ -260,13 +261,7 @@ export function AIChat({ className }: { className?: string }) {
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-2">
         <div className="flex items-center gap-2">
-          <Image
-            src="/logo.png"
-            alt="Logo"
-            width={24}
-            height={24}
-            className="rounded-full"
-          />
+          <BrandMark className="size-6 rounded-lg" />
           <p className="text-sm font-medium flex flex-row items-center gap-1">
             <span className="bg-linear-to-r from-orange-500 via-pink-500 to-blue-400 bg-clip-text text-transparent">
               business OS
@@ -415,13 +410,7 @@ export function AIChat({ className }: { className?: string }) {
               title="Поговорите с ассистентом business OS!"
               description="Спрашивайте о чём угодно — я отвечу на вопросы, помогу с анализом данных и не только."
               icon={
-                <Image
-                  src="/logo.png"
-                  alt="Logo"
-                  width={36}
-                  height={36}
-                  className="rounded-full"
-                />
+                <BrandMark className="size-9 rounded-xl" />
               }
             />
           ) : (
