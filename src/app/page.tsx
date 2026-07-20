@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { HomeContent } from "./home-content"
 
 export const metadata: Metadata = {
-  title: "Business Operating System",
+  title: "SALES DAILY",
   description: "Demo web application",
 }
 
