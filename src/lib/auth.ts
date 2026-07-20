@@ -43,6 +43,7 @@ export const auth = betterAuth({
     "https://app.truffalo.ai",
     "https://business-os-demo.vercel.app",
     "http://localhost:3000",
+    "https://salesdaily-demo.vercel.app",
   ],
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -279,9 +280,8 @@ export const auth = betterAuth({
       productionURL:
         process.env.NEXT_PUBLIC_PRODUCTION_URL ||
         process.env.NEXT_PUBLIC_APP_URL ||
-        "https://business-os-demo.vercel.app",
-      currentURL:
-        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+        "https://salesdaily-demo.vercel.app",
+      currentURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     }),
   ],
 })
