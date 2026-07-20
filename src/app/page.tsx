@@ -3,7 +3,7 @@ import { HomeContent } from "./home-content"
 
 export const metadata: Metadata = {
   title: "SALES DAILY",
-  description: "Sales Daily Demo App",
+  description: "Операционная система продаж",
 }
 
 export default function Home() {
