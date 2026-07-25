@@ -2,6 +2,7 @@
 
 import {
   Home,
+  ChartColumnBig,
   FileText,
   ShieldCheck,
   CircleUserRound,
@@ -66,6 +67,11 @@ export const items = [
     title: "Задачи",
     url: "/tasks",
     icon: ListChecks,
+  },
+  {
+    title: "Аналитика",
+    url: "/analytics",
+    icon: ChartColumnBig,
   },
   {
     title: "Правила",

@@ -32,6 +32,16 @@ export const user = pgTable("user", {
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),
+  // Sales department the user belongs to («Отдел 1» / «Отдел 2» / …). Free-form
+  // text, nullable — it's an org-agnostic label used to roll salespeople up into
+  // teams on the Analytics page (`src/server/analytics.ts`).
+  //
+  // Deliberately NOT registered in better-auth's `user.additionalFields`: it is
+  // never needed at auth time, and every field better-auth returns on the
+  // session gets serialised into the signed session cookie (see the org-logo
+  // note under `session.additionalFields` in src/lib/auth.ts). Analytics reads
+  // it straight from this column via drizzle.
+  department: text("department"),
 })
 
 export const session = pgTable(

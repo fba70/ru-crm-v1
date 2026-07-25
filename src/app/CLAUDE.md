@@ -1005,3 +1005,59 @@ Manual button on the Deals tab ("Discover from sources", left of "+ New deal"). 
 - If the source describes a sales-relevant signal but no Known Client matches the company, the rule should set `action: SKIP` rather than emit a CREATE the server will then drop.
 - If the source mentions an existing open deal but contains no signal that would justify any of the stage moves, the rule should set `action: SKIP` (no-op UPDATE_STAGE is wasteful).
 - New deals should default `newDealStageName` to the first funnel stage of the resolved funnel (Qualification in the seeded funnel).
+
+## Analytics («Аналитика») — sales reporting over orders
+
+Read-only reporting surface over the order book at `/analytics`. Answers "how much did we sell, who sold it, to whom, and what was in the box" across four dimensions: **time**, **salesperson**, **client** and **product attribute**.
+
+### Two definitions everything hangs on
+
+- **BOOKED** = `finalized` (the completed/sold terminal state) **+** `confirmed` (client signed off, internally owned again). Revenue, units and all product analytics count ONLY booked orders. `draft` / `awaiting_client` / `cancelled` still appear in the status + conversion views — they are pipeline, not sales. The tuple lives in `BOOKED_ORDER_STATUSES` (`src/lib/analytics-format.ts`) and is the SQL's single source of truth.
+- **NET** = `total_amount × (1 − discount_percent/100)`. `total_amount` is the catalog subtotal; the per-client discount is snapshotted on the order (see § "Order discount"). Headline money is net; gross is kept alongside so the discount give-away is a visible number (`totals.discountAmount`) rather than silently baked in.
+
+The line-item CTE inherits its parent order's discount factor, so per-product revenue rolls up to exactly the same total as per-order revenue — the product tab and the overview can never disagree.
+
+### Server (`src/server/analytics-query.ts` + `src/server/analytics.ts`)
+
+Deliberately **two** modules:
+- `analytics-query.ts` — pure aggregation, takes `organizationId` as an explicit argument, knows nothing about sessions. One shared `WITH` prefix (`o` = orders in range with `f`/`booked` precomputed, `li` = their line items, `oagg` = per-order unit/position rollup) that every query builds on. ~18 grouped queries fired in two `Promise.all` batches.
+- `analytics.ts` (`"use server"`) — the session gate. It is the ONLY thing that decides which org may be read, and it takes that strictly from `session.session.activeOrganizationId`, never from caller input. Keeping the org scope an explicit parameter (rather than ambient request state) is what lets offline jobs reuse the exact same numbers.
+
+Product slices iterate `PRODUCT_ATTRIBUTE_KEYS` (`country_name` / `region` / `color` / `type` / `sugar`) — that tuple doubles as the SQL whitelist, so nothing user-supplied reaches a raw attribute lookup. Missing attributes bucket as «Не указано».
+
+`getSalesAnalytics({from, to})` returns ONE payload covering every tab, plus `previousTotals` for an equal-length preceding window (the KPI delta chips). `getAnalyticsBounds()` returns the org's first/last order date so the page can default its range to data that exists.
+
+### API (`src/app/api/analytics/route.ts`)
+
+`GET ?bounds=1` → `{ first, last }`; `GET ?from=&to=` → the full payload. Org scope never comes from the query string.
+
+### UI (`src/app/(protected)/analytics/page.tsx` + `src/components/blocks/analytics/`)
+
+Client page: range preset → fetch → six tabs (Обзор / Время / Продавцы / Клиенты / Заказы / Товары). Relative presets anchor to the LAST order in the org, not to today — a demo dataset sitting ahead of the wall clock would otherwise render every chart empty, which reads as a bug rather than as an empty filter. The resolved window is always printed under the heading.
+
+Tabs live one-per-file (`tab-overview.tsx`, `tab-time.tsx`, …) over two shared modules:
+- `analytics-primitives.tsx` — `StatTile` (value + period-over-period delta), `ChartCard`, `SliceTable`.
+- `analytics-charts.tsx` — the chart vocabulary (`TrendArea`, `PeriodBars`, `TrendLine`, `RankedBars`, `StackedPeriodBars`, `StackedTrend`, `ShareDonut`, `RadialGauge`, `StatusBars`, `StatusShareOverTime`, `ValueHistogram`, `ClientScatter`).
+
+### Charting rules baked into the components
+
+These are encoded once so every tab inherits them; changing them in one place changes the whole page.
+
+- **Never a dual axis.** Money and counts are switched via the `MetricToggle`, never plotted on two y-scales — an arbitrary alignment of two scales invents a correlation that isn't in the data.
+- **Palette** (`src/lib/analytics-format.ts`): the app's own `--chart-1..5` tokens are four blues + a salmon — fine for one or two series, but as a *categorical* set they collapse (three share a hue), so they can't carry an 8-way country or department breakdown. The page uses a validated 8-hue categorical order instead, re-checked against this app's real surfaces (light `--card` #ffffff, dark `--card` #2a3040): worst adjacent CVD ΔE 9.1 light / 8.4 dark, normal-vision ΔE 19.6 / 19.3. Both modes warn on contrast for the mid-lightness hues, which is why **every chart ships a legend and every tab carries a table of the same numbers** — that pairing is the required relief, not decoration.
+- **Status colors are reserved** (`STATUS_COLORS`) and never reused as a series hue. Ordered along the funnel because the CVD gates are checked on *adjacent* pairs. `draft` is intentionally a low-chroma neutral — gray IS the meaning ("nothing has happened yet"), the same exception a diverging scale's midpoint gets.
+- **Series keys are synthetic** (`s0`, `s1`, …) via `buildSeries()`. Real labels («Отдел 1», «СОЕДИНЕННОЕ КОРОЛЕВСТВО») can't name CSS custom properties — a space makes `--color-Отдел 1` invalid and the mark silently loses its fill. `remapStack()` rewrites pivoted data onto those keys. Use `buildSafeConfig()` only for keys that are already valid CSS idents (enum values like `off_trade`).
+- **Color follows the entity, in fixed slot order** — filtering never repaints the survivors, and hues are never cycled past 8: the tail folds into «Прочее» in neutral gray (`foldTail`).
+- **Form choices**: ranked bars are one hue for every bar (a value-ramp would double-encode bar length); donuts are capped at 6 slices; the radial is a **gauge for a single ratio only** — stacking categories as concentric rings makes arc length depend on radius, so an outer group always looks bigger than an equal inner one. Scatter compares all pairs of hues at once, so it caps at the three slots that clear the all-pairs gates.
+- `SliceTable` renders its own `<ChartStyle>` under a `data-chart` scope — the palette lives in CSS variables that `ChartContainer` normally scopes to a chart, so without it a table swatch's `var(--color-s0)` resolves to nothing.
+
+### Gotchas worth remembering
+
+- A `<Scatter>`'s legend entry resolves its config through the series' `name` prop; the default (`dataKey`) looks up the measure, which isn't a series, and the label renders **empty**. Pass `nameKey="name"`.
+- `<LabelList formatter>` receives recharts' `RenderableText` (`string | number | boolean | null | undefined`) — a `(v: number) => string` signature fails to typecheck under `strictFunctionTypes`.
+- `formatMoney` drops the decimal once the scaled number reaches three digits (`160 млн ₽`, not `160,0 млн ₽`) — the extra glyph pushes the tick past the y-axis gutter and recharts wraps it onto two lines.
+- Charts measure their container, so tab panels stay unmounted until selected; a hidden panel has zero width and would paint a collapsed chart on first show.
+
+### Demo data (`scripts/seed-analytics-demo.ts`)
+
+Seeds the IN4COM org (`1dNkC4rBtl9FEvnK95Svlfs63oSU57Ni`) with 10 employees (`employee01…10@in4comgroup.com`) carrying a `department`, `custom_fields.type` on clients that lack one, and 1000 orders across Jan–Jul 2026 (~70% `finalized`). Deterministic (fixed-seed PRNG) and precisely reversible: every generated row is id-prefixed (`demo-emp-` / `demo-mem-` / `demo-ord-` / `demo-oi-`) and every order is tagged `[demo-seed]`, so `--purge` removes exactly the fake data and never touches the org's real orders. Client `custom_fields.type` values are deliberately NOT reverted on purge — they're legitimate business data a human may have edited since.
