@@ -132,7 +132,7 @@ export type SalesAnalytics = {
 }
 
 // neon-http's db.execute resolves to `{ rows }`; normalise either shape.
-async function execRows<T>(query: SQL): Promise<T[]> {
+export async function execRows<T>(query: SQL): Promise<T[]> {
   const res = (await db.execute(query)) as unknown as { rows?: T[] } | T[]
   return (Array.isArray(res) ? res : (res.rows ?? [])) as T[]
 }
@@ -149,7 +149,7 @@ const BOOKED = sql.raw(
  *   li — line items of those orders, each carrying its parent's date/status so
  *        product slices can be filtered and bucketed without re-joining.
  */
-function withBase(organizationId: string, from: Date, to: Date): SQL {
+export function withBase(organizationId: string, from: Date, to: Date): SQL {
   return sql`
     with o as (
       select
@@ -173,8 +173,10 @@ function withBase(organizationId: string, from: Date, to: Date): SQL {
         oi.product_id,
         oi.quantity::int                        as quantity,
         (oi.position_price::float8 * o.f)       as net,
+        oi.position_price::float8               as gross,
         o.order_date,
         o.booked,
+        o.status                                as order_status,
         o.client_id,
         o.user_id
       from order_item oi

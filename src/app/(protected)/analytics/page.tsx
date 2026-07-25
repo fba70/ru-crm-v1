@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, RefreshCw } from "lucide-react"
+import { AlertCircle, RefreshCw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { TabOverview } from "@/components/blocks/analytics/tab-overview"
 import { TabTime } from "@/components/blocks/analytics/tab-time"
@@ -20,6 +21,22 @@ import { TabClients } from "@/components/blocks/analytics/tab-clients"
 import { TabOrders } from "@/components/blocks/analytics/tab-orders"
 import { TabProducts } from "@/components/blocks/analytics/tab-products"
 import type { SalesAnalytics } from "@/server/analytics"
+// Lazily loaded — and it MUST stay that way. The assistant pulls the whole chat
+// stack behind it (@ai-sdk/react, ai-elements, Streamdown → Shiki + mermaid +
+// katex). Imported eagerly it added ~1.6 GB to this page's dev compile, taking
+// the dev server past Node's ~4 GB heap ceiling, where it dies without an error
+// (it looks like the server "silently quits" right after the workflow-directive
+// pass). Behind `dynamic` the graph is only built when the tab is opened.
+const TabAssistant = dynamic(
+  () =>
+    import("@/components/blocks/analytics/tab-assistant").then(
+      (m) => m.TabAssistant,
+    ),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-125 w-full rounded-xl" />,
+  },
+)
 
 type Bounds = { first: string | null; last: string | null }
 
@@ -202,6 +219,10 @@ export default function AnalyticsPage() {
             <TabsTrigger value="clients">Клиенты</TabsTrigger>
             <TabsTrigger value="orders">Заказы</TabsTrigger>
             <TabsTrigger value="products">Товары</TabsTrigger>
+            <TabsTrigger value="assistant">
+              <Sparkles className="size-3.5" />
+              ИИ ассистент
+            </TabsTrigger>
           </TabsList>
 
           {/* Charts measure their container, so each panel stays mounted only
@@ -224,6 +245,11 @@ export default function AnalyticsPage() {
           </TabsContent>
           <TabsContent value="products">
             <TabProducts data={data} />
+          </TabsContent>
+          {/* The assistant runs its own queries against the same semantic model,
+              so it needs no payload and is unaffected by the range picker. */}
+          <TabsContent value="assistant">
+            <TabAssistant />
           </TabsContent>
         </Tabs>
       ) : null}
