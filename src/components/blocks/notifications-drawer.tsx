@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { Bell } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 type NotificationsDrawerProps = {
   compact?: boolean
@@ -26,7 +27,12 @@ export function NotificationsDrawer({ compact }: NotificationsDrawerProps) {
       <DrawerTrigger asChild>
         <Button
           variant="ghost"
-          className="flex flex-row gap-5 items-center justify-center"
+          className={cn(
+            // В свёрнутом сайдбаре — квадрат как у остальных пунктов (они
+            // получают size-8 от SidebarMenuButton, а этот триггер не обёрнут).
+            compact ? "size-8 p-0 justify-center" : "w-full justify-start p-2",
+            "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent dark:hover:text-sidebar-accent-foreground",
+          )}
           onClick={(e) => {
             e.currentTarget.blur()
           }}

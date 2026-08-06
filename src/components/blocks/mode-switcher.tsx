@@ -17,7 +17,7 @@ export function ModeSwitcher({ className }: { className?: string }) {
   return (
     <Button
       variant="ghost"
-      className={`group/toggle size-8 px-0 ${className}`}
+      className={`group/toggle w-full justify-start p-2 text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent dark:hover:text-sidebar-accent-foreground ${className}`}
       onClick={toggleTheme}
     >
       <SunIcon className="block dark:hidden mr-1" />
