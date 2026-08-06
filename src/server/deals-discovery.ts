@@ -704,6 +704,8 @@ export async function generateDeals(
             // `description` is deliberately left untouched.
             reasoning: output.reasoning.trim() || null,
             changes: output.changes.trim() || null,
+            // LLM-discovery — агентский перевод (бейдж «перевёл агент»).
+            lastMovedBy: "agent",
           })
           .where(eq(deal.id, matchedDealId))
 

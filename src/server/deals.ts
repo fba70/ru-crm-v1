@@ -25,6 +25,9 @@ export type DealRow = {
   description: string | null
   reasoning: string | null
   changes: string | null
+  // Who performed the last funnel-stage move: 'agent' | 'user'; null = never
+  // moved since the column landed. Drives the «перевёл агент» kanban badge.
+  lastMovedBy: string | null
   funnelStageId: string
   funnelStageName: string
   funnelStageProbability: number
@@ -317,6 +320,7 @@ export async function listDeals(
     description: r.deal.description,
     reasoning: r.deal.reasoning,
     changes: r.deal.changes,
+    lastMovedBy: r.deal.lastMovedBy,
     funnelStageId: r.deal.funnelStageId,
     funnelStageName: r.funnelStageName,
     funnelStageProbability: Number(r.funnelStageProbability),
@@ -369,6 +373,7 @@ export async function getDeal(dealId: string): Promise<DealRow | null> {
     description: r.deal.description,
     reasoning: r.deal.reasoning,
     changes: r.deal.changes,
+    lastMovedBy: r.deal.lastMovedBy,
     funnelStageId: r.deal.funnelStageId,
     funnelStageName: r.funnelStageName,
     funnelStageProbability: Number(r.funnelStageProbability),
@@ -547,7 +552,7 @@ export async function moveDealStage(
   dealId: string,
   funnelStageId: string,
   note: string | null,
-  opts?: { position?: string | null },
+  opts?: { position?: string | null; actor?: "agent" | "user" },
 ) {
   const { activeOrgId } = await requireOrgContext()
   await assertDealInOrg(dealId, activeOrgId)
@@ -557,12 +562,15 @@ export async function moveDealStage(
   const position = opts?.position
   // Всегда переписываем `changes` (заметка или null), чтобы при переводе без
   // заметки в provenance не оставался устаревший текст прошлого изменения.
+  // `lastMovedBy` помечает автора перевода: 'agent' (авто-применённое
+  // предложение) или 'user' (диалог переноса) — питает бейдж «перевёл агент».
   // `updatedAt` обновляется автоматически через $onUpdate в схеме.
   await db
     .update(deal)
     .set({
       funnelStageId,
       changes: trimmed || null,
+      lastMovedBy: opts?.actor ?? "user",
       ...(typeof position === "string" && position.length > 0
         ? { position }
         : {}),
@@ -659,8 +667,14 @@ export async function moveDeal(
   if (typeof data.position !== "string" || data.position.length === 0) {
     throw new Error("Invalid position")
   }
+  // Drag — всегда действие человека: сбрасывает метку агентского перевода
+  // (после ручного переноса агент снова вправе сделать один шаг по сделке).
   await db
     .update(deal)
-    .set({ funnelStageId: data.funnelStageId, position: data.position })
+    .set({
+      funnelStageId: data.funnelStageId,
+      position: data.position,
+      lastMovedBy: "user",
+    })
     .where(eq(deal.id, dealId))
 }

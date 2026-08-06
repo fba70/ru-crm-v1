@@ -1,5 +1,20 @@
-// TODO(backend): здесь должна быть ручка — предложения агента по переводу сделок. Сейчас детерминированный мок, см. deals-mock.ts
-import { NextRequest, NextResponse } from "next/server"
+// Агент действует сам: предложения перевода стадии НЕ ждут подтверждения —
+// GET (загрузка доски) сразу применяет каждое ожидающее предложение
+// (`moveDealStage` с actor:'agent'), пишет событие в ленту решений и помечает
+// сделку `lastMovedBy = 'agent'` (бейдж «перевёл агент» на карточке).
+// Пользователь «отменяет» агентский перевод просто перетащив карточку —
+// drag всегда разрешён и перезаписывает метку на 'user'.
+//
+// Гвард от «ползучести» мока: сделка с lastMovedBy === 'agent' пропускается —
+// агент делает максимум ОДИН непересмотренный шаг; после ручного переноса
+// (lastMovedBy = 'user') сделка снова становится eligible. Без гварда
+// перезапуск сервера (in-memory resolved-set очищается) двигал бы те же
+// сделки вперёд стадия за стадией.
+//
+// TODO(backend): генерация предложений — детерминированный мок
+// (см. deals-mock.ts): ~каждая 3-я активная сделка по хэшу id, НЕ реальные
+// сигналы из писем/TG. При реальном движке форма ответа сохраняется.
+import { NextResponse } from "next/server"
 import { listDealFunnelStages, moveDealStage } from "@/server/deals"
 import {
   requireMockOrg,
@@ -21,42 +36,9 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: message }, { status })
 }
 
-async function currentProposals() {
-  const { orgId } = await requireMockOrg()
-  const [deals, stages] = await Promise.all([
-    loadBoardDeals(),
-    listDealFunnelStages(),
-  ])
-  return {
-    orgId,
-    proposals: generateProposals(deals, stages, getResolvedProposals(orgId)),
-  }
-}
-
 export async function GET() {
   try {
-    const { proposals } = await currentProposals()
-    return NextResponse.json({ proposals })
-  } catch (error) {
-    return errorResponse(error)
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { id, action, reason } = body
-    if (action !== "accept" && action !== "reject") {
-      return NextResponse.json(
-        { error: "action must be accept or reject" },
-        { status: 400 },
-      )
-    }
-    if (!id) {
-      return NextResponse.json({ error: "id is required" }, { status: 400 })
-    }
-
-    const { orgId, userName } = await requireMockOrg()
+    const { orgId } = await requireMockOrg()
     const [deals, stages] = await Promise.all([
       loadBoardDeals(),
       listDealFunnelStages(),
@@ -66,42 +48,42 @@ export async function POST(request: NextRequest) {
       stages,
       getResolvedProposals(orgId),
     )
-    const p = proposals.find((x) => x.id === id)
-    if (!p) {
-      return NextResponse.json(
-        { error: "Proposal not found" },
-        { status: 404 },
-      )
+    const dealById = new Map(deals.map((d) => [d.id, d]))
+
+    let applied = 0
+    for (const p of proposals) {
+      // Один непересмотренный агентский шаг на сделку (см. шапку файла).
+      if (dealById.get(p.dealId)?.lastMovedBy === "agent") {
+        markProposalResolved(orgId, p.id)
+        continue
+      }
+      try {
+        await moveDealStage(p.dealId, p.toStageId, p.why || null, {
+          actor: "agent",
+        })
+        markProposalResolved(orgId, p.id)
+        appendFeedEvent(orgId, {
+          actor: "Агент",
+          isAI: true,
+          text:
+            "Агент перевёл {deal}: " +
+            p.fromLabel +
+            " → " +
+            p.toLabel +
+            (p.why ? " — " + p.why : "") +
+            ".",
+          dealName: p.dealName,
+        })
+        applied++
+      } catch {
+        // Одна неудача (гонка со скрытием сделки и т.п.) не валит остальные —
+        // предложение останется pending и применится на следующей загрузке.
+      }
     }
 
-    if (action === "accept") {
-      await moveDealStage(
-        p.dealId,
-        p.toStageId,
-        "Принято предложение агента" + (p.why ? ": " + p.why : ""),
-      )
-      markProposalResolved(orgId, id)
-      appendFeedEvent(orgId, {
-        actor: userName,
-        isAI: false,
-        text: "Принято предложение агента: {deal} → " + p.toLabel + ".",
-        dealName: p.dealName,
-      })
-    } else {
-      const r = typeof reason === "string" ? reason.trim() : ""
-      markProposalResolved(orgId, id, r || undefined)
-      appendFeedEvent(orgId, {
-        actor: userName,
-        isAI: false,
-        text:
-          "Отклонено предложение по {deal}" +
-          (r ? ": «" + r + "»" : "") +
-          ".",
-        dealName: p.dealName,
-      })
-    }
-
-    return NextResponse.json({ success: true })
+    // Контракт сохранён: доска по-прежнему читает { proposals }, но ожидающих
+    // больше не бывает — всё применено (applied — для отладки/тостов).
+    return NextResponse.json({ proposals: [], applied })
   } catch (error) {
     return errorResponse(error)
   }

@@ -26,6 +26,10 @@ export type BoardIntelData = {
   intel: Record<string, DealIntel>
   commitments: StageCommitments
   nextStepByDeal: Record<string, NextStep | null>
+  // Сколько переводов агент авто-применил в ЭТОМ фетче (/api/deals/proposals
+  // применяет предложения на лету). > 0 → доска должна подтянуть свежие
+  // стадии (router.refresh в deals-board); повторный фетч вернёт 0 — цикла нет.
+  appliedMoves: number
 }
 
 // Стабильная по ссылке заглушка данных — безопасна для первого рендера.
@@ -35,6 +39,7 @@ const EMPTY: BoardIntelData = {
   intel: {},
   commitments: {},
   nextStepByDeal: {},
+  appliedMoves: 0,
 }
 
 export function useBoardIntel(): {
@@ -69,7 +74,10 @@ export function useBoardIntel(): {
 
       const [proposalsJson, feedJson, intelJson, tasksJson] =
         await Promise.all([
-          proposalsRes.json() as Promise<{ proposals?: DealProposal[] }>,
+          proposalsRes.json() as Promise<{
+            proposals?: DealProposal[]
+            applied?: number
+          }>,
           feedRes.json() as Promise<{ events?: FeedEvent[] }>,
           intelRes.json() as Promise<{
             intel?: Record<string, DealIntel>
@@ -98,6 +106,7 @@ export function useBoardIntel(): {
         intel: intelJson.intel ?? {},
         commitments: intelJson.commitments ?? {},
         nextStepByDeal,
+        appliedMoves: proposalsJson.applied ?? 0,
       })
     } catch {
       // Мягкая деградация: сохраняем предыдущие данные, ничего не бросаем.

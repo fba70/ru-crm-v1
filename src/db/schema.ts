@@ -655,6 +655,15 @@ export const deal = pgTable(
     // Populated by `generateDeals`; surfaced on the deal card. No backfill.
     reasoning: text("reasoning"),
     changes: text("changes"),
+    // Who performed the LAST funnel-stage move: 'agent' (auto-applied agent
+    // proposal or LLM deal-discovery UPDATE_STAGE) | 'user' (kanban drag /
+    // move dialog) | null (never moved since this column landed). Drives the
+    // «перевёл агент» badge on the kanban card AND the idempotency guard for
+    // auto-applied proposals (the agent takes at most ONE unreviewed step per
+    // deal — a deal it already moved is skipped until a human moves it again).
+    // Added via scripts/add-deal-last-moved-by.ts (additive SQL, NOT
+    // `drizzle-kit push`).
+    lastMovedBy: text("last_moved_by"),
     // `restrict` rather than `cascade` / `set null`: stages and clients are
     // never hard-deleted in this app (soft-delete via flags). Restrict makes
     // an accidental hard-delete fail loudly instead of orphaning deals.
