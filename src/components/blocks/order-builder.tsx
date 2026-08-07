@@ -3,6 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -718,6 +728,10 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
     mode: SendMode
     email: string
   } | null>(null)
+  // Обязательное подтверждение отмены заказа (destructive-действие: статус →
+  // cancelled + отзыв клиентской ссылки). В create-режиме ничего не сохранено —
+  // там cancelOrder просто закрывает панель без подтверждения.
+  const [confirmCancel, setConfirmCancel] = useState(false)
 
   if (!builder.isActive) return null
 
@@ -997,7 +1011,11 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={builder.cancelOrder}
+                        onClick={() =>
+                          mode === "edit"
+                            ? setConfirmCancel(true)
+                            : builder.cancelOrder()
+                        }
                         disabled={saving}
                       >
                         <Ban className="h-4 w-4 mr-1" />
@@ -1030,7 +1048,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={builder.cancelOrder}
+                        onClick={() => setConfirmCancel(true)}
                         disabled={saving}
                       >
                         <Ban className="h-4 w-4 mr-1" />
@@ -1071,7 +1089,7 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={builder.cancelOrder}
+                        onClick={() => setConfirmCancel(true)}
                         disabled={saving}
                       >
                         <Ban className="h-4 w-4 mr-1" />
@@ -1151,6 +1169,32 @@ export function OrderBuilderPanel({ builder }: { builder: OrderBuilder }) {
           }}
         />
       )}
+
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить заказ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Заказ перейдёт в статус «Отменён»
+              {status === "awaiting_client"
+                ? ", активная ссылка для клиента будет отозвана"
+                : ""}
+              . Отменённый заказ можно будет снова открыть как черновик.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Не отменять</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmCancel(false)
+                builder.cancelOrder()
+              }}
+            >
+              Отменить заказ
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

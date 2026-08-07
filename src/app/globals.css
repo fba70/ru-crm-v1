@@ -57,7 +57,10 @@
 
 :root {
   --radius: 0.75rem;
-  /* Fiery Ocean · light: cream #FDF0D5 (lightened) + navy #003049 + blue #669BBC, red #C1121F strictly destructive */
+  /* Fiery Ocean · light · RED-PRIMARY: primary = #C1121F (btn-red лендинга),
+     destructive-кнопки переведены на outline (см. ui/button.tsx), чтобы не
+     конкурировать с заливным красным primary. Ring остаётся голубым #669BBC —
+     фокус не должен сливаться с aria-invalid (красным). */
   --background: oklch(0.98 0.013 85.35);
   --logo: oklch(0.665 0.0747 236.79);
   --foreground: oklch(0.2321 0.0465 230.39);
@@ -65,7 +68,7 @@
   --card-foreground: oklch(0.2321 0.0465 230.39);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2321 0.0465 230.39);
-  --primary: oklch(0.2938 0.0656 238.47);
+  --primary: oklch(0.5161 0.2019 25.94);
   --primary-foreground: oklch(0.9584 0.0381 85.35);
   --secondary: oklch(0.93 0.018 236.79);
   --secondary-foreground: oklch(0.2938 0.0656 238.47);
@@ -74,8 +77,10 @@
   --accent: oklch(0.9 0.035 236.79);
   --accent-foreground: oklch(0.2938 0.0656 238.47);
   --destructive: oklch(0.5161 0.2019 25.94);
-  --border: oklch(0.9 0.015 85.35);
-  --input: oklch(0.945 0.014 85.35);
+  /* --input = рамки полей/селектов/чекбоксов (border-input) — заметно темнее
+     фона и карточек, иначе контролы растворяются на крем-белом. */
+  --border: oklch(0.88 0.018 85.35);
+  --input: oklch(0.84 0.02 85.35);
   --ring: oklch(0.665 0.0747 236.79);
   --chart-1: oklch(0.665 0.0747 236.79);
   --chart-2: oklch(0.5161 0.2019 25.94);
@@ -84,7 +89,7 @@
   --chart-5: oklch(0.3596 0.1476 29.23);
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.2321 0.0465 230.39);
-  --sidebar-primary: oklch(0.2938 0.0656 238.47);
+  --sidebar-primary: oklch(0.5161 0.2019 25.94);
   --sidebar-primary-foreground: oklch(0.9584 0.0381 85.35);
   --sidebar-accent: oklch(0.9 0.035 236.79);
   --sidebar-accent-foreground: oklch(0.2938 0.0656 238.47);
@@ -119,25 +124,32 @@
 }
 
 .dark {
-  /* Fiery Ocean · dark = landing: ink #00212F bg, navy #003049 cards, cream #FDF0D5 text, cream primary с ink-текстом (btn-cream лендинга, 14.8:1) */
+  /* Fiery Ocean · dark · RED-PRIMARY = btn-red лендинга: ink #00212F bg,
+     navy-карточки, cream-текст, primary #C1121F с cream-текстом (5.5:1).
+     --destructive осветлён до салмон-красного: он теперь ЦВЕТ ТЕКСТА/рамки
+     outline-кнопок и ошибок (#C1121F текстом на ink не читается). */
   --background: oklch(0.2321 0.0465 230.39);
-  --logo: oklch(0.665 0.0747 236.79);
+  /* Логотип в тёмной теме — cream, как на лендинге. В светлой остаётся
+     голубой #669BBC: cream на белом сайдбаре невидим. */
+  --logo: oklch(0.9584 0.0381 85.35);
   --foreground: oklch(0.9584 0.0381 85.35);
   --card: oklch(0.2938 0.0656 238.47);
   --card-foreground: oklch(0.9584 0.0381 85.35);
   --popover: oklch(0.2738 0.0584 236.53);
   --popover-foreground: oklch(0.9584 0.0381 85.35);
-  --primary: oklch(0.9584 0.0381 85.35);
-  --primary-foreground: oklch(0.2321 0.0465 230.39);
+  --primary: oklch(0.5161 0.2019 25.94);
+  --primary-foreground: oklch(0.9584 0.0381 85.35);
   --secondary: oklch(0.3314 0.0736 238.71);
   --secondary-foreground: oklch(0.9584 0.0381 85.35);
   --muted: oklch(0.2738 0.0584 236.53);
   --muted-foreground: oklch(0.78 0.03 85.35);
   --accent: oklch(0.38 0.065 237);
   --accent-foreground: oklch(0.8015 0.0522 236.75);
-  --destructive: oklch(0.58 0.2 25.94);
-  --border: oklch(0.33 0.05 236);
-  --input: oklch(0.33 0.05 236);
+  --destructive: oklch(0.7 0.17 22);
+  /* Рамки полей должны читаться и на ink-фоне, и на navy-карточках
+     (аналог cream-25 бордеров формы на лендинге). */
+  --border: oklch(0.38 0.05 236);
+  --input: oklch(0.45 0.05 236);
   --ring: oklch(0.665 0.0747 236.79);
   --chart-1: oklch(0.665 0.0747 236.79);
   --chart-2: oklch(0.8015 0.0522 236.75);
@@ -146,8 +158,8 @@
   --chart-5: oklch(0.48 0.055 237);
   --sidebar: oklch(0.2738 0.0584 236.53);
   --sidebar-foreground: oklch(0.9584 0.0381 85.35);
-  --sidebar-primary: oklch(0.9584 0.0381 85.35);
-  --sidebar-primary-foreground: oklch(0.2321 0.0465 230.39);
+  --sidebar-primary: oklch(0.5161 0.2019 25.94);
+  --sidebar-primary-foreground: oklch(0.9584 0.0381 85.35);
   --sidebar-accent: oklch(0.38 0.065 237);
   --sidebar-accent-foreground: oklch(0.8015 0.0522 236.75);
   --sidebar-border: oklch(0.33 0.05 236);
@@ -191,6 +203,18 @@
 }
 
 /* --background: oklch(0.145 0 0); */
+
+/* Полное скрытие скроллбара (прокрутка остаётся) — для зон, где полоса
+   ломает визуал, например вертикальный скролл колонок канбана.
+   Нарочно ОБЫЧНЫЙ класс вне @layer, а не @utility: глобальный `* {
+   scrollbar-width: thin }` ниже тоже бесслойный, и слойная утилита ему
+   проигрывала бы по каскаду независимо от специфичности. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
 
 /* Скроллбары: прозрачный трек + тонкий «плавающий» thumb,
    чтобы не выглядели чужеродным элементом. */

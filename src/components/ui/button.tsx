@@ -10,8 +10,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // Red-primary: деструктив НЕ заливной (иначе неотличим от primary) —
+        // outline с красным текстом/рамкой; тяжесть действия несут иконка и
+        // обязательное подтверждение, а не заливка.
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "border border-destructive/50 bg-transparent text-destructive shadow-xs hover:bg-destructive/10 hover:border-destructive focus-visible:ring-destructive/20 dark:border-destructive/40 dark:hover:bg-destructive/15 dark:focus-visible:ring-destructive/40",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
