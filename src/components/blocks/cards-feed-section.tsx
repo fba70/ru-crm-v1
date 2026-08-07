@@ -244,16 +244,16 @@ export function CardsFeedSection() {
           Утренние карточки
         </CardTitle>
         <div className="flex items-center gap-2">
-          <MagicCardsButton onCardsGenerated={load} />
           <ExploreSourcesDialog
             onCardsGenerated={load}
             trigger={
-              <Button size="sm">
+              <Button size="sm" variant="outline">
                 <Sparkles className="h-4 w-4 mr-1" />
                 Исследовать источники
               </Button>
             }
           />
+          <MagicCardsButton onCardsGenerated={load} />
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

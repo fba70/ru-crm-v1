@@ -215,7 +215,7 @@ export function ClientEnrichControl({
         </div>
       ) : (
         pendingTotal > 0 && (
-          <Button size="sm" variant="default" onClick={runBatch}>
+          <Button size="sm" variant="outline" onClick={runBatch}>
             <Sparkles className="h-4 w-4 mr-1" />
             Обогатить клиентскую информацию ({pendingTotal})
           </Button>

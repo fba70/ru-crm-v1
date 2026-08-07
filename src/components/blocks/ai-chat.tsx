@@ -155,7 +155,8 @@ function validateFiles(files: FileUIPart[]): FileUIPart[] {
 
 export function AIChat({ className }: { className?: string }) {
   const [selectedModel, setSelectedModel] = useState(MODELS[1].key)
-  const [enableSearch, setEnableSearch] = useState(true)
+  // Веб-поиск по умолчанию выключен — включается вручную тумблером-глобусом.
+  const [enableSearch, setEnableSearch] = useState(false)
   // Internal-sources tool group (search + content fetch + panel render).
   // Mutually exclusive with `enableSearch` on Gemini — the built-in
   // google_search tool can't share a call with custom function tools.
@@ -259,7 +260,7 @@ export function AIChat({ className }: { className?: string }) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant={enableSources ? "default" : "ghost"}
+                  variant={enableSources ? "secondary" : "ghost"}
                   size="icon-sm"
                   onClick={handleToggleSources}
                 >
@@ -281,7 +282,7 @@ export function AIChat({ className }: { className?: string }) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant={enableSearch ? "default" : "ghost"}
+                    variant={enableSearch ? "secondary" : "ghost"}
                     size="icon-sm"
                     onClick={handleToggleSearch}
                   >
@@ -320,12 +321,10 @@ export function AIChat({ className }: { className?: string }) {
                       onSelect={() => {
                         setSelectedModel(model.key)
                         setModelSelectorOpen(false)
-                        if (model.provider === "google") {
-                          setEnableSearch(true)
-                          setEnableSources(false)
-                        } else {
-                          setEnableSearch(false)
-                        }
+                        // Веб-поиск выключен по умолчанию для всех моделей;
+                        // на Gemini он взаимоисключим с источниками, поэтому
+                        // включается только вручную.
+                        setEnableSearch(false)
                       }}
                     >
                       <ModelSelectorLogo
@@ -432,7 +431,7 @@ export function AIChat({ className }: { className?: string }) {
                 variant="ghost"
                 onTranscriptionChange={handleSpeechTranscription}
               />
-              <PromptInputSubmit status={status} onStop={stop} />
+              <PromptInputSubmit variant="ghost" status={status} onStop={stop} />
             </PromptInputTools>
           </PromptInput>
         </PromptInputProvider>
