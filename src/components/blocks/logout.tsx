@@ -1,14 +1,16 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
 import { LogOut } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
-import { useSidebar } from "@/components/ui/sidebar"
+import { SidebarMenuButton } from "@/components/ui/sidebar"
 
+// SidebarMenuButton с классами ссылок меню — как у «Уведомлений»: пункт
+// получает всю геометрию меню (w-full, h-8, сворачивание в size-8) из одного
+// источника. Подпись всегда в DOM — в свёрнутом виде её срезает CSS.
+// Рендерится напрямую в <SidebarMenuItem> (БЕЗ внешнего asChild-враппера).
 export function Logout() {
   const router = useRouter()
-  const { open } = useSidebar()
 
   const handleLogout = async () => {
     await authClient.signOut({
@@ -21,13 +23,12 @@ export function Logout() {
   }
 
   return (
-    <Button
-      variant="ghost"
-      className="w-full justify-start p-2 text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent dark:hover:text-sidebar-accent-foreground"
+    <SidebarMenuButton
       onClick={handleLogout}
+      className="flex items-center p-2 rounded-md cursor-pointer text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
     >
-      <LogOut size={24} className="mr-4 ml-0" />{" "}
-      {open && <span className="text-sm">Выйти</span>}
-    </Button>
+      <LogOut className="size-4 mr-2 shrink-0" />
+      <span className="text-sm">Выйти</span>
+    </SidebarMenuButton>
   )
 }

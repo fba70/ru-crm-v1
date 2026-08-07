@@ -12,33 +12,28 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
+import { SidebarMenuButton } from "@/components/ui/sidebar"
 import { Bell } from "lucide-react"
-import { cn } from "@/lib/utils"
 
-type NotificationsDrawerProps = {
-  compact?: boolean
-}
-
-export function NotificationsDrawer({ compact }: NotificationsDrawerProps) {
+export function NotificationsDrawer() {
   const [open, setOpen] = useState(false)
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
-        <Button
-          variant="ghost"
-          className={cn(
-            // В свёрнутом сайдбаре — квадрат как у остальных пунктов (они
-            // получают size-8 от SidebarMenuButton, а этот триггер не обёрнут).
-            compact ? "size-8 p-0 justify-center" : "w-full justify-start p-2",
-            "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent dark:hover:text-sidebar-accent-foreground",
-          )}
+        {/* SidebarMenuButton с классами ссылок меню — пункт идентичен
+            «Организации»/«Теме»/«Выйти» и сворачивается тем же механизмом. */}
+        <SidebarMenuButton
+          className="flex items-center p-2 rounded-md cursor-pointer text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
           onClick={(e) => {
             e.currentTarget.blur()
           }}
         >
-          <Bell /> {!compact && <span className="text-sm">Уведомления</span>}
-        </Button>
+          {/* Подпись всегда в DOM — в свёрнутом виде её срезает CSS
+              SidebarMenuButton, как у остальных пунктов (см. logout.tsx). */}
+          <Bell className="size-4 mr-2 shrink-0" />
+          <span className="text-sm">Уведомления</span>
+        </SidebarMenuButton>
       </DrawerTrigger>
       <DrawerContent className="mx-auto w-full max-w-4xl">
         <div className="">

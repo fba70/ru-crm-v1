@@ -5,8 +5,10 @@ import * as React from "react"
 import { MoonIcon, SunIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 
-import { Button } from "@/components/ui/button"
-
+// Обычный <button> с ТЕМИ ЖЕ классами, что у ссылок меню сайдбара
+// («Организация» и пр.) — НЕ shadcn <Button>: его собственные размеры/gap
+// конфликтовали с классами SidebarMenuButton и пункт «прыгал» при
+// сворачивании. Рендерится только внутри <SidebarMenuButton asChild>.
 export function ModeSwitcher({ className }: { className?: string }) {
   const { setTheme, resolvedTheme } = useTheme()
 
@@ -15,14 +17,14 @@ export function ModeSwitcher({ className }: { className?: string }) {
   }, [resolvedTheme, setTheme])
 
   return (
-    <Button
-      variant="ghost"
-      className={`group/toggle w-full justify-start p-2 text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent dark:hover:text-sidebar-accent-foreground ${className}`}
+    <button
+      type="button"
       onClick={toggleTheme}
+      className={`flex items-center p-2 rounded-md cursor-pointer text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground ${className ?? ""}`}
     >
-      <SunIcon className="block dark:hidden mr-1" />
-      <MoonIcon className="hidden dark:block mr-1" />
-      <span className="text-sm ml-2">Тема</span>
-    </Button>
+      <SunIcon className="size-4 mr-2 shrink-0 block dark:hidden" />
+      <MoonIcon className="size-4 mr-2 shrink-0 hidden dark:block" />
+      <span className="text-sm">Тема</span>
+    </button>
   )
 }

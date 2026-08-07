@@ -24,16 +24,13 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
-  useSidebar,
 } from "@/components/ui/sidebar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Logout } from "./logout"
 import { ModeSwitcher } from "./mode-switcher"
 import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
 import { BrandMark } from "./brand-mark"
-import { BrandLogo } from "./brand-logo"
 import Link from "next/link"
 import { NotificationsDrawer } from "./notifications-drawer"
 import type { getServerSession } from "@/lib/get-session"
@@ -95,7 +92,6 @@ export function AppSidebar({
   orgLogo?: string | null
 }) {
   const pathname = usePathname()
-  const { open } = useSidebar()
 
   const orgName = session.session.activeOrganizationName ?? null
   const userName = session.user.name
@@ -106,25 +102,26 @@ export function AppSidebar({
     <Sidebar className="flex flex-col h-screen" collapsible="icon">
       <SidebarContent className="flex-1">
         <SidebarHeader>
-          {open ? (
-            <div className="flex flex-row gap-3 items-center justify-between">
-              <BrandLogo
-                src="/sd-logo-long-title.svg"
-                className="h-6 w-[126px] text-logo"
-              />
-              <SidebarTrigger aria-label="Свернуть меню" className="cursor-pointer" />
-            </div>
-          ) : (
-            // Свёрнутое состояние: логотип, а при наведении на него проявляется
-            // кнопка разворота меню (логотип уходит в прозрачность).
-            <div className="group relative flex items-center justify-center">
-              <BrandMark className="size-6 rounded-xl transition-opacity group-hover:opacity-0" />
-              <SidebarTrigger
-                aria-label="Развернуть меню"
-                className="absolute cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
-              />
-            </div>
-          )}
+          {/* ЕДИНОЕ дерево для обоих состояний (переключение — только CSS по
+              group-data-[collapsible=icon]): ветвление по `open` размонтировало
+              знак и он «дёргался» при анимации сворачивания. h-7 фиксирует
+              высоту шапки (иначе 44px ↔ 40px и меню подпрыгивает). В свёрнутом
+              виде подпись схлопывается в w-0, знак центрируется, а триггер
+              становится оверлеем поверх знака и проявляется по ховеру. */}
+          <div className="group/logo relative flex h-7 items-center gap-2 overflow-hidden pl-1">
+            {/* НИКАКИХ классов, переключаемых по состоянию раскладки: pl-1
+                даёт знаку x=12 → центр 24px, верный и в развёрнутом, и в
+                свёрнутом (48px) виде — знак не двигается вовсе, подпись
+                плавно срезается overflow-hidden вместе с анимацией ширины. */}
+            <BrandMark className="size-6 rounded-xl shrink-0 transition-opacity group-data-[collapsible=icon]:group-hover/logo:opacity-0" />
+            <span className="min-w-0 flex-1 truncate text-base font-medium">
+              salesdaily
+            </span>
+            <SidebarTrigger
+              aria-label="Свернуть или развернуть меню"
+              className="shrink-0 cursor-pointer transition-opacity group-data-[collapsible=icon]:absolute group-data-[collapsible=icon]:inset-0 group-data-[collapsible=icon]:m-auto group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:group-hover/logo:opacity-100"
+            />
+          </div>
         </SidebarHeader>
 
         <SidebarGroup>
@@ -138,11 +135,13 @@ export function AppSidebar({
                       href={item.url}
                       className={`flex items-center p-2 rounded-md ${
                         pathname === item.url
-                          ? "bg-gray-200 dark:bg-gray-600 text-primary"
+                          ? "bg-gray-200 text-primary dark:bg-sidebar-accent dark:text-sidebar-accent-foreground"
                           : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
                       }`}
                     >
-                      <item.icon size={24} className="mr-2" />
+                      {/* Явный size-4: единый размер с кнопками (Button сам
+                          ужимает svg до 16px) — иначе иконки «гуляют». */}
+                      <item.icon className="size-4 mr-2 shrink-0" />
                       <span className="text-sm">{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -163,11 +162,11 @@ export function AppSidebar({
                 href={"/account"}
                 className={`flex items-center p-2 rounded-md ${
                   pathname === "/account"
-                    ? "bg-gray-200 dark:bg-gray-600 text-primary"
+                    ? "bg-gray-200 text-primary dark:bg-sidebar-accent dark:text-sidebar-accent-foreground"
                     : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
                 }`}
               >
-                <CircleUserRound size={24} className="mr-3 ml-1" />
+                <CircleUserRound className="size-4 mr-2 shrink-0" />
                 <span className="text-sm">Организация</span>
               </Link>
             </SidebarMenuButton>
@@ -179,11 +178,11 @@ export function AppSidebar({
                   href={"/settings"}
                   className={`flex items-center p-2 rounded-md ${
                     pathname === "/settings"
-                      ? "bg-gray-200 dark:bg-gray-600 text-primary"
+                      ? "bg-gray-200 text-primary dark:bg-sidebar-accent dark:text-sidebar-accent-foreground"
                       : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
                   }`}
                 >
-                  <ShieldCheck size={24} className="mr-3 ml-1" />
+                  <ShieldCheck className="size-4 mr-2 shrink-0" />
                   <span className="text-sm">Настройки</span>
                 </Link>
               </SidebarMenuButton>
@@ -191,36 +190,28 @@ export function AppSidebar({
           )}
 
           <SidebarMenuItem>
-            <NotificationsDrawer compact={!open} />
+            <NotificationsDrawer />
           </SidebarMenuItem>
 
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
-              <ModeSwitcher
-                className={cn(
-                  "flex items-center justify-start",
-                  !open ? "ml-1" : "",
-                )}
-              />
+              <ModeSwitcher />
             </SidebarMenuButton>
           </SidebarMenuItem>
 
           <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Logout />
-            </SidebarMenuButton>
+            <Logout />
           </SidebarMenuItem>
 
           <Separator className="my-1" />
           <SidebarMenuItem className="p-1">
             {orgName ? (
-              <div
-                className={cn(
-                  "flex items-center gap-3 pl-1",
-                  !open && "justify-center rounded-full",
-                )}
-              >
-                <Avatar className={cn("h-6 w-6", !open && "h-6 w-6")}>
+              // Текст всегда в DOM: в свёрнутом сайдбаре его срезает
+              // overflow-hidden (как у пунктов меню), а аватар центрируется
+              // паддингом — React-условие по `open` дёргало строку при
+              // анимации сворачивания.
+              <div className="flex items-center gap-3 overflow-hidden">
+                <Avatar className="h-6 w-6 shrink-0">
                   <AvatarImage
                     src={orgLogo ?? undefined}
                     alt={orgName ?? "Organization"}
@@ -233,11 +224,9 @@ export function AppSidebar({
                       .toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-                {open && (
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
-                    {orgName}
-                  </span>
-                )}
+                <span className="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                  {orgName}
+                </span>
               </div>
             ) : (
               <div className="flex items-center justify-center p-2">
@@ -249,13 +238,8 @@ export function AppSidebar({
           </SidebarMenuItem>
 
           <SidebarMenuItem className="p-1">
-            <div
-              className={cn(
-                "flex items-center gap-3 pl-1",
-                !open && "justify-center rounded-full",
-              )}
-            >
-              <Avatar className={cn("h-6 w-6", !open && "h-6 w-6")}>
+            <div className="flex items-center gap-3 overflow-hidden">
+              <Avatar className="h-6 w-6 shrink-0">
                 <AvatarImage
                   src={userImage ?? undefined}
                   alt={userName ?? "User"}
@@ -270,11 +254,9 @@ export function AppSidebar({
                     : "U"}
                 </AvatarFallback>
               </Avatar>
-              {open && (
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
-                  {userName}
-                </span>
-              )}
+              <span className="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                {userName}
+              </span>
             </div>
           </SidebarMenuItem>
         </SidebarMenu>
