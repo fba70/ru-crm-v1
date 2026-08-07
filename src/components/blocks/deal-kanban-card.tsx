@@ -51,6 +51,10 @@ function formatShortDate(iso: string): string {
 
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
 
+// Подсказка «нет след. шага» выключена, пока задачи не привязываются к сделкам
+// из UI — включить обратно, когда форма задачи получит селектор сделки.
+const SHOW_MISSING_NEXT_STEP = false
+
 // Заголовок: компания (клиент) сверху, продукт/проект (название сделки) — строкой
 // ниже. Если клиент не привязан, название сделки само становится заголовком.
 function DealTitle({ deal }: { deal: DealRow }) {
@@ -91,7 +95,6 @@ export function DealKanbanCard({
   onOpen,
   nextStep = null,
   intel,
-  hasProposal = false,
   intelLoaded = false,
 }: {
   deal: DealRow
@@ -101,18 +104,17 @@ export function DealKanbanCard({
   nextStep?: NextStep | null
   // Мок-интел по сделке (остывание/бейджи). undefined до загрузки.
   intel?: DealIntel
-  // На сделку есть активное предложение агента → карточка приглушена, drag off.
-  hasProposal?: boolean
   // Загружены ли данные доски (next-step/intel). До загрузки НЕ показываем
   // инвариант — иначе ложная «красная» вспышка на первом рендере.
   intelLoaded?: boolean
 }) {
-  // Неактивные (отменённые/удалённые) сделки и сделки с активным предложением
-  // НЕ перетаскиваются — перевод только для активных без предложения.
+  // Перетаскиваются ВСЕ активные сделки — человек вправе двигать как хочет
+  // (в т.ч. переигрывать агентские переводы). Заблокированы только
+  // отменённые/удалённые: их статус терминальный, перенос не имеет смысла.
   const isActive = deal.status === "active"
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.id,
-    disabled: !isActive || hasProposal,
+    disabled: !isActive,
   })
   // Карточка ещё и droppable — для точной вставки before/after в колонке
   // (collisionDetection в board.tsx предпочитает card-цели колоночной).
@@ -122,14 +124,13 @@ export function DealKanbanCard({
     data: { type: "card" as const, stageId: deal.funnelStageId, dealId: deal.id },
   })
 
-  // Инвариант: у активной сделки без предложения обязан быть следующий шаг.
-  // Показываем только после загрузки данных (иначе ложное срабатывание).
-  const invariantBroken = intelLoaded && isActive && !hasProposal && !nextStep
   const isStale = Boolean(intel?.isStale)
   const badges = intel?.badges ?? []
-  // Происхождение (reasoning/changes) на карточке НЕ показываем — детали
-  // раскрываются в дравере сделки.
-  const hasBadgeRow = badges.length > 0 || isStale || hasProposal
+  // Метка «перевёл агент»: последний перевод стадии сделал агент (авто-
+  // применённое предложение или LLM-discovery) и человек его ещё не
+  // пересматривал. Причина перевода (changes) — в поповере бейджа.
+  const movedByAgent = deal.lastMovedBy === "agent"
+  const hasBadgeRow = badges.length > 0 || isStale || movedByAgent
 
   return (
     <Card
@@ -141,10 +142,8 @@ export function DealKanbanCard({
       {...attributes}
       {...listeners}
       className={`group p-3 space-y-2 bg-card border-muted transition-colors hover:border-primary/40 hover:bg-accent/30 ${
-        isActive && !hasProposal ? "cursor-grab active:cursor-grabbing" : ""
-      } ${!isActive || hasProposal ? "opacity-60" : ""} ${
-        isDragging ? "opacity-40" : ""
-      } ${invariantBroken ? "border-destructive/50" : ""}`}
+        isActive ? "cursor-grab active:cursor-grabbing" : "opacity-60"
+      } ${isDragging ? "opacity-40" : ""}`}
       aria-label={`Открыть сделку: ${deal.clientName ?? deal.name}`}
       onClick={() => onOpen(deal)}
       onKeyDown={(e) => {
@@ -198,7 +197,10 @@ export function DealKanbanCard({
 
       <DealMetaLine deal={deal} />
 
-      {/* Следующий шаг (реальная ближайшая задача) или нарушенный инвариант. */}
+      {/* Следующий шаг = ближайшая открытая задача сделки. Подсказка об
+          отсутствии шага СКРЫТА (SHOW_MISSING_NEXT_STEP), пока задачу нельзя
+          привязать к сделке из UI (нет селектора сделки в форме задачи) —
+          иначе она горела бы на каждой карточке. */}
       {isActive &&
         (nextStep ? (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -207,10 +209,10 @@ export function DealKanbanCard({
               {nextStep.name} · {formatShortDate(nextStep.dueDate)}
             </span>
           </div>
-        ) : intelLoaded && !hasProposal ? (
+        ) : intelLoaded && SHOW_MISSING_NEXT_STEP ? (
           <div className="flex items-center gap-1.5 text-xs text-destructive">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            <span>нет следующего шага — нарушен инвариант</span>
+            <span>нет след. шага</span>
           </div>
         ) : null)}
 
@@ -271,14 +273,42 @@ export function DealKanbanCard({
               </PopoverContent>
             </Popover>
           )}
-          {hasProposal && (
-            <Badge
-              variant="secondary"
-              className="gap-1 bg-violet-500/15 text-violet-600 dark:text-violet-300"
-            >
-              <Sparkles className="h-3 w-3" />
-              предложен перевод →
-            </Badge>
+          {movedByAgent && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  onPointerDown={stop}
+                  onClick={stop}
+                  aria-label="Стадию перевёл агент"
+                >
+                  <Badge
+                    variant="secondary"
+                    className="gap-1 cursor-pointer bg-violet-500/15 text-violet-600 dark:text-violet-300"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    перевёл агент
+                  </Badge>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="w-72 text-sm space-y-2"
+                onClick={stop}
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Стадию перевёл агент
+                </div>
+                <div>
+                  {deal.changes ??
+                    deal.reasoning ??
+                    "Автоматический перевод по сигналу из источников."}
+                </div>
+                <div className="text-xs text-muted-foreground pt-1 border-t">
+                  Не согласны — просто перетащите карточку на нужную стадию.
+                </div>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
       )}

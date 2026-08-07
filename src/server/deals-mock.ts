@@ -213,13 +213,13 @@ function dealIntel(deal: DealRow): DealIntel {
   ) {
     badges.push({ kind: "auto", icon: "repeat", text: "авто-задача по правилу" })
   }
-  // lock-поля — у части сделок.
+  // lock-поля — у части сделок. Бейджи «сумма/стадия — вручную» пользователю
+  // НЕ показываем (важна сумма, а не её происхождение) — locks остаются под
+  // капотом как контракт для будущей защиты полей от перезаписи агентом.
   if (seed % 4 === 0 && deal.value) {
-    badges.push({ kind: "lock", icon: "lock", text: "сумма — вручную" })
     locks.push("amount")
   }
   if (seed % 5 === 0) {
-    badges.push({ kind: "lock", icon: "lock", text: "стадия — вручную" })
     locks.push("stage")
   }
 

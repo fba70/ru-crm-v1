@@ -1,7 +1,7 @@
 "use client"
 
 import { useDroppable } from "@dnd-kit/core"
-import { ArrowDownUp, PanelLeftClose, Flag } from "lucide-react"
+import { ArrowDownUp, PanelLeftClose } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -24,10 +24,9 @@ import {
   dealAmount,
 } from "@/lib/deal-board"
 import type { DealRow } from "@/app/api/deals/route"
-import type { DealIntel, DealProposal } from "@/server/deals-mock"
+import type { DealIntel } from "@/server/deals-mock"
 import type { NextStep } from "@/hooks/use-board-intel"
 import { DealKanbanCard } from "@/components/blocks/deal-kanban-card"
-import { DealProposalGhost } from "@/components/blocks/deal-proposal-ghost"
 import {
   SORT_LABEL,
   SORT_MODES,
@@ -36,40 +35,26 @@ import {
 } from "./store"
 
 // Гибрид: хром fba70 (дропдаун сортировки + кнопка сворачивания) поверх нашей
-// статистики стадии (count / сумма / взвеш. / коммитмент) и нашего контента
-// (ghost-предложения агента + DealKanbanCard). Колонка — droppable `col:<id>`
-// с data.stageId для card→column collision в board.tsx.
+// статистики стадии (count / сумма / взвеш.) и наших DealKanbanCard.
+// Колонка — droppable `col:<id>` с data.stageId для card→column collision
+// в board.tsx. Ghost-предложений агента больше нет — агент применяет переводы
+// сам (см. /api/deals/proposals), карточка несёт бейдж «перевёл агент».
 export function Column({
   column,
-  ghosts,
   intelById,
   nextStepByDeal,
-  dealsWithProposal,
-  commitments,
-  pending,
   intelLoaded,
-  hideDeals,
   onChanged,
   onOpen,
-  onAccept,
-  onReject,
   onCollapse,
   onSortChange,
 }: {
   column: BoardColumn
-  ghosts: DealProposal[]
   intelById: Record<string, DealIntel>
   nextStepByDeal: Record<string, NextStep | null>
-  dealsWithProposal: Set<string>
-  commitments: string[]
-  pending: boolean
   intelLoaded: boolean
-  // Режим «только предложения»: обычные карточки скрыты, видны только ghost.
-  hideDeals: boolean
   onChanged: () => void
   onOpen: (deal: DealRow) => void
-  onAccept: (id: string) => void
-  onReject: (id: string, reason: string) => void
   onCollapse: () => void
   onSortChange: (mode: SortMode) => void
 }) {
@@ -79,7 +64,6 @@ export function Column({
     data: { type: "column" as const, stageId: stage.id },
   })
   const colorClass = STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
-  const firstCommit = commitments[0]
 
   return (
     <div className="w-64 shrink-0 flex flex-col gap-2">
@@ -92,7 +76,7 @@ export function Column({
                 {Math.round(stage.closureProbability * 100)}%
               </span>
             </div>
-            <div className="text-xs opacity-80 mt-0.5">
+            <div className="truncate text-xs opacity-80 mt-0.5">
               {cards.length} ·{" "}
               {aggregateByCurrency(
                 cards.map((d) => ({
@@ -156,15 +140,6 @@ export function Column({
             </Tooltip>
           </div>
         </div>
-        {firstCommit && (
-          <div className="flex items-start gap-1.5 text-xs opacity-70 mt-1.5 pt-1.5 border-t border-black/5 dark:border-white/10">
-            <Flag className="h-3 w-3 mt-0.5 shrink-0" />
-            <span className="line-clamp-2">
-              {firstCommit.toLowerCase()}
-              {commitments.length > 1 ? ` +${commitments.length - 1}` : ""}
-            </span>
-          </div>
-        )}
       </div>
       <div
         ref={setNodeRef}
@@ -172,29 +147,17 @@ export function Column({
           isOver ? "outline outline-2 outline-dashed outline-primary" : ""
         }`}
       >
-        {ghosts.map((p) => (
-          <div key={p.id} data-proposal-ghost>
-            <DealProposalGhost
-              proposal={p}
-              pending={pending}
-              onAccept={onAccept}
-              onReject={onReject}
-            />
-          </div>
+        {cards.map((d) => (
+          <DealKanbanCard
+            key={d.id}
+            deal={d}
+            onChanged={onChanged}
+            onOpen={onOpen}
+            nextStep={nextStepByDeal[d.id] ?? null}
+            intel={intelById[d.id]}
+            intelLoaded={intelLoaded}
+          />
         ))}
-        {!hideDeals &&
-          cards.map((d) => (
-            <DealKanbanCard
-              key={d.id}
-              deal={d}
-              onChanged={onChanged}
-              onOpen={onOpen}
-              nextStep={nextStepByDeal[d.id] ?? null}
-              intel={intelById[d.id]}
-              hasProposal={dealsWithProposal.has(d.id)}
-              intelLoaded={intelLoaded}
-            />
-          ))}
       </div>
     </div>
   )

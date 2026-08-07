@@ -139,7 +139,7 @@ export function AppSidebar({
                       className={`flex items-center p-2 rounded-md ${
                         pathname === item.url
                           ? "bg-gray-200 dark:bg-gray-600 text-primary"
-                          : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-white"
+                          : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
                       }`}
                     >
                       <item.icon size={24} className="mr-2" />
@@ -164,7 +164,7 @@ export function AppSidebar({
                 className={`flex items-center p-2 rounded-md ${
                   pathname === "/account"
                     ? "bg-gray-200 dark:bg-gray-600 text-primary"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-white"
+                    : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <CircleUserRound size={24} className="mr-3 ml-1" />
@@ -180,7 +180,7 @@ export function AppSidebar({
                   className={`flex items-center p-2 rounded-md ${
                     pathname === "/settings"
                       ? "bg-gray-200 dark:bg-gray-600 text-primary"
-                      : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-white"
+                      : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
                   }`}
                 >
                   <ShieldCheck size={24} className="mr-3 ml-1" />

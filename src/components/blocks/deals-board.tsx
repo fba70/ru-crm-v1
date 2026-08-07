@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   DndContext,
@@ -33,7 +33,6 @@ import type {
   DealFunnelStageOption,
   DealClientOption,
 } from "@/app/api/deals/route"
-import type { DealProposal } from "@/server/deals-mock"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import {
   STAGE_COLOR,
@@ -95,9 +94,6 @@ export function DealsBoard({
   const [includeCancelled, setIncludeCancelled] = useState(false)
   const [includeDeleted, setIncludeDeleted] = useState(false)
   const [feedOpen, setFeedOpen] = useState(false)
-  // Тумблер «только предложения агента»: скрывает обычные карточки, оставляя
-  // на доске лишь ghost-предложения.
-  const [proposalsOnly, setProposalsOnly] = useState(false)
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   // Храним id открытой сделки, а объект выводим из живого `deals` — drawer
@@ -118,6 +114,18 @@ export function DealsBoard({
     router.refresh()
     refetchBoard()
   }
+
+  // Агент авто-применил переводы во время загрузки интела — подтягиваем свежие
+  // стадии сделок (сервер-компонент перечитает deals). Повторный фетч интела
+  // вернёт appliedMoves = 0 (гвард + resolved-set), так что цикла нет.
+  useEffect(() => {
+    if (board.appliedMoves > 0) {
+      toast(
+        `Агент перевёл сделки: ${board.appliedMoves} — помечены на карточках`,
+      )
+      router.refresh()
+    }
+  }, [board.appliedMoves, router])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -175,31 +183,6 @@ export function DealsBoard({
   const openCount = activeDeals.filter(
     (d) => !isTerminalStage(d.funnelStageName),
   ).length
-
-  // Предложения агента показываем только для видимых (после фильтров) сделок.
-  const visibleProposals = useMemo(() => {
-    const ids = new Set(boardDeals.map((d) => d.id))
-    return board.proposals.filter((p) => ids.has(p.dealId))
-  }, [board.proposals, boardDeals])
-
-  const proposalsByStage = useMemo(() => {
-    const map = new Map<string, DealProposal[]>()
-    for (const p of visibleProposals) {
-      const list = map.get(p.toStageId) ?? []
-      list.push(p)
-      map.set(p.toStageId, list)
-    }
-    return map
-  }, [visibleProposals])
-
-  const dealsWithProposal = useMemo(
-    () => new Set(visibleProposals.map((p) => p.dealId)),
-    [visibleProposals],
-  )
-
-  // Активен режим фильтра только если есть что показывать — иначе доска не
-  // «схлопывается» в пустоту (и кнопка авто-гаснет, когда предложений не стало).
-  const proposalsOnlyActive = proposalsOnly && visibleProposals.length > 0
 
   const activeDeal = activeId ? (store.dealById(activeId) ?? null) : null
 
@@ -352,55 +335,12 @@ export function DealsBoard({
     })
   }
 
-  function handleAccept(id: string) {
-    startTransition(async () => {
-      try {
-        const res = await fetch("/api/deals/proposals", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, action: "accept" }),
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Не удалось принять предложение")
-          return
-        }
-        toast.success("Предложение принято")
-        refresh()
-      } catch {
-        toast.error("Не удалось принять предложение")
-      }
-    })
-  }
-
-  function handleReject(id: string, reason: string) {
-    startTransition(async () => {
-      try {
-        const res = await fetch("/api/deals/proposals", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, action: "reject", reason }),
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Не удалось отклонить предложение")
-          return
-        }
-        toast("Предложение отклонено")
-        refetchBoard()
-      } catch {
-        toast.error("Не удалось отклонить предложение")
-      }
-    })
-  }
-
   function handleProposalsChip() {
-    // Тумблер: включаем режим «только предложения», повторный клик — выключаем.
-    if (!proposalsOnly && visibleProposals.length === 0) {
-      toast("Нет ожидающих предложений — агент применил всё, что мог, автоматически")
-      return
-    }
-    setProposalsOnly((v) => !v)
+    // Агент применяет переводы сам — ожидающих предложений не бывает.
+    // Кнопка стала информационной: объясняет модель и ведёт к следам агента.
+    toast(
+      "Агент применяет переводы сам — его шаги помечены бейджем «перевёл агент» на карточках и видны в ленте решений",
+    )
   }
 
   return (
@@ -433,22 +373,9 @@ export function DealsBoard({
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                size="sm"
-                variant={proposalsOnlyActive ? "default" : "outline"}
-                onClick={handleProposalsChip}
-                aria-pressed={proposalsOnlyActive}
-                className={
-                  !proposalsOnlyActive && visibleProposals.length > 0
-                    ? "border-violet-500/40 text-violet-600 dark:text-violet-300"
-                    : ""
-                }
-              >
+              <Button size="sm" variant="outline" onClick={handleProposalsChip}>
                 <Sparkles className="h-4 w-4 mr-1" />
                 Предложения агента
-                <span className="ml-1.5 inline-flex items-center justify-center rounded bg-violet-500/20 px-1.5 text-xs font-medium">
-                  {visibleProposals.length}
-                </span>
               </Button>
               <Button
                 size="sm"
@@ -549,7 +476,6 @@ export function DealsBoard({
             className="flex-1 min-h-0 flex gap-2 overflow-x-auto px-4 pb-4 items-start"
           >
             {store.columns.map((column) => {
-              const stageGhosts = proposalsByStage.get(column.stage.id) ?? []
               return store.collapsed[column.stage.id] ? (
                 <Rail
                   key={column.stage.id}
@@ -567,29 +493,22 @@ export function DealsBoard({
                 <Column
                   key={column.stage.id}
                   column={column}
-                  ghosts={stageGhosts}
                   intelById={board.intel}
                   nextStepByDeal={board.nextStepByDeal}
-                  dealsWithProposal={dealsWithProposal}
-                  commitments={board.commitments[column.stage.id] ?? []}
-                  pending={isPending}
                   intelLoaded={!boardLoading}
-                  hideDeals={proposalsOnlyActive}
                   onChanged={refresh}
                   onOpen={(d) => {
                     if (justDraggedRef.current) return
                     setOpenDealId(d.id)
                     setDrawerOpen(true)
                   }}
-                  onAccept={handleAccept}
-                  onReject={handleReject}
                   onCollapse={() => store.toggleCollapse(column.stage.id)}
                   onSortChange={(mode) => store.setSort(column.stage.id, mode)}
                 />
               )
             })}
 
-            {terminalStages.length > 0 && !proposalsOnlyActive && (
+            {terminalStages.length > 0 && (
               <div className="w-44 shrink-0 flex flex-col gap-2">
                 <div className="rounded-lg border p-2.5 bg-muted/40">
                   <div className="text-sm font-medium">Итоги</div>
