@@ -66,8 +66,12 @@ export function Column({
   const colorClass = STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
 
   return (
-    <div className="w-64 shrink-0 flex flex-col gap-2">
-      <div className={`rounded-lg border p-2.5 ${colorClass}`}>
+    // Резиновая ширина: колонки делят ряд поровну — доска заполняет страницу
+    // на широких экранах и вписывается в ширину панели на небольших. Ниже
+    // 11rem не сжимаются — далее скролл. min-h-0: колонка растянута по высоте
+    // контейнера, скроллится только её зона карточек (заголовок фиксирован).
+    <div className="min-w-44 flex-1 min-h-0 flex flex-col gap-2">
+      <div className={`shrink-0 rounded-lg border p-2.5 ${colorClass}`}>
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex items-baseline gap-2 text-sm font-medium">
@@ -143,7 +147,7 @@ export function Column({
       </div>
       <div
         ref={setNodeRef}
-        className={`flex flex-col gap-2 min-h-24 rounded-lg transition-colors ${
+        className={`flex flex-col gap-2 min-h-24 flex-1 overflow-y-auto scrollbar-none rounded-lg transition-colors ${
           isOver ? "outline outline-2 outline-dashed outline-primary" : ""
         }`}
       >

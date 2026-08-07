@@ -27,21 +27,19 @@ function DashboardContent() {
   const safeSpec = content?.spec ? sanitizeSpec(content.spec) : null
 
   return (
-    <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">
-        AI ОПЕРАЦИОННАЯ СИСТЕМА ДЛЯ БИЗНЕСА
-      </h1>
+    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
+      <h1 className="text-xl font-medium">AI операционная система для бизнеса</h1>
 
-      <div className="w-full max-w-7xl px-4">
+      <div className="w-full">
         <CardsFeedSection />
       </div>
 
       {/* Chat + Detail Panel area */}
-      <div className="w-full max-w-7xl h-[40vh] min-h-130 flex gap-4 px-4">
+      <div className="w-full h-[40vh] min-h-130 flex gap-4">
         {/* Chat column */}
         <div
           className={`flex-1 min-h-0 transition-all duration-300 ${
-            isOpen ? "max-w-[50%]" : "max-w-7xl mx-auto w-full"
+            isOpen ? "max-w-[50%]" : "w-full"
           }`}
         >
           <AIChat className="h-full" />

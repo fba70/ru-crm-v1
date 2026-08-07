@@ -88,10 +88,10 @@ export default function AccountPage() {
   }, [user?.id, orgKey])
 
   return (
-    <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">ЭККАУНТ</h1>
+    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
+      <h1 className="text-xl font-medium">Эккаунт</h1>
 
-      <div className="flex flex-row gap-6 items-stretch justify-center w-full max-w-5xl">
+      <div className="flex flex-row gap-6 items-stretch w-full">
         {user && (
           <Card className="w-1/2 flex flex-col">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
@@ -244,7 +244,7 @@ export default function AccountPage() {
 
       {memberRole === "owner" && organization && user && (
         <>
-          <Card className="w-full max-w-5xl">
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
                 Участники организации
@@ -258,7 +258,7 @@ export default function AccountPage() {
             </CardContent>
           </Card>
 
-          <Card className="w-full max-w-5xl">
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
                 Управление API-ключами — ТОЛЬКО ПРЕДПРОСМОТР
@@ -269,7 +269,7 @@ export default function AccountPage() {
             </CardContent>
           </Card>
 
-          <Card className="w-full max-w-5xl">
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
                 Баланс счёта — ТОЛЬКО ПРЕДПРОСМОТР
@@ -390,7 +390,7 @@ export default function AccountPage() {
             </CardContent>
           </Card>
 
-          <Card className="w-full max-w-5xl">
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
                 История покупок — ТОЛЬКО ПРЕДПРОСМОТР
@@ -401,7 +401,7 @@ export default function AccountPage() {
             </CardContent>
           </Card>
 
-          <Card className="w-full max-w-5xl">
+          <Card className="w-full">
             <CardHeader className="flex flex-row items-center gap-6 justify-start">
               <CardTitle className="text-xl font-medium">
                 История использования — ТОЛЬКО ПРЕДПРОСМОТР

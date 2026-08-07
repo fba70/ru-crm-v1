@@ -17,6 +17,7 @@ import {
   type CollisionDetection,
 } from "@dnd-kit/core"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -345,15 +346,12 @@ export function DealsBoard({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Обёртка центрирует доску и сжимается по ширине колонок; шапка
-          (растягивается по ширине этой обёртки) получает ту же ширину. */}
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-fit flex-col">
+      {/* Полная ширина, как у остальных страниц (стиль Аналитики). */}
+      <div className="flex h-full min-h-0 w-full flex-col">
         <div className="flex flex-col gap-3 p-4">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="flex items-baseline gap-4 flex-wrap">
-              <h1 className="text-lg font-semibold uppercase tracking-wide">
-                Сделки
-              </h1>
+              <h1 className="text-xl font-medium">Сделки</h1>
               <span className="text-sm text-muted-foreground">
                 взвешенный прогноз{" "}
                 <b className="text-foreground">
@@ -408,24 +406,16 @@ export function DealsBoard({
           </div>
 
           <div className="flex items-center gap-3 flex-wrap rounded-lg border bg-card shadow-sm p-3">
-            <div className="flex rounded-lg border overflow-hidden">
-              <Button
-                variant={filter === "all" ? "default" : "ghost"}
-                size="sm"
-                className="rounded-none"
-                onClick={() => setFilter("all")}
-              >
-                Все
-              </Button>
-              <Button
-                variant={filter === "mine" ? "default" : "ghost"}
-                size="sm"
-                className="rounded-none"
-                onClick={() => setFilter("mine")}
-              >
-                Мои
-              </Button>
-            </div>
+            {/* Сегментед-контрол Все/Мои (single-select, на базе Tabs). */}
+            <Tabs
+              value={filter}
+              onValueChange={(v) => setFilter(v as OwnerFilter)}
+            >
+              <TabsList>
+                <TabsTrigger value="all">Все</TabsTrigger>
+                <TabsTrigger value="mine">Мои</TabsTrigger>
+              </TabsList>
+            </Tabs>
             <Input
               placeholder="Поиск по названию или описанию…"
               value={query}
@@ -473,7 +463,11 @@ export function DealsBoard({
         >
           <div
             ref={boardScrollRef}
-            className="flex-1 min-h-0 flex gap-2 overflow-x-auto px-4 pb-4 items-start"
+            // Каждая колонка скроллится по вертикали НЕЗАВИСИМО (см. column.tsx:
+            // заголовок фиксирован, overflow-y на зоне карточек). Контейнер
+            // даёт только горизонтальный скролл; колонки растянуты по высоте
+            // (без items-start), чтобы зона скролла была во весь экран.
+            className="flex-1 min-h-0 flex gap-2 overflow-x-auto scrollbar-none px-4 pb-4"
           >
             {store.columns.map((column) => {
               return store.collapsed[column.stage.id] ? (
@@ -509,13 +503,14 @@ export function DealsBoard({
             })}
 
             {terminalStages.length > 0 && (
-              <div className="w-44 shrink-0 flex flex-col gap-2">
-                <div className="rounded-lg border p-2.5 bg-muted/40">
+              <div className="w-44 shrink-0 min-h-0 flex flex-col gap-2">
+                <div className="shrink-0 rounded-lg border p-2.5 bg-muted/40">
                   <div className="text-sm font-medium">Итоги</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     терминальные стадии
                   </div>
                 </div>
+                <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none flex flex-col gap-2">
                 {terminalStages.map((stage) => {
                   const items = activeDeals.filter(
                     (d) => d.funnelStageId === stage.id,
@@ -541,6 +536,7 @@ export function DealsBoard({
                     </div>
                   )
                 })}
+                </div>
               </div>
             )}
           </div>

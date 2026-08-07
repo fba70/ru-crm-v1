@@ -19,10 +19,10 @@ export default function RulesPage() {
   const isAdmin = session?.user?.role === "admin"
 
   return (
-    <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">ПРАВИЛА</h1>
+    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
+      <h1 className="text-xl font-medium">Правила</h1>
 
-      <Card className="w-full max-w-7xl">
+      <Card className="w-full">
         <CardHeader>
           <CardTitle className="text-xl font-medium">Системные правила</CardTitle>
         </CardHeader>
@@ -37,7 +37,7 @@ export default function RulesPage() {
         </CardContent>
       </Card>
 
-      <Card className="w-full max-w-7xl">
+      <Card className="w-full">
         <CardHeader>
           <CardTitle className="text-xl font-medium">Пользовательские правила</CardTitle>
         </CardHeader>

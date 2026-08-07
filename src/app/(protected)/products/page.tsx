@@ -879,10 +879,10 @@ export default function ProductsPage() {
   const rangeEnd = Math.min(page * pageSize, total)
 
   return (
-    <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">ЗАКАЗЫ & ПРОДУКТЫ</h1>
+    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
+      <h1 className="text-xl font-medium">Заказы & продукты</h1>
 
-      <div className="w-full max-w-7xl px-4">
+      <div className="w-full">
         <Tabs value={tab} onValueChange={setTab} className="w-full">
           {/* One "New order" entry point (both tabs). The dialog branches on
               whether a client request was pasted: empty → manual builder;

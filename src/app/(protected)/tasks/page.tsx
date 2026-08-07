@@ -274,26 +274,23 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">ЗАДАЧИ</h1>
+    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-medium">Задачи</h1>
+        <TaskEditDialog
+          mode="create"
+          onSuccess={refreshAll}
+          trigger={
+            <Button size="sm">
+              <Plus className="h-4 w-4 mr-1" />
+              Новая задача
+            </Button>
+          }
+        />
+      </div>
 
-      <Card className="w-full max-w-7xl">
-        <CardHeader>
-          <CardTitle>Задачи</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex justify-end mb-3">
-            <TaskEditDialog
-              mode="create"
-              onSuccess={refreshAll}
-              trigger={
-                <Button size="sm">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Новая задача
-                </Button>
-              }
-            />
-          </div>
+      {/* Канбан без внешнего Card-контейнера — заголовок страницы достаточен. */}
+      <div className="w-full">
 
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
             <Input
@@ -302,7 +299,7 @@ export default function TasksPage() {
               onChange={(e) => setNameFilter(e.target.value)}
             />
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full justify-center">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Тип" />
               </SelectTrigger>
               <SelectContent>
@@ -315,7 +312,7 @@ export default function TasksPage() {
               </SelectContent>
             </Select>
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-full justify-center">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Приоритет" />
               </SelectTrigger>
               <SelectContent>
@@ -328,7 +325,7 @@ export default function TasksPage() {
               </SelectContent>
             </Select>
             <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-              <SelectTrigger className="w-full justify-center">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Исполнитель" />
               </SelectTrigger>
               <SelectContent>
@@ -341,7 +338,7 @@ export default function TasksPage() {
               </SelectContent>
             </Select>
             <Select value={clientFilter} onValueChange={setClientFilter}>
-              <SelectTrigger className="w-full justify-center">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Клиент" />
               </SelectTrigger>
               <SelectContent>
@@ -354,7 +351,7 @@ export default function TasksPage() {
               </SelectContent>
             </Select>
             <Select value={contactFilter} onValueChange={setContactFilter}>
-              <SelectTrigger className="w-full justify-center">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Контакт" />
               </SelectTrigger>
               <SelectContent>
@@ -368,19 +365,18 @@ export default function TasksPage() {
             </Select>
           </div>
 
-          <div className="mb-3 flex items-center justify-between">
+          {/* min-h-8 = высота кнопки сброса: строка не прыгает, когда кнопка
+              появляется/исчезает вместе с активными фильтрами. */}
+          <div className="mb-3 flex min-h-8 items-center justify-between">
             <div className="text-xs text-muted-foreground">
               {filteredTasks.length} из {tasks.length} задач
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearFilters}
-              disabled={!hasActiveFilters}
-            >
-              <X className="h-4 w-4 mr-1" />
-              Сбросить фильтры
-            </Button>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="h-4 w-4 mr-1" />
+                Сбросить фильтры
+              </Button>
+            )}
           </div>
 
           {loading ? (
@@ -414,10 +410,9 @@ export default function TasksPage() {
               ))}
             </Tabs>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
-      <Card className="w-full max-w-7xl">
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>Хронология</CardTitle>
         </CardHeader>

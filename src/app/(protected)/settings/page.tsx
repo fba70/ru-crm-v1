@@ -34,10 +34,10 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">НАСТРОЙКИ СИСТЕМЫ</h1>
+    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
+      <h1 className="text-xl font-medium">Настройки системы</h1>
 
-      <div className="w-full max-w-7xl px-4">
+      <div className="w-full">
         <Tabs defaultValue="users" className="w-full">
           <TabsList>
             <TabsTrigger value="users">Пользователи</TabsTrigger>

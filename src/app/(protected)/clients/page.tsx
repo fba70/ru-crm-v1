@@ -294,29 +294,18 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">КЛИЕНТЫ & КОНТАКТЫ</h1>
+    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
+      <h1 className="text-xl font-medium">Клиенты & контакты</h1>
 
-      <div className="w-full max-w-7xl px-4 space-y-4">
-        {/* Shared toolbar for both sections */}
-        <div className="flex justify-end gap-2 flex-wrap">
-          <MagicDiscoverButton onApplied={refreshAll} />
-          <DiscoverDialog
-            onApplied={refreshAll}
-            canBlock={canBlock}
-            trigger={
-              <Button size="sm" variant="default">
-                <Sparkles className="h-4 w-4 mr-1" />
-                Найти в источниках
-              </Button>
-            }
-          />
-          <ClientEnrichControl refreshKey={clients.length} onChanged={refreshAll} />
+      <div className="w-full space-y-4">
+        {/* Shared toolbar for both sections: создание — слева, остальное —
+            справа. Единственная primary-кнопка страницы — Magic. */}
+        <div className="flex items-center gap-2 flex-wrap">
           <ClientEditDialog
             mode="create"
             onSuccess={refreshAll}
             trigger={
-              <Button size="sm">
+              <Button size="sm" variant="outline">
                 <Plus className="h-4 w-4 mr-1" />
                 Новый клиент
               </Button>
@@ -326,23 +315,40 @@ export default function ClientsPage() {
             mode="create"
             onSuccess={refreshAll}
             trigger={
-              <Button size="sm">
+              <Button size="sm" variant="outline">
                 <Plus className="h-4 w-4 mr-1" />
                 Новый контакт
               </Button>
             }
           />
-          {canBlock && (
-            <ClientBlocklistDialog
-              onChanged={refreshAll}
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            <DiscoverDialog
+              onApplied={refreshAll}
+              canBlock={canBlock}
               trigger={
                 <Button size="sm" variant="outline">
-                  <Ban className="h-4 w-4 mr-1" />
-                  Список блокировки
+                  <Sparkles className="h-4 w-4 mr-1" />
+                  Найти в источниках
                 </Button>
               }
             />
-          )}
+            <ClientEnrichControl
+              refreshKey={clients.length}
+              onChanged={refreshAll}
+            />
+            {canBlock && (
+              <ClientBlocklistDialog
+                onChanged={refreshAll}
+                trigger={
+                  <Button size="sm" variant="outline">
+                    <Ban className="h-4 w-4 mr-1" />
+                    Список блокировки
+                  </Button>
+                }
+              />
+            )}
+            <MagicDiscoverButton onApplied={refreshAll} />
+          </div>
         </div>
 
         <Card>
