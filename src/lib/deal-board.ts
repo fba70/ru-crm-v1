@@ -22,33 +22,26 @@ export const CURRENCY_SYMBOL: Record<string, string> = {
 
 // Цвета стадий — по английскому имени стадии. Кастомные стадии орги падают
 // в нейтральный default. (Перенесено из deal-card.tsx, чтобы не дублировать.)
-// Шкала стадий — СПЛОШНЫЕ цвета одного семейства (голубой #669BBC),
-// нарастающие к «Переговорам» (самый яркий = сам палитровый голубой).
-// Прозрачности убраны сознательно: alpha-полутона поверх крем-фона светлой
-// темы читались как РАЗНЫЕ оттенки, а не как возрастающая шкала.
-// Квалификация — нейтральная; Закрыта/Проиграна — зелёная/красная
-// (семантика исхода), тоже сплошные.
+// Шкала стадий — «драгоценные тона»: сплошные НАСЫЩЕННЫЕ средние тона
+// (пастель читалась «карандашным наброском»), прогрессия по hue к «горячему»:
+// teal → синий → фиолет → жжёный оранжевый. Оранжевый вместо красного
+// НАМЕРЕННО: красный #C1121F зарезервирован за primary-кнопками и не должен
+// бороться с заголовком стадии за внимание. Одни и те же цвета в обеих
+// темах, все пары текст/фон ≥4.5:1 (AA). Квалификация — насыщенный
+// нейтральный, Закрыта/Проиграна — сочные зелёная/тёмно-красная.
 export const STAGE_COLOR: Record<string, string> = {
-  Qualification:
-    "bg-[#ECE9E0] text-[#5D6B76] dark:bg-[#1C3242] dark:text-[#A8BCC9]",
-  Discovery:
-    "bg-[#DEEAF1] text-[#2F5D77] dark:bg-[#16394E] dark:text-[#9FC4DC]",
-  Pilot:
-    "bg-[#BFD7E4] text-[#24506B] dark:bg-[#1E4A63] dark:text-[#B8D4E6]",
-  Proposal:
-    "bg-[#94BDD3] text-[#0F3247] dark:bg-[#2E617F] dark:text-[#DCEAF2]",
-  // Светлая: фон углублён до #477899 ради светлого текста (белый = 4.76:1,
-  // AA) — тёмный текст на среднем синем выглядел мутно. Тёмная: сам #669BBC
-  // с ink-текстом (5.6:1).
-  Negotiations:
-    "bg-[#477899] text-white dark:bg-[#669BBC] dark:text-[#00212F]",
-  Closed:
-    "bg-[#D8EBDD] text-[#1F6B44] dark:bg-[#1D4230] dark:text-[#7FD0A3]",
-  Rejected:
-    "bg-[#F3D9DB] text-[#8E0E17] dark:bg-[#452028] dark:text-[#FF8F96]",
+  Qualification: "bg-[#5D7183] text-white",
+  Discovery: "bg-[#0E7490] text-white",
+  Pilot: "bg-[#2F6BBF] text-white",
+  Proposal: "bg-[#6D49B8] text-white",
+  Negotiations: "bg-[#C2410C] text-white",
+  Closed: "bg-[#1F7A4D] text-white",
+  // Графит вместо красного: «проиграна» — нейтральный факт, а не тревога;
+  // красный семейства primary тут только спорил бы за внимание. В тёмной
+  // теме тон чуть приподнят, иначе сливается с ink-фоном.
+  Rejected: "bg-[#242424] text-[#E7E5E4] dark:bg-[#3B3B40] dark:text-[#D6D6DA]",
 }
-export const STAGE_DEFAULT =
-  "bg-[#E9E7E2] text-[#5D6470] dark:bg-[#243845] dark:text-[#A8B6BF]"
+export const STAGE_DEFAULT = "bg-[#5D7183] text-white"
 
 export function formatAmount(
   value: string | null,
