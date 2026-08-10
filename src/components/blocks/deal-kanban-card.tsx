@@ -36,11 +36,12 @@ const BADGE_ICON: Record<string, LucideIcon> = {
   lock: Lock,
 }
 
-// В тёмной теме source-бейджи и «остывание» повторяют .mtag лендинга:
-// голубой blue-25 (#669BBC/25 + #9FC4DC) и красный warn (#C1121F/16 + #FF8F96).
+// Бейджи в ОБЕИХ темах — три оттенка палитры (по .mtag лендинга):
+// голубой = происхождение (TG/письмо), красный warn = внимание (остывание),
+// фиолетовый = действия агента. Никаких sky/amber вне палитры.
 const BADGE_CLASS: Record<IntelBadge["kind"], string> = {
   source:
-    "bg-sky-500/15 text-sky-600 dark:bg-[#669BBC]/25 dark:text-[#9FC4DC]",
+    "bg-[#669BBC]/20 text-[#2F5D77] dark:bg-[#669BBC]/25 dark:text-[#9FC4DC]",
   ai: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
   auto: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
   lock: "bg-muted text-muted-foreground",
@@ -245,7 +246,7 @@ export function DealKanbanCard({
                 >
                   <Badge
                     variant="secondary"
-                    className="gap-1 cursor-pointer bg-amber-500/15 text-amber-600 dark:bg-[#C1121F]/15 dark:text-[#FF8F96]"
+                    className="gap-1 cursor-pointer bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]"
                   >
                     <Clock className="h-3 w-3" />
                     {intel.staleDays} дн без активности

@@ -22,12 +22,19 @@ export const CURRENCY_SYMBOL: Record<string, string> = {
 
 // Цвета стадий — по английскому имени стадии. Кастомные стадии орги падают
 // в нейтральный default. (Перенесено из deal-card.tsx, чтобы не дублировать.)
+// «Тепловая» шкала из палитры Fiery Ocean вместо легаси-цветов Tailwind
+// (slate/blue/amber/orange/indigo — до ребрендинга): чем ближе стадия к
+// деньгам, тем плотнее/теплее тон. Квалификация — нейтральная, Потребности →
+// Пилот — голубой #669BBC нарастающей плотности, КП — navy (в тёмной теме —
+// самый плотный голубой: navy на ink не читается), Переговоры — тёплый
+// красный («горячо»). Закрыта/Проиграна оставлены зелёной/красной — это
+// семантика исхода, не бренд.
 export const STAGE_COLOR: Record<string, string> = {
   Qualification: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
-  Discovery: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
-  Pilot: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-  Proposal: "bg-orange-500/15 text-orange-600 dark:text-orange-300",
-  Negotiations: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-300",
+  Discovery: "bg-[#669BBC]/15 text-[#2F5D77] dark:bg-[#669BBC]/15 dark:text-[#9FC4DC]",
+  Pilot: "bg-[#669BBC]/30 text-[#24506B] dark:bg-[#669BBC]/25 dark:text-[#B8D4E6]",
+  Proposal: "bg-[#003049]/12 text-[#003049] dark:bg-[#669BBC]/40 dark:text-[#E6F0F6]",
+  Negotiations: "bg-[#C1121F]/12 text-[#8E0E17] dark:bg-[#C1121F]/25 dark:text-[#FF8F96]",
   Closed: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
   Rejected: "bg-red-500/15 text-red-600 dark:text-red-300",
 }
