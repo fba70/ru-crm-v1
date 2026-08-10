@@ -152,6 +152,19 @@ export function useBoardStore({
     [persistCollapsed],
   )
 
+  // Массовое сворачивание/разворачивание всех колонок (кнопка над доской).
+  const setAllCollapsed = useCallback(
+    (value: boolean) => {
+      setCollapsed(() => {
+        const next: Record<string, boolean> = {}
+        for (const s of stages) next[s.id] = value
+        persistCollapsed(next)
+        return next
+      })
+    },
+    [stages, persistCollapsed],
+  )
+
   const collapseStage = useCallback(
     (stageId: string) => {
       setCollapsed((prev) => {
@@ -298,6 +311,7 @@ export function useBoardStore({
     collapsed,
     toggleCollapse,
     expand,
+    setAllCollapsed,
     setSort,
     move,
     dealById,

@@ -27,7 +27,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Sparkles, ListTree } from "lucide-react"
+import {
+  Plus,
+  Sparkles,
+  ListTree,
+  ChevronsRightLeft,
+  ChevronsLeftRight,
+} from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { toast } from "sonner"
 import type {
   DealRow,
@@ -184,6 +196,12 @@ export function DealsBoard({
   const openCount = activeDeals.filter(
     (d) => !isTerminalStage(d.funnelStageName),
   ).length
+
+  // Все колонки доски свёрнуты → кнопка над доской переключается на
+  // «Развернуть все колонки».
+  const allCollapsed =
+    store.columns.length > 0 &&
+    store.columns.every((c) => store.collapsed[c.stage.id])
 
   const activeDeal = activeId ? (store.dealById(activeId) ?? null) : null
 
@@ -449,6 +467,34 @@ export function DealsBoard({
               />
               Удалённые
             </label>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="outline"
+                    className="ml-auto"
+                    aria-label={
+                      allCollapsed
+                        ? "Развернуть все колонки"
+                        : "Свернуть все колонки"
+                    }
+                    onClick={() => store.setAllCollapsed(!allCollapsed)}
+                  >
+                    {allCollapsed ? (
+                      <ChevronsLeftRight className="h-4 w-4" />
+                    ) : (
+                      <ChevronsRightLeft className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {allCollapsed
+                    ? "Развернуть все колонки"
+                    : "Свернуть все колонки"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
 

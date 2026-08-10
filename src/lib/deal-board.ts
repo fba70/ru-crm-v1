@@ -22,23 +22,33 @@ export const CURRENCY_SYMBOL: Record<string, string> = {
 
 // Цвета стадий — по английскому имени стадии. Кастомные стадии орги падают
 // в нейтральный default. (Перенесено из deal-card.tsx, чтобы не дублировать.)
-// «Тепловая» шкала из палитры Fiery Ocean вместо легаси-цветов Tailwind
-// (slate/blue/amber/orange/indigo — до ребрендинга): чем ближе стадия к
-// деньгам, тем плотнее/теплее тон. Квалификация — нейтральная, Потребности →
-// Пилот — голубой #669BBC нарастающей плотности, КП — navy (в тёмной теме —
-// самый плотный голубой: navy на ink не читается), Переговоры — тёплый
-// красный («горячо»). Закрыта/Проиграна оставлены зелёной/красной — это
-// семантика исхода, не бренд.
+// Шкала стадий — СПЛОШНЫЕ цвета одного семейства (голубой #669BBC),
+// нарастающие к «Переговорам» (самый яркий = сам палитровый голубой).
+// Прозрачности убраны сознательно: alpha-полутона поверх крем-фона светлой
+// темы читались как РАЗНЫЕ оттенки, а не как возрастающая шкала.
+// Квалификация — нейтральная; Закрыта/Проиграна — зелёная/красная
+// (семантика исхода), тоже сплошные.
 export const STAGE_COLOR: Record<string, string> = {
-  Qualification: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
-  Discovery: "bg-[#669BBC]/15 text-[#2F5D77] dark:bg-[#669BBC]/15 dark:text-[#9FC4DC]",
-  Pilot: "bg-[#669BBC]/30 text-[#24506B] dark:bg-[#669BBC]/25 dark:text-[#B8D4E6]",
-  Proposal: "bg-[#003049]/12 text-[#003049] dark:bg-[#669BBC]/40 dark:text-[#E6F0F6]",
-  Negotiations: "bg-[#C1121F]/12 text-[#8E0E17] dark:bg-[#C1121F]/25 dark:text-[#FF8F96]",
-  Closed: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  Rejected: "bg-red-500/15 text-red-600 dark:text-red-300",
+  Qualification:
+    "bg-[#ECE9E0] text-[#5D6B76] dark:bg-[#1C3242] dark:text-[#A8BCC9]",
+  Discovery:
+    "bg-[#DEEAF1] text-[#2F5D77] dark:bg-[#16394E] dark:text-[#9FC4DC]",
+  Pilot:
+    "bg-[#BFD7E4] text-[#24506B] dark:bg-[#1E4A63] dark:text-[#B8D4E6]",
+  Proposal:
+    "bg-[#94BDD3] text-[#0F3247] dark:bg-[#2E617F] dark:text-[#DCEAF2]",
+  // Светлая: фон углублён до #477899 ради светлого текста (белый = 4.76:1,
+  // AA) — тёмный текст на среднем синем выглядел мутно. Тёмная: сам #669BBC
+  // с ink-текстом (5.6:1).
+  Negotiations:
+    "bg-[#477899] text-white dark:bg-[#669BBC] dark:text-[#00212F]",
+  Closed:
+    "bg-[#D8EBDD] text-[#1F6B44] dark:bg-[#1D4230] dark:text-[#7FD0A3]",
+  Rejected:
+    "bg-[#F3D9DB] text-[#8E0E17] dark:bg-[#452028] dark:text-[#FF8F96]",
 }
-export const STAGE_DEFAULT = "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
+export const STAGE_DEFAULT =
+  "bg-[#E9E7E2] text-[#5D6470] dark:bg-[#243845] dark:text-[#A8B6BF]"
 
 export function formatAmount(
   value: string | null,
