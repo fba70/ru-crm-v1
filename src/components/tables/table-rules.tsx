@@ -14,6 +14,16 @@ import { Button } from "@/components/ui/button"
 import { Loader, RefreshCcw, Plus, Pencil, Eye, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import RuleEditDialog from "@/components/forms/form-rule-edit"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import type { RuleRow } from "@/app/api/rules/route"
 import type { RuleType } from "@/db/schema"
 
@@ -76,8 +86,13 @@ export function TableRules({
       )
     : rules
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Удалить это правило?")) return
+  // Правило, выбранное к удалению → открывает confirm-диалог (не window.confirm).
+  const [ruleToDelete, setRuleToDelete] = useState<RuleRow | null>(null)
+
+  const confirmDelete = async () => {
+    const id = ruleToDelete?.id
+    setRuleToDelete(null)
+    if (!id) return
     try {
       const res = await fetch(`/api/rules?id=${id}`, { method: "DELETE" })
       if (!res.ok) {
@@ -215,7 +230,7 @@ export function TableRules({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDelete(r.id)}
+                          onClick={() => setRuleToDelete(r)}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -228,6 +243,27 @@ export function TableRules({
           </TableBody>
         </Table>
       )}
+
+      <AlertDialog
+        open={ruleToDelete !== null}
+        onOpenChange={(open) => !open && setRuleToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить правило?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Правило{ruleToDelete ? ` «${ruleToDelete.name}»` : ""} будет
+              удалено безвозвратно. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
