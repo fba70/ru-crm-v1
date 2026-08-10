@@ -36,8 +36,11 @@ const BADGE_ICON: Record<string, LucideIcon> = {
   lock: Lock,
 }
 
+// В тёмной теме source-бейджи и «остывание» повторяют .mtag лендинга:
+// голубой blue-25 (#669BBC/25 + #9FC4DC) и красный warn (#C1121F/16 + #FF8F96).
 const BADGE_CLASS: Record<IntelBadge["kind"], string> = {
-  source: "bg-sky-500/15 text-sky-600 dark:text-sky-300",
+  source:
+    "bg-sky-500/15 text-sky-600 dark:bg-[#669BBC]/25 dark:text-[#9FC4DC]",
   ai: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
   auto: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
   lock: "bg-muted text-muted-foreground",
@@ -141,7 +144,7 @@ export function DealKanbanCard({
       data-deal-id={deal.id}
       {...attributes}
       {...listeners}
-      className={`group p-3 space-y-2 bg-card border-muted transition-colors hover:border-primary/40 hover:bg-accent/30 ${
+      className={`group p-3 space-y-2 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06] ${
         isActive ? "cursor-grab active:cursor-grabbing" : "opacity-60"
       } ${isDragging ? "opacity-40" : ""}`}
       aria-label={`Открыть сделку: ${deal.clientName ?? deal.name}`}
@@ -242,7 +245,7 @@ export function DealKanbanCard({
                 >
                   <Badge
                     variant="secondary"
-                    className="gap-1 cursor-pointer bg-amber-500/15 text-amber-600 dark:text-amber-300"
+                    className="gap-1 cursor-pointer bg-amber-500/15 text-amber-600 dark:bg-[#C1121F]/15 dark:text-[#FF8F96]"
                   >
                     <Clock className="h-3 w-3" />
                     {intel.staleDays} дн без активности

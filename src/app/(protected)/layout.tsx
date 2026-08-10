@@ -41,8 +41,12 @@ export default async function DashboardLayout({
     >
       <AppSidebar session={session} orgLogo={orgLogo} />
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex-1 overflow-auto">{children}</div>
+      <div className="relative flex-1 flex flex-col min-w-0">
+        {/* Атмосфера лендинга (сетка + свечения, globals.css) — фон всего
+            продукта. Лежит на колонке контента ВНЕ скролла, поэтому при
+            прокрутке страниц неподвижна, как fixed .sd-bg на лендинге. */}
+        <div className="sd-atmosphere" aria-hidden />
+        <div className="relative z-[1] flex-1 overflow-auto">{children}</div>
       </div>
     </SidebarProvider>
   )

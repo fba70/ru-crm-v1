@@ -121,6 +121,11 @@
     0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 8px 10px -1px hsl(0 0% 0% / 0.1);
   --shadow-2xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0em;
+  /* Атмосфера лендинга (сетка + свечения) — светлый эквивалент: navy-линии
+     на креме, свечения чуть плотнее, чтобы читались на светлом. */
+  --grid-line: rgba(0, 48, 73, 0.07);
+  --glow-blue: rgba(102, 155, 188, 0.16);
+  --glow-red: rgba(193, 18, 31, 0.06);
 }
 
 .dark {
@@ -190,6 +195,42 @@
   --shadow-xl:
     0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 8px 10px -1px hsl(0 0% 0% / 0.1);
   --shadow-2xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.25);
+  /* Атмосфера лендинга — точные значения .sd-bg (cream-08 сетка + свечения). */
+  --grid-line: rgba(253, 240, 213, 0.08);
+  --glow-blue: rgba(102, 155, 188, 0.14);
+  --glow-red: rgba(193, 18, 31, 0.1);
+}
+
+/* Атмосфера лендинга: полупрозрачная сетка (с радиальной маской сверху) +
+   два цветовых свечения. Слой кладётся absolute-подложкой под контент
+   (например, доска сделок), цвета — по теме через --grid-line/--glow-*. */
+.sd-atmosphere {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sd-atmosphere::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(
+    ellipse 90% 60% at 50% 0%,
+    #000 0%,
+    transparent 75%
+  );
+  opacity: 0.5;
+}
+.sd-atmosphere::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 55% 45% at 78% 8%, var(--glow-blue), transparent 60%),
+    radial-gradient(ellipse 40% 35% at 12% 20%, var(--glow-red), transparent 65%);
 }
 
 @layer base {

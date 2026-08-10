@@ -16,6 +16,7 @@ export default async function DealsPage() {
   const currentUserId = session?.user.id ?? ""
 
   return (
+    // Атмосферный фон приходит из (protected)/layout.tsx — общий для продукта.
     <div className="h-[calc(100vh-1rem)]">
       <DealsBoard
         deals={deals}
