@@ -46,29 +46,30 @@ export function Rail({
       >
         <ChevronRight className="h-4 w-4" />
       </Button>
-      {/* Всё прижато к верху, текст читается сверху вниз: без flex-1 и без
-          rotate(180deg) — они растягивали название на всю высоту и
-          «начинали» его от нижнего края. */}
-      {/* text-foreground явно: пилюля сама тёмная/светлая от --background,
-          а унаследованный цвет стадии (например ink на «Переговорах» в
-          тёмной теме) на ней не читается. */}
-      <span className="rounded-full bg-background/60 px-1.5 text-xs font-medium tabular-nums text-foreground">
-        {count}
-      </span>
+      {/* Всё боком (sideways-lr, читается СНИЗУ ВВЕРХ), единообразно с колонкой
+          «Закрытие». Порядок сверху вниз обратный порядку чтения: счётчик
+          (последний) сверху → сумма → название (первое) в самом низу. Счётчик
+          тоже боком, без прямой пилюли. */}
       <span
-        className="mt-0.5 text-sm font-medium"
-        style={{ writingMode: "vertical-rl" }}
+        className="text-xs font-semibold tabular-nums"
+        style={{ writingMode: "sideways-lr" }}
       >
-        {dealStageLabel(stage.name)}
+        {count}
       </span>
       {amount && (
         <span
           className="text-[11px] opacity-80 tabular-nums"
-          style={{ writingMode: "vertical-rl" }}
+          style={{ writingMode: "sideways-lr" }}
         >
           {amount}
         </span>
       )}
+      <span
+        className="text-sm font-medium"
+        style={{ writingMode: "sideways-lr" }}
+      >
+        {dealStageLabel(stage.name)}
+      </span>
     </div>
   )
 }

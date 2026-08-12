@@ -26,6 +26,8 @@ import {
   Lock,
   ChevronLeft,
   ChevronRight,
+  Trophy,
+  Trash2,
   type LucideIcon,
 } from "lucide-react"
 import type { DealRow } from "@/app/api/deals/route"
@@ -131,7 +133,15 @@ export function DealKanbanCard({
     data: { type: "card" as const, stageId: deal.funnelStageId, dealId: deal.id },
   })
 
-  const isStale = Boolean(intel?.isStale)
+  // Исход в финальной колонке: выиграна (Closed) / проиграна (Rejected). Только
+  // активные — отменённые/удалённые несут свои бейджи «Отменена»/«Удалена».
+  const isWon = isActive && deal.funnelStageName === "Closed"
+  const isLost = isActive && deal.funnelStageName === "Rejected"
+  const isTerminal = isWon || isLost
+
+  // Инсайты «остывание»/«риск» на закрытых карточках не показываем — сделка
+  // уже завершена, тревожные бейджи там бессмысленны.
+  const isStale = Boolean(intel?.isStale) && !isTerminal
   // На карточке НЕ показываем: бейдж происхождения (kind==='source', UX №9 —
   // он в подробностях) и мок-бейдж «авто-задача по правилу» (kind==='auto') —
   // он противоречил реальному блоку задач («Задач нет» рядом с «авто-задача»).
@@ -143,8 +153,18 @@ export function DealKanbanCard({
   // пересматривал. Причина перевода (changes) — в поповере бейджа.
   const movedByAgent = deal.lastMovedBy === "agent"
   // Инсайт «риск проигрыша» (UX №12, мок). isStale («долго висит») уже есть.
-  const atRisk = isActive && mockAtRisk(deal.id)
+  // На закрытых карточках риск не показываем (см. isStale выше).
+  const atRisk = isActive && !isTerminal && mockAtRisk(deal.id)
   const hasBadgeRow = badges.length > 0 || isStale || movedByAgent || atRisk
+
+  // Графитовый фон + светлый текст для «негативных» карточек: удалённые (trash)
+  // И проигранные (проиграно == отменено == активная Rejected) — все читаются
+  // единообразно тёмными. Выигранные и обычные — обычная светлая поверхность.
+  const isGraphite =
+    deal.status === "deleted" || deal.status === "cancelled" || isLost
+  const surfaceClass = isGraphite
+    ? "bg-[#26262b] text-zinc-100 border-[#3c3c43]"
+    : "bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06]"
 
   return (
     <Card
@@ -155,7 +175,7 @@ export function DealKanbanCard({
       data-deal-id={deal.id}
       {...attributes}
       {...listeners}
-      className={`group p-3 space-y-1 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06] ${
+      className={`group p-3 space-y-1 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] ${surfaceClass} ${
         isActive ? "cursor-grab active:cursor-grabbing" : "opacity-60"
       } ${isDragging ? "opacity-40" : ""}`}
       aria-label={`Открыть сделку: ${deal.clientName ?? deal.name}`}
@@ -192,19 +212,28 @@ export function DealKanbanCard({
         />
       </div>
 
-      {deal.status === "cancelled" && (
+      {isWon && (
         <Badge
           variant="secondary"
-          className="bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
+          className="gap-1 bg-[#1F7A4D]/15 text-[#1F7A4D] dark:text-[#5BD69A]"
         >
+          <Trophy className="h-3 w-3" />
+          Выиграно
+        </Badge>
+      )}
+      {isLost && (
+        <Badge variant="secondary" className="gap-1 bg-white/10 text-zinc-200">
+          <Trash2 className="h-3 w-3" />
+          Проиграно
+        </Badge>
+      )}
+      {deal.status === "cancelled" && (
+        <Badge variant="secondary" className="bg-white/10 text-zinc-200">
           Отменена
         </Badge>
       )}
       {deal.status === "deleted" && (
-        <Badge
-          variant="secondary"
-          className="bg-red-500/15 text-red-600 dark:text-red-300"
-        >
+        <Badge variant="secondary" className="bg-red-400/20 text-red-200">
           Удалена
         </Badge>
       )}

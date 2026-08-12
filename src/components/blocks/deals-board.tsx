@@ -64,10 +64,20 @@ import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
 import { DealDetailDrawer } from "@/components/blocks/deal-detail-drawer"
 import { DealDecisionFeed } from "@/components/blocks/deal-decision-feed"
 import { useBoardIntel } from "@/hooks/use-board-intel"
+import {
+  DealOutcomeDialog,
+  type PendingOutcome,
+} from "@/components/blocks/deal-outcome-dialog"
 import { computePosition } from "@/lib/kanban-move"
 import { Column } from "./deals-kanban/column"
 import { Rail } from "./deals-kanban/rail"
-import { useBoardStore, type SortMode } from "./deals-kanban/store"
+import { TerminalColumn, FINAL_DROP_ID } from "./deals-kanban/terminal-column"
+import {
+  useBoardStore,
+  sortTerminalCards,
+  type SortMode,
+  type TerminalSortMode,
+} from "./deals-kanban/store"
 
 type OverData = { type?: "card" | "column"; stageId?: string; dealId?: string }
 
@@ -174,37 +184,6 @@ function ClientMultiSelect({
   )
 }
 
-// Плашка результата в терминальной колонке (UX №5): цветной фон стадии,
-// подпись «Выиграно/Проиграно» + количество, и КРУПНО сумма — «за что боролись».
-// Одна строка результата внутри карточки «Итоги»: цветная точка + подпись,
-// количество и крупная сумма (UX №4/№5).
-function TerminalRow({
-  label,
-  dotClass,
-  deals,
-}: {
-  label: string
-  dotClass: string
-  deals: DealRow[]
-}) {
-  const sum = aggregateByCurrency(
-    deals.map((d) => ({ amount: dealAmount(d.value), currency: d.currency })),
-  )
-  return (
-    <div className="space-y-0.5">
-      <div className="flex items-center gap-1.5 text-sm">
-        <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-        <span className="font-medium">{label}</span>
-        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {deals.length}
-        </span>
-      </div>
-      <div className="pl-3.5 text-lg font-semibold tabular-nums">{sum}</div>
-    </div>
-  )
-}
-
-// Строка комбобокса клиента.
 export function DealsBoard({
   deals,
   stages,
@@ -228,6 +207,15 @@ export function DealsBoard({
   const [agentMovedOnly, setAgentMovedOnly] = useState(false)
   const [feedOpen, setFeedOpen] = useState(false)
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null)
+  // Диалог исхода при дропе в финальную колонку (Выиграно→Closed / Проиграно→
+  // Rejected). Отдельная сортировка финальной колонки (view-only).
+  const [pendingOutcome, setPendingOutcome] = useState<PendingOutcome | null>(
+    null,
+  )
+  const [finalSort, setFinalSort] = useState<TerminalSortMode>("default")
+  // Сворачивание финальной колонки (как у обычных, но её нет в store —
+  // держим отдельным флагом; учитывается в «Свернуть/Развернуть все»).
+  const [finalCollapsed, setFinalCollapsed] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   // Храним id открытой сделки, а объект выводим из живого `deals` — drawer
   // всегда показывает актуальные данные после refresh (редактирование, перевод
@@ -283,11 +271,11 @@ export function DealsBoard({
     () =>
       filtered.filter((d) => {
         if (d.status === "active") return true
-        // Карточки отменённых И удалённых по умолчанию скрыты, показываются
-        // вместе по чекбоксу «Удалённые» (UX №6). В сумму «Проиграно» отменённые
-        // входят всегда (см. lostDeals) — это статистика, а не карточки.
-        if (d.status === "cancelled" || d.status === "deleted")
-          return includeDeleted
+        // Отменённые = проиграно → показываются КАРТОЧКАМИ в финальной колонке
+        // «Закрытие» (см. terminalCards), а не в обычных колонках, поэтому счётчик
+        // «Проиграно» совпадает с числом карточек. В обычных колонках под
+        // чекбоксом «Удалённые» — только реально удалённые (trash).
+        if (d.status === "deleted") return includeDeleted
         return false
       }),
     [filtered, includeDeleted],
@@ -312,12 +300,27 @@ export function DealsBoard({
       ),
     [filtered],
   )
+  // Карточки финальной колонки = выигранные (active Closed) + ВСЕ проигранные
+  // (active Rejected + отменённые), в выбранной сортировке (view-only). Совпадает
+  // с множествами статистики (wonDeals/lostDeals) → счётчики = число карточек.
+  const terminalCards = useMemo(
+    () => sortTerminalCards([...wonDeals, ...lostDeals], finalSort),
+    [wonDeals, lostDeals, finalSort],
+  )
 
   const flowStages = useMemo(
     () => stages.filter((s) => !isTerminalStage(s.name)),
     [stages],
   )
   const terminalStages = stages.filter((s) => isTerminalStage(s.name))
+  const closedStage = useMemo(
+    () => stages.find((s) => s.name === "Closed") ?? null,
+    [stages],
+  )
+  const rejectedStage = useMemo(
+    () => stages.find((s) => s.name === "Rejected") ?? null,
+    [stages],
+  )
 
   // Store: группировка по стадиям, per-column сортировка, сворачивание,
   // оптимистичный reorder внутри колонки (moveOnly+position без диалога).
@@ -336,11 +339,18 @@ export function DealsBoard({
     (d) => !isTerminalStage(d.funnelStageName),
   ).length
 
-  // Все колонки доски свёрнуты → кнопка над доской переключается на
-  // «Развернуть все колонки».
+  // Все колонки доски свёрнуты (включая финальную) → кнопка над доской
+  // переключается на «Развернуть все колонки».
   const allCollapsed =
     store.columns.length > 0 &&
-    store.columns.every((c) => store.collapsed[c.stage.id])
+    store.columns.every((c) => store.collapsed[c.stage.id]) &&
+    (terminalStages.length === 0 || finalCollapsed)
+
+  // «Свернуть/развернуть все» — и обычные колонки (store), и финальную.
+  const setAllCollapsed = (value: boolean) => {
+    store.setAllCollapsed(value)
+    setFinalCollapsed(value)
+  }
 
   const activeDeal = activeId ? (store.dealById(activeId) ?? null) : null
 
@@ -394,6 +404,31 @@ export function DealsBoard({
     const moving = boardDeals.find((d) => d.id === dealId)
     if (!moving) return
     const fromStageId = moving.funnelStageId
+    const toStage = stages.find((s) => s.id === toStageId)
+
+    // Дроп в финальную колонку (пустая зона = sentinel `__final__`) ИЛИ на
+    // терминальную карточку (реальный id стадии Closed/Rejected) → диалог исхода:
+    // Выиграно → Closed, Проиграно → Rejected (см. confirmOutcome).
+    if (toStageId === FINAL_DROP_ID || (toStage && isTerminalStage(toStage.name))) {
+      if (moving.status !== "active") return // отменённые/удалённые не трогаем
+      // Брошено на карточку той же терминальной стадии — переупорядочивания в
+      // финальной колонке нет, диалог не дёргаем.
+      if (
+        toStage &&
+        isTerminalStage(toStage.name) &&
+        moving.funnelStageId === toStageId
+      )
+        return
+      // Дроп на свёрнутый рельс — разворачиваем, чтобы результат был виден.
+      if (finalCollapsed) setFinalCollapsed(false)
+      const fromStage = stages.find((s) => s.id === fromStageId)
+      setPendingOutcome({
+        dealId: moving.id,
+        dealName: moving.name,
+        fromLabel: dealStageLabel(fromStage?.name ?? ""),
+      })
+      return
+    }
 
     // Перемещение ВНУТРИ колонки (стадия не меняется) → оптимистичный reorder,
     // без диалога (механика fba70).
@@ -427,13 +462,8 @@ export function DealsBoard({
       return
     }
 
-    // Смена стадии → наш диалог с заметкой (ours приоритетнее).
-    const toStage = stages.find((s) => s.id === toStageId)
+    // Смена стадии (нетерминальная цель) → наш диалог с заметкой-основанием.
     if (!toStage) return
-    if (isTerminalStage(toStage.name)) {
-      toast("Терминальные стадии защищены — закрытие через карточку сделки")
-      return
-    }
     if (store.collapsed[toStageId]) store.expand(toStageId)
     const fromStage = stages.find((s) => s.id === fromStageId)
     setPendingMove({
@@ -489,6 +519,60 @@ export function DealsBoard({
         refresh()
       } catch {
         toast.error("Не удалось перевести сделку")
+      }
+    })
+  }
+
+  // Подтверждение исхода из диалога финальной колонки: Выиграно → Closed,
+  // Проиграно → Rejected. Идёт по тому же move-пути (moveDealStage, actor='user'
+  // + запись в ленту решений), append в конец целевой терминальной стадии.
+  function confirmOutcome(result: "won" | "lost", note: string) {
+    if (!pendingOutcome) return
+    const stage = result === "won" ? closedStage : rejectedStage
+    if (!stage) {
+      toast.error("Терминальная стадия не найдена в воронке")
+      return
+    }
+    const outcome = pendingOutcome
+    const targetCards = boardDeals.filter(
+      (d) => d.funnelStageId === stage.id && d.id !== outcome.dealId,
+    )
+    const lastKeyed =
+      targetCards
+        .map((d) => d.position)
+        .filter((p): p is string => Boolean(p))
+        .sort()
+        .at(-1) ?? null
+    let position: string | null = null
+    try {
+      position = computePosition(lastKeyed, null)
+    } catch {
+      position = null
+    }
+    const label = result === "won" ? "Выиграно" : "Проиграно"
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/deals", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: outcome.dealId,
+            move: true,
+            funnelStageId: stage.id,
+            note,
+            position,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          toast.error(err.error || "Не удалось закрыть сделку")
+          return
+        }
+        toast.success(`Сделка закрыта: ${label}`)
+        setPendingOutcome(null)
+        refresh()
+      } catch {
+        toast.error("Не удалось закрыть сделку")
       }
     })
   }
@@ -607,7 +691,7 @@ export function DealsBoard({
                         ? "Развернуть все колонки"
                         : "Свернуть все колонки"
                     }
-                    onClick={() => store.setAllCollapsed(!allCollapsed)}
+                    onClick={() => setAllCollapsed(!allCollapsed)}
                   >
                     {allCollapsed ? (
                       <ChevronsLeftRight className="h-4 w-4" />
@@ -677,28 +761,28 @@ export function DealsBoard({
             })}
 
             {terminalStages.length > 0 && (
-              // ОДНА итоговая карточка (UX №4/№5): внутри две строки
-              // «Выиграно»/«Проиграно», по каждой количество + сумма.
-              <div className="w-52 shrink-0">
-                <div className="rounded-lg border p-3 space-y-3">
-                  <div>
-                    <div className="text-sm font-medium">Итоги</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      результат по воронке
-                    </div>
-                  </div>
-                  <TerminalRow
-                    label="Выиграно"
-                    dotClass="bg-[#1F7A4D]"
-                    deals={wonDeals}
-                  />
-                  <TerminalRow
-                    label="Проиграно"
-                    dotClass="bg-[#8F0D16]"
-                    deals={lostDeals}
-                  />
-                </div>
-              </div>
+              // Финальная колонка «Закрытие» — теперь полноценная колонка: drop-цель
+              // для закрытия сделок (диалог исхода), статистика Выиграно/Проиграно
+              // в заголовке, карточки в теле, свой набор сортировок.
+              <TerminalColumn
+                cards={terminalCards}
+                wonDeals={wonDeals}
+                lostDeals={lostDeals}
+                mode={finalSort}
+                onSortChange={setFinalSort}
+                collapsed={finalCollapsed}
+                onCollapse={() => setFinalCollapsed(true)}
+                onExpand={() => setFinalCollapsed(false)}
+                intelById={board.intel}
+                tasksByDeal={board.tasksByDeal}
+                intelLoaded={!boardLoading}
+                onChanged={refresh}
+                onOpen={(d) => {
+                  if (justDraggedRef.current) return
+                  setOpenDealId(d.id)
+                  setDrawerOpen(true)
+                }}
+              />
             )}
           </div>
 
@@ -716,6 +800,12 @@ export function DealsBoard({
         }
         onConfirm={confirmMove}
         onCancel={() => setPendingMove(null)}
+      />
+      <DealOutcomeDialog
+        outcome={pendingOutcome}
+        pending={isPending}
+        onConfirm={confirmOutcome}
+        onCancel={() => setPendingOutcome(null)}
       />
       <DealDetailDrawer
         deal={openDeal}

@@ -25,6 +25,35 @@ export const SORT_LABEL: Record<SortMode, string> = {
   oldest: "Сначала старые",
 }
 
+// Терминальная колонка «Закрытие» объединяет ДВА исхода (Closed + Rejected), поэтому
+// у неё свой набор сортировок — с группировкой по исходу. Ручной порядок тут не
+// поддерживается (две стадии в одной колонке — `position` не пишется), сортировка
+// целиком view-only.
+export type TerminalSortMode =
+  | "default"
+  | "won"
+  | "lost"
+  | "value"
+  | "newest"
+  | "oldest"
+
+export const TERMINAL_SORT_MODES: TerminalSortMode[] = [
+  "default",
+  "won",
+  "lost",
+  "value",
+  "newest",
+  "oldest",
+]
+export const TERMINAL_SORT_LABEL: Record<TerminalSortMode, string> = {
+  default: "По умолчанию",
+  won: "Сначала выигранные",
+  lost: "Сначала проигранные",
+  value: "По сумме",
+  newest: "Сначала новые",
+  oldest: "Сначала старые",
+}
+
 // МОК приоритета агента (UX №3). Реальная логика — на бэке (agent priority
 // score из сигналов: застой, риск, нет следующего шага, внешние события).
 // Пока детерминированный прокси: сделки, которые агент недавно тронул
@@ -90,6 +119,48 @@ function sortCards(cards: DealRow[], mode: SortMode): DealRow[] {
     case "manual":
     default:
       return copy.sort(compareManual)
+  }
+}
+
+// Исход карточки в терминальной колонке: выиграна (Closed) vs проиграна (прочее).
+function isWonDeal(d: DealRow): boolean {
+  return d.status === "active" && d.funnelStageName === "Closed"
+}
+
+// Сортировка карточек финальной колонки. «По умолчанию» — по свежести; «won/lost»
+// группируют по исходу (выигранные/проигранные наверх), внутри группы — свежесть.
+export function sortTerminalCards(
+  cards: DealRow[],
+  mode: TerminalSortMode,
+): DealRow[] {
+  const copy = [...cards]
+  const byRecent = (a: DealRow, b: DealRow) =>
+    b.updatedAt.localeCompare(a.updatedAt)
+  switch (mode) {
+    case "won":
+      return copy.sort(
+        (a, b) => Number(isWonDeal(b)) - Number(isWonDeal(a)) || byRecent(a, b),
+      )
+    case "lost":
+      return copy.sort(
+        (a, b) => Number(isWonDeal(a)) - Number(isWonDeal(b)) || byRecent(a, b),
+      )
+    case "value":
+      return copy.sort((a, b) => {
+        const av = numVal(a.value)
+        const bv = numVal(b.value)
+        if (av === null && bv === null) return byRecent(a, b)
+        if (av === null) return 1
+        if (bv === null) return -1
+        return bv - av
+      })
+    case "newest":
+      return copy.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    case "oldest":
+      return copy.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    case "default":
+    default:
+      return copy.sort(byRecent)
   }
 }
 
