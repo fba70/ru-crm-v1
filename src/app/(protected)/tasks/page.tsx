@@ -70,6 +70,7 @@ const PRIORITY_LABELS: Record<TaskPriority, string> = {
 }
 
 const ALL = "__all__"
+const NO_DEAL = "__none__" // «Без сделки» в фильтре (пустое value ломает Radix)
 
 function usePaged<T>(items: T[]) {
   const [page, setPage] = useState(1)
@@ -182,6 +183,9 @@ export default function TasksPage() {
   const [members, setMembers] = useState<OrgMemberOption[]>([])
   const [clientOptions, setClientOptions] = useState<TaskClientOption[]>([])
   const [contactOptions, setContactOptions] = useState<TaskContactOption[]>([])
+  const [dealOptions, setDealOptions] = useState<
+    { id: string; name: string; clientName: string | null }[]
+  >([])
 
   const [nameFilter, setNameFilter] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>(ALL)
@@ -189,6 +193,7 @@ export default function TasksPage() {
   const [assigneeFilter, setAssigneeFilter] = useState<string>(ALL)
   const [clientFilter, setClientFilter] = useState<string>(ALL)
   const [contactFilter, setContactFilter] = useState<string>(ALL)
+  const [dealFilter, setDealFilter] = useState<string>(ALL)
 
   const refreshAll = useCallback(async () => {
     const res = await fetch("/api/tasks")
@@ -200,17 +205,29 @@ export default function TasksPage() {
     let cancelled = false
     async function load() {
       try {
-        const [tasksRes, mRes, cRes, ctRes] = await Promise.all([
+        const [tasksRes, mRes, cRes, ctRes, dRes] = await Promise.all([
           fetch("/api/tasks").then((r) => r.json()),
           fetch("/api/tasks?members=1").then((r) => r.json()),
           fetch("/api/tasks?clientOptions=1").then((r) => r.json()),
           fetch("/api/tasks?contactOptions=1").then((r) => r.json()),
+          fetch("/api/deals").then((r) => r.json()),
         ])
         if (cancelled) return
         setTasks(tasksRes.tasks ?? [])
         setMembers(mRes.members ?? [])
         setClientOptions(cRes.options ?? [])
         setContactOptions(ctRes.options ?? [])
+        type DealLite = {
+          id: string
+          name: string
+          clientName: string | null
+          status: string
+        }
+        setDealOptions(
+          ((dRes.deals ?? []) as DealLite[])
+            .filter((d) => d.status === "active")
+            .map((d) => ({ id: d.id, name: d.name, clientName: d.clientName })),
+        )
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -233,6 +250,11 @@ export default function TasksPage() {
         return false
       if (contactFilter !== ALL && (t.contactId ?? "") !== contactFilter)
         return false
+      if (dealFilter !== ALL) {
+        if (dealFilter === NO_DEAL) {
+          if (t.dealId) return false // «Без сделки» — только непривязанные
+        } else if (t.dealId !== dealFilter) return false
+      }
       return true
     })
   }, [
@@ -243,6 +265,7 @@ export default function TasksPage() {
     assigneeFilter,
     clientFilter,
     contactFilter,
+    dealFilter,
   ])
 
   const byStatus = useMemo(() => {
@@ -262,7 +285,8 @@ export default function TasksPage() {
     priorityFilter !== ALL ||
     assigneeFilter !== ALL ||
     clientFilter !== ALL ||
-    contactFilter !== ALL
+    contactFilter !== ALL ||
+    dealFilter !== ALL
 
   const clearFilters = () => {
     setNameFilter("")
@@ -271,6 +295,7 @@ export default function TasksPage() {
     setAssigneeFilter(ALL)
     setClientFilter(ALL)
     setContactFilter(ALL)
+    setDealFilter(ALL)
   }
 
   return (
@@ -292,7 +317,10 @@ export default function TasksPage() {
       {/* Канбан без внешнего Card-контейнера — заголовок страницы достаточен. */}
       <div className="w-full">
 
-          <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+          {/* Все фильтры в один ряд на большом экране (7 колонок), адаптивно
+              сжимаются к 2 колонкам на узком. grid-cols-N = minmax(0,1fr), так
+              что ячейки ужимаются, а значения в селектах усекаются. */}
+          <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
             <Input
               placeholder="Поиск по названию…"
               value={nameFilter}
@@ -363,6 +391,22 @@ export default function TasksPage() {
                 ))}
               </SelectContent>
             </Select>
+            {/* Фильтр по сделке: «Все сделки» (по умолчанию) / «Без сделки» /
+                конкретная сделка (task.dealId). */}
+            <Select value={dealFilter} onValueChange={setDealFilter}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Сделка" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Все сделки</SelectItem>
+                <SelectItem value={NO_DEAL}>Без сделки</SelectItem>
+                {dealOptions.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.clientName ? `${d.clientName} — ${d.name}` : d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* min-h-8 = высота кнопки сброса: строка не прыгает, когда кнопка
@@ -384,17 +428,35 @@ export default function TasksPage() {
               <Loader className="animate-spin h-6 w-6" />
             </div>
           ) : (
-            <Tabs defaultValue="todo" className="w-full">
+            <Tabs defaultValue="all" className="w-full">
               <TabsList>
+                {/* «Все» — первым: задачи независимо от статуса. */}
+                <TabsTrigger value="all">
+                  Все
+                  <span className="ml-1.5 text-xs text-muted-foreground">
+                    {filteredTasks.length}
+                  </span>
+                </TabsTrigger>
                 {STATUSES.map((s) => (
                   <TabsTrigger key={s} value={s}>
                     {STATUS_LABELS[s]}
                     <span className="ml-1.5 text-xs text-muted-foreground">
-                      ({byStatus[s].length})
+                      {byStatus[s].length}
                     </span>
                   </TabsTrigger>
                 ))}
               </TabsList>
+              <TabsContent value="all" className="mt-4">
+                <StatusBucket
+                  tasks={filteredTasks}
+                  onChanged={refreshAll}
+                  emptyLabel={
+                    hasActiveFilters
+                      ? "Нет задач по фильтрам."
+                      : "Задач пока нет."
+                  }
+                />
+              </TabsContent>
               {STATUSES.map((s) => (
                 <TabsContent key={s} value={s} className="mt-4">
                   <StatusBucket

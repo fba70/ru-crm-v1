@@ -197,7 +197,7 @@ export function DataTableComponent({
               onClick={() => table.previousPage()}
               disabled={!table.getCanPreviousPage()}
             >
-              Previous
+              Назад
             </Button>
             <Button
               variant="outline"
@@ -205,7 +205,7 @@ export function DataTableComponent({
               onClick={() => table.nextPage()}
               disabled={!table.getCanNextPage()}
             >
-              Next
+              Вперёд
             </Button>
           </div>
         </div>

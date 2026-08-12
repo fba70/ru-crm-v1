@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { useDraggable, useDroppable } from "@dnd-kit/core"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,8 +11,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   Pencil,
-  ArrowRight,
   AlertTriangle,
   Clock,
   Send,
@@ -19,11 +24,14 @@ import {
   Sparkles,
   Repeat,
   Lock,
+  ChevronLeft,
+  ChevronRight,
   type LucideIcon,
 } from "lucide-react"
 import type { DealRow } from "@/app/api/deals/route"
 import type { DealIntel, IntelBadge } from "@/server/deals-mock"
-import type { NextStep } from "@/hooks/use-board-intel"
+import type { DealTaskInfo } from "@/hooks/use-board-intel"
+import { mockAtRisk, mockRiskReason } from "@/lib/deal-mocks"
 import DealEditDialog from "@/components/forms/form-deal-edit"
 import { formatAmount } from "@/lib/deal-board"
 
@@ -47,17 +55,8 @@ const BADGE_CLASS: Record<IntelBadge["kind"], string> = {
   lock: "bg-muted text-muted-foreground",
 }
 
-function formatShortDate(iso: string): string {
-  const d = new Date(iso)
-  if (!Number.isFinite(d.getTime())) return iso
-  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
-}
-
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
 
-// Подсказка «нет след. шага» выключена, пока задачи не привязываются к сделкам
-// из UI — включить обратно, когда форма задачи получит селектор сделки.
-const SHOW_MISSING_NEXT_STEP = false
 
 // Заголовок: компания (клиент) сверху, продукт/проект (название сделки) — строкой
 // ниже. Если клиент не привязан, название сделки само становится заголовком.
@@ -68,7 +67,9 @@ function DealTitle({ deal }: { deal: DealRow }) {
     <div className="min-w-0">
       <div className="text-sm font-medium leading-snug truncate">{company}</div>
       {product && (
-        <div className="text-xs text-muted-foreground leading-snug truncate">
+        // Две строки (UX №8) — в одну описание не вмещается. Дедуп названия
+        // компании в описании — на стороне генератора текста (бэк-вопрос).
+        <div className="text-xs text-muted-foreground leading-snug line-clamp-2">
           {product}
         </div>
       )}
@@ -76,18 +77,15 @@ function DealTitle({ deal }: { deal: DealRow }) {
   )
 }
 
-// Сумма · ответственный — одной строкой.
+// Сумма и имя менеджера — в две строки (сумма сверху, менеджер под ней).
 function DealMetaLine({ deal }: { deal: DealRow }) {
   const amount = formatAmount(deal.value, deal.currency)
   if (!amount && !deal.userName) return null
   return (
-    <div className="text-sm">
-      {amount && <span className="font-semibold">{amount}</span>}
-      {amount && deal.userName && (
-        <span className="text-muted-foreground"> · </span>
-      )}
+    <div className="text-sm leading-tight">
+      {amount && <div className="font-semibold">{amount}</div>}
       {deal.userName && (
-        <span className="text-muted-foreground">{deal.userName}</span>
+        <div className="text-xs text-muted-foreground">{deal.userName}</div>
       )}
     </div>
   )
@@ -97,21 +95,26 @@ export function DealKanbanCard({
   deal,
   onChanged,
   onOpen,
-  nextStep = null,
+  tasks = [],
   intel,
   intelLoaded = false,
 }: {
   deal: DealRow
   onChanged: () => void
   onOpen: (deal: DealRow) => void
-  // Ближайшая открытая задача (реальные данные). null → инвариант нарушен.
-  nextStep?: NextStep | null
+  // Все задачи сделки (по createdAt desc). Карточка листает их шевронами.
+  tasks?: DealTaskInfo[]
   // Мок-интел по сделке (остывание/бейджи). undefined до загрузки.
   intel?: DealIntel
   // Загружены ли данные доски (next-step/intel). До загрузки НЕ показываем
   // инвариант — иначе ложная «красная» вспышка на первом рендере.
   intelLoaded?: boolean
 }) {
+  // Индекс листаемой задачи (0 = самая свежая). Клампится к длине списка.
+  const [taskIdx, setTaskIdx] = useState(0)
+  const taskCount = tasks.length
+  const safeIdx = taskCount ? Math.min(taskIdx, taskCount - 1) : 0
+  const currentTask = tasks[safeIdx] ?? null
   // Перетаскиваются ВСЕ активные сделки — человек вправе двигать как хочет
   // (в т.ч. переигрывать агентские переводы). Заблокированы только
   // отменённые/удалённые: их статус терминальный, перенос не имеет смысла.
@@ -129,12 +132,19 @@ export function DealKanbanCard({
   })
 
   const isStale = Boolean(intel?.isStale)
-  const badges = intel?.badges ?? []
+  // На карточке НЕ показываем: бейдж происхождения (kind==='source', UX №9 —
+  // он в подробностях) и мок-бейдж «авто-задача по правилу» (kind==='auto') —
+  // он противоречил реальному блоку задач («Задач нет» рядом с «авто-задача»).
+  const badges = (intel?.badges ?? []).filter(
+    (b) => b.kind !== "source" && b.kind !== "auto",
+  )
   // Метка «перевёл агент»: последний перевод стадии сделал агент (авто-
   // применённое предложение или LLM-discovery) и человек его ещё не
   // пересматривал. Причина перевода (changes) — в поповере бейджа.
   const movedByAgent = deal.lastMovedBy === "agent"
-  const hasBadgeRow = badges.length > 0 || isStale || movedByAgent
+  // Инсайт «риск проигрыша» (UX №12, мок). isStale («долго висит») уже есть.
+  const atRisk = isActive && mockAtRisk(deal.id)
+  const hasBadgeRow = badges.length > 0 || isStale || movedByAgent || atRisk
 
   return (
     <Card
@@ -145,7 +155,7 @@ export function DealKanbanCard({
       data-deal-id={deal.id}
       {...attributes}
       {...listeners}
-      className={`group p-3 space-y-2 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06] ${
+      className={`group p-3 space-y-1 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06] ${
         isActive ? "cursor-grab active:cursor-grabbing" : "opacity-60"
       } ${isDragging ? "opacity-40" : ""}`}
       aria-label={`Открыть сделку: ${deal.clientName ?? deal.name}`}
@@ -201,24 +211,76 @@ export function DealKanbanCard({
 
       <DealMetaLine deal={deal} />
 
-      {/* Следующий шаг = ближайшая открытая задача сделки. Подсказка об
-          отсутствии шага СКРЫТА (SHOW_MISSING_NEXT_STEP), пока задачу нельзя
-          привязать к сделке из UI (нет селектора сделки в форме задачи) —
-          иначе она горела бы на каждой карточке. */}
+      {/* Последнее изменение (UX №10) — целиком, в отдельной плашке с чётким
+          фоном+рамкой (полупрозрачная карточка «съедала» muted/50), без иконки. */}
+      {isActive && deal.changes && (
+        <div className="rounded-md border border-border bg-muted p-2 text-xs text-foreground/80">
+          {deal.changes}
+        </div>
+      )}
+
+      {/* Задачи: заголовок СНАРУЖИ плашки. Одна задача → «Задача»; несколько →
+          «Задачи» + счётчик, а справа шевроны для листания задач прямо на
+          карточке. Внутри плашки — имя + исполнитель (бейджи не показываем —
+          вся детализация в подробностях). Нет задач → «Задач нет» оранжевым. */}
       {isActive &&
-        (nextStep ? (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <span className="truncate">
-              {nextStep.name} · {formatShortDate(nextStep.dueDate)}
-            </span>
+        (currentTask ? (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {taskCount > 1 ? `Задачи ${taskCount}` : "Задача"}
+              </div>
+              {taskCount > 1 && (
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4"
+                    aria-label="Предыдущая задача"
+                    disabled={safeIdx === 0}
+                    onPointerDown={stop}
+                    onClick={(e) => {
+                      stop(e)
+                      setTaskIdx((i) => Math.max(0, i - 1))
+                    }}
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4"
+                    aria-label="Следующая задача"
+                    disabled={safeIdx >= taskCount - 1}
+                    onPointerDown={stop}
+                    onClick={(e) => {
+                      stop(e)
+                      setTaskIdx((i) => Math.min(taskCount - 1, i + 1))
+                    }}
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="rounded-md border border-border bg-muted p-2 space-y-1">
+              <div className="truncate text-xs text-foreground">
+                {currentTask.name}
+              </div>
+              {currentTask.assigneeName && (
+                <div className="truncate text-[11px] text-muted-foreground">
+                  Исполнитель: {currentTask.assigneeName}
+                </div>
+              )}
+            </div>
           </div>
-        ) : intelLoaded && SHOW_MISSING_NEXT_STEP ? (
-          <div className="flex items-center gap-1.5 text-xs text-destructive">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            <span>нет след. шага</span>
-          </div>
-        ) : null)}
+        ) : (
+          intelLoaded && (
+            <div className="text-xs font-medium text-amber-600 dark:text-amber-400">
+              Задач нет
+            </div>
+          )
+        ))}
 
       {hasBadgeRow && (
         <div className="flex flex-wrap gap-1">
@@ -235,6 +297,31 @@ export function DealKanbanCard({
               </Badge>
             )
           })}
+          {atRisk && (
+            // Наведение на бейдж — тултип с объяснением, почему риск (мок).
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="inline-flex cursor-help"
+                  aria-label="Почему риск проигрыша"
+                  onPointerDown={stop}
+                  onClick={stop}
+                >
+                  <Badge
+                    variant="secondary"
+                    className="gap-1 bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]"
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    риск проигрыша
+                  </Badge>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent align="start" className="max-w-xs text-xs">
+                {mockRiskReason(deal.id)}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {isStale && intel && (
             <Popover>
               <PopoverTrigger asChild>

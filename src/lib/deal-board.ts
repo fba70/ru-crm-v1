@@ -70,6 +70,37 @@ export function formatAggregate(n: number): string {
   return `${Math.round(n).toLocaleString("ru-RU")} ₽`
 }
 
+// Компактное число для тесных мест (шапка колонки, UX №1): тысячи → «к»,
+// миллионы → «м», меньше 1000 — как есть. Один знак после запятой, дробную
+// «,0» убираем (3 700 → «3,7к», 3 000 000 → «3м», 850 → «850»).
+export function formatCompactNumber(n: number): string {
+  const abs = Math.abs(n)
+  const fmt = (v: number, suffix: string) => {
+    const s = v.toFixed(1).replace(/\.0$/, "").replace(".", ",")
+    return `${s}${suffix}`
+  }
+  if (abs >= 1_000_000) return fmt(n / 1_000_000, "м")
+  if (abs >= 1_000) return fmt(n / 1_000, "к")
+  return Math.round(n).toLocaleString("ru-RU")
+}
+
+// Компактный агрегат по валютам (для шапки колонки): "3,7к ₽ · 30к $".
+export function aggregateByCurrencyCompact(
+  entries: { amount: number; currency: string }[],
+): string {
+  const byCur = new Map<string, number>()
+  for (const e of entries) {
+    byCur.set(e.currency, (byCur.get(e.currency) ?? 0) + e.amount)
+  }
+  const parts = Array.from(byCur.entries())
+    .filter(([, n]) => n !== 0)
+    .map(([cur, n]) => {
+      const symbol = (CURRENCY_SYMBOL[cur.toUpperCase()] ?? cur).trim()
+      return `${formatCompactNumber(n)} ${symbol}`
+    })
+  return parts.length ? parts.join(" · ") : "0 ₽"
+}
+
 // Группировка сумм по валютам → строка вида "1 200 000 ₽ · 30 000 $".
 export function aggregateByCurrency(
   entries: { amount: number; currency: string }[],

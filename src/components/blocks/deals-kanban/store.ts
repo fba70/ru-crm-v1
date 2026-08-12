@@ -8,14 +8,34 @@ import { computePosition } from "@/lib/kanban-move"
 // Per-column field sort is transient view-state — it NEVER writes to
 // `deal.position`. "Вручную" renders the persisted manual order; the others
 // render a sorted copy. (Spec: Value/New/Old, minus Priority/Age naming.)
-export type SortMode = "manual" | "value" | "newest" | "oldest"
+export type SortMode = "manual" | "priority" | "value" | "newest" | "oldest"
 
-export const SORT_MODES: SortMode[] = ["manual", "value", "newest", "oldest"]
+export const SORT_MODES: SortMode[] = [
+  "manual",
+  "priority",
+  "value",
+  "newest",
+  "oldest",
+]
 export const SORT_LABEL: Record<SortMode, string> = {
   manual: "Вручную",
+  priority: "По приоритету агента",
   value: "По сумме",
   newest: "Сначала новые",
   oldest: "Сначала старые",
+}
+
+// МОК приоритета агента (UX №3). Реальная логика — на бэке (agent priority
+// score из сигналов: застой, риск, нет следующего шага, внешние события).
+// Пока детерминированный прокси: сделки, которые агент недавно тронул
+// (lastMovedBy==='agent'), + давно без активности (updatedAt) поднимаются
+// наверх как «требующие внимания». Возвращает score — больше = выше.
+// TODO(backend): заменить на реальный agent priority score.
+function agentPriorityScore(d: DealRow): number {
+  const agentTouched = d.lastMovedBy === "agent" ? 1_000_000_000_000 : 0
+  // Чем старее последняя активность, тем выше (−timestamp, чтобы старые росли).
+  const staleness = -new Date(d.updatedAt).getTime() / 1000
+  return agentTouched + staleness
 }
 
 export type BoardColumn = {
@@ -47,6 +67,12 @@ function compareManual(a: DealRow, b: DealRow): number {
 function sortCards(cards: DealRow[], mode: SortMode): DealRow[] {
   const copy = [...cards]
   switch (mode) {
+    case "priority":
+      // По приоритету агента (мок — см. agentPriorityScore).
+      return copy.sort((a, b) => {
+        const d = agentPriorityScore(b) - agentPriorityScore(a)
+        return d !== 0 ? d : compareManual(a, b)
+      })
     case "value":
       // Highest value first; rows without a value sink to the bottom.
       return copy.sort((a, b) => {
@@ -278,6 +304,10 @@ export function useBoardStore({
         ),
       )
       if (sourceWillEmpty) collapseStage(fromStageId)
+      // Перенос карточки = переход целевой колонки в ручной режим (UX №2),
+      // иначе активная сортировка (по сумме/дате) перекрыла бы новое
+      // пользовательское расположение и оно бы «не запомнилось».
+      setSort(toStageId, "manual")
 
       try {
         const res = await fetch("/api/deals", {
@@ -303,7 +333,7 @@ export function useBoardStore({
         )
       }
     },
-    [localDeals, stages, dealById, onChanged, collapseStage, expand],
+    [localDeals, stages, dealById, onChanged, collapseStage, expand, setSort],
   )
 
   return {

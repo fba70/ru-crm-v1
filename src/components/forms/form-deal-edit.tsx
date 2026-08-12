@@ -15,6 +15,7 @@ import { LoadingButton } from "@/components/blocks/loading-button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -76,6 +77,10 @@ export default function DealEditDialog({
   const [isPending, startTransition] = useTransition()
   const [clientOptions, setClientOptions] = useState<DealClientOption[]>([])
   const [stageOptions, setStageOptions] = useState<DealFunnelStageOption[]>([])
+  // Опциональная первая задача при СОЗДАНИИ сделки (UX): создаётся после
+  // сделки и сразу привязывается к ней (dealId).
+  const [addTask, setAddTask] = useState(false)
+  const [taskName, setTaskName] = useState("")
 
   const form = useForm<DealFormData>({
     defaultValues: {
@@ -167,7 +172,28 @@ export default function DealEditDialog({
           toast.error(err.error || "Не удалось сохранить сделку")
           return
         }
+        // Опциональная первая задача (create): привязываем к созданной сделке.
+        // Ошибка задачи не откатывает уже созданную сделку — отдельный toast.
+        if (mode === "create" && addTask && taskName.trim()) {
+          const { id: newDealId } = (await res.json().catch(() => ({}))) as {
+            id?: string
+          }
+          if (newDealId) {
+            const tRes = await fetch("/api/tasks", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: taskName.trim(),
+                dealId: newDealId,
+                clientId: data.clientId,
+              }),
+            })
+            if (!tRes.ok) toast.error("Сделка создана, но задачу добавить не удалось")
+          }
+        }
         toast.success(mode === "create" ? "Сделка создана" : "Сделка обновлена")
+        setAddTask(false)
+        setTaskName("")
         onSuccess?.()
         setOpen(false)
       } catch {
@@ -353,6 +379,27 @@ export default function DealEditDialog({
                   </FormItem>
                 )}
               />
+            )}
+
+            {/* Первая задача — только при создании сделки (UX): чекбокс
+                раскрывает поле названия; задача создастся привязанной к сделке. */}
+            {mode === "create" && (
+              <div className="rounded-lg border p-3 space-y-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox
+                    checked={addTask}
+                    onCheckedChange={(v) => setAddTask(Boolean(v))}
+                  />
+                  Создать задачу для этой сделки
+                </label>
+                {addTask && (
+                  <Input
+                    value={taskName}
+                    onChange={(e) => setTaskName(e.target.value)}
+                    placeholder="Название задачи (напр. «Позвонить клиенту»)"
+                  />
+                )}
+              </div>
             )}
 
             <DialogFooter>

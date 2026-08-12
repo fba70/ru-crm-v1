@@ -18,14 +18,22 @@ import type {
 } from "@/server/deals-mock"
 import type { TaskRow } from "@/app/api/tasks/route"
 
-export type NextStep = { name: string; dueDate: string }
+// Задача сделки для карточки (имя + тип/приоритет/статус + исполнитель).
+export type DealTaskInfo = {
+  name: string
+  type: TaskRow["type"]
+  priority: TaskRow["priority"]
+  status: TaskRow["status"]
+  assigneeName: string | null
+}
 
 export type BoardIntelData = {
   proposals: DealProposal[]
   feed: FeedEvent[]
   intel: Record<string, DealIntel>
   commitments: StageCommitments
-  nextStepByDeal: Record<string, NextStep | null>
+  // Все задачи сделки (по createdAt desc) — карточка листает их шевронами.
+  tasksByDeal: Record<string, DealTaskInfo[]>
   // Сколько переводов агент авто-применил в ЭТОМ фетче (/api/deals/proposals
   // применяет предложения на лету). > 0 → доска должна подтянуть свежие
   // стадии (router.refresh в deals-board); повторный фетч вернёт 0 — цикла нет.
@@ -38,7 +46,7 @@ const EMPTY: BoardIntelData = {
   feed: [],
   intel: {},
   commitments: {},
-  nextStepByDeal: {},
+  tasksByDeal: {},
   appliedMoves: 0,
 }
 
@@ -86,15 +94,21 @@ export function useBoardIntel(): {
           tasksRes.json() as Promise<{ tasks?: TaskRow[] }>,
         ])
 
-      // Ближайший шаг по сделке: самая ранняя по dueDate открытая задача.
-      const nextStepByDeal: Record<string, NextStep | null> = {}
-      for (const t of tasksJson.tasks ?? []) {
+      // Все задачи по сделке, отсортированные по createdAt desc (самая свежая
+      // первой) — карточка листает их шевронами. Любой статус, не только open.
+      const tasksByDeal: Record<string, DealTaskInfo[]> = {}
+      const sorted = [...(tasksJson.tasks ?? [])].sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt),
+      )
+      for (const t of sorted) {
         if (!t.dealId) continue
-        if (t.status === "done" || t.status === "closed") continue
-        const existing = nextStepByDeal[t.dealId]
-        if (!existing || t.dueDate.localeCompare(existing.dueDate) < 0) {
-          nextStepByDeal[t.dealId] = { name: t.name, dueDate: t.dueDate }
-        }
+        ;(tasksByDeal[t.dealId] ??= []).push({
+          name: t.name,
+          type: t.type,
+          priority: t.priority,
+          status: t.status,
+          assigneeName: t.assigneeName,
+        })
       }
 
       // Устаревший ответ (пока летел, стартовал новый load) — не применяем.
@@ -105,7 +119,7 @@ export function useBoardIntel(): {
         feed: feedJson.events ?? [],
         intel: intelJson.intel ?? {},
         commitments: intelJson.commitments ?? {},
-        nextStepByDeal,
+        tasksByDeal,
         appliedMoves: proposalsJson.applied ?? 0,
       })
     } catch {

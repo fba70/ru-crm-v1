@@ -21,11 +21,12 @@ import {
   STAGE_COLOR,
   STAGE_DEFAULT,
   aggregateByCurrency,
+  aggregateByCurrencyCompact,
   dealAmount,
 } from "@/lib/deal-board"
 import type { DealRow } from "@/app/api/deals/route"
 import type { DealIntel } from "@/server/deals-mock"
-import type { NextStep } from "@/hooks/use-board-intel"
+import type { DealTaskInfo } from "@/hooks/use-board-intel"
 import { DealKanbanCard } from "@/components/blocks/deal-kanban-card"
 import {
   SORT_LABEL,
@@ -42,7 +43,7 @@ import {
 export function Column({
   column,
   intelById,
-  nextStepByDeal,
+  tasksByDeal,
   intelLoaded,
   onChanged,
   onOpen,
@@ -51,7 +52,7 @@ export function Column({
 }: {
   column: BoardColumn
   intelById: Record<string, DealIntel>
-  nextStepByDeal: Record<string, NextStep | null>
+  tasksByDeal: Record<string, DealTaskInfo[]>
   intelLoaded: boolean
   onChanged: () => void
   onOpen: (deal: DealRow) => void
@@ -80,22 +81,47 @@ export function Column({
                 {Math.round(stage.closureProbability * 100)}%
               </span>
             </div>
-            <div className="truncate text-xs opacity-80 mt-0.5">
-              {cards.length} ·{" "}
-              {aggregateByCurrency(
-                cards.map((d) => ({
-                  amount: dealAmount(d.value),
-                  currency: d.currency,
-                })),
-              )}{" "}
-              · взвеш.{" "}
-              {aggregateByCurrency(
-                cards.map((d) => ({
-                  amount: dealAmount(d.value) * stage.closureProbability,
-                  currency: d.currency,
-                })),
-              )}
-            </div>
+            {/* Суммы сокращены (к/м, UX №1), точные значения — в тултипе. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="truncate text-xs opacity-80 mt-0.5 cursor-default">
+                  {cards.length} ·{" "}
+                  {aggregateByCurrencyCompact(
+                    cards.map((d) => ({
+                      amount: dealAmount(d.value),
+                      currency: d.currency,
+                    })),
+                  )}{" "}
+                  · взвеш.{" "}
+                  {aggregateByCurrencyCompact(
+                    cards.map((d) => ({
+                      amount: dealAmount(d.value) * stage.closureProbability,
+                      currency: d.currency,
+                    })),
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent className="space-y-0.5">
+                <div>
+                  Сумма:{" "}
+                  {aggregateByCurrency(
+                    cards.map((d) => ({
+                      amount: dealAmount(d.value),
+                      currency: d.currency,
+                    })),
+                  )}
+                </div>
+                <div>
+                  Взвешенно:{" "}
+                  {aggregateByCurrency(
+                    cards.map((d) => ({
+                      amount: dealAmount(d.value) * stage.closureProbability,
+                      currency: d.currency,
+                    })),
+                  )}
+                </div>
+              </TooltipContent>
+            </Tooltip>
           </div>
           <div className="flex shrink-0 items-center">
             <DropdownMenu>
@@ -157,7 +183,7 @@ export function Column({
             deal={d}
             onChanged={onChanged}
             onOpen={onOpen}
-            nextStep={nextStepByDeal[d.id] ?? null}
+            tasks={tasksByDeal[d.id] ?? []}
             intel={intelById[d.id]}
             intelLoaded={intelLoaded}
           />

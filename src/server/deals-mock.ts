@@ -375,15 +375,19 @@ export function buildFeed(orgId: string, deals: DealRow[]): FeedEvent[] {
   for (const d of deals) {
     if (!d.changes) continue
     const dealName = d.clientName ? `${d.clientName} — ${d.name}` : d.name
-    const seed = hash("feed:" + d.id)
-    const isAI = d.changes.includes("→") && seed % 2 === 0
+    // Автор события = кто последним двигал сделку (lastMovedBy). Прежний хак
+    // (changes.includes("→")) не срабатывал для агентских авто-переводов —
+    // они пишут changes = причина без стрелки, и события уходили как
+    // пользовательские, поэтому агентских записей в ленте не было видно.
+    const isAI = d.lastMovedBy === "agent"
     seeded.push({
       id: `fe_seed_${d.id}`,
       actor: isAI ? "Агент" : (d.userName ?? "Система"),
       isAI,
       at: d.updatedAt,
+      // В агентских — мотивировка (reasoning) как обоснование решения (UX №15).
       text: isAI
-        ? "{deal}: " + d.changes + ". Авто-применение по свидетельству клиента."
+        ? "{deal}: " + d.changes + (d.reasoning ? ". " + d.reasoning : "")
         : "{deal}: " + d.changes + ".",
       dealName,
     })

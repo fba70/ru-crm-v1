@@ -20,12 +20,10 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Plus,
@@ -33,6 +31,7 @@ import {
   ListTree,
   ChevronsRightLeft,
   ChevronsLeftRight,
+  ChevronsUpDown,
 } from "lucide-react"
 import {
   Tooltip,
@@ -48,8 +47,6 @@ import type {
 } from "@/app/api/deals/route"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import {
-  STAGE_COLOR,
-  STAGE_DEFAULT,
   aggregateByCurrency,
   dealAmount,
   filterByOwner,
@@ -72,8 +69,6 @@ import { Column } from "./deals-kanban/column"
 import { Rail } from "./deals-kanban/rail"
 import { useBoardStore, type SortMode } from "./deals-kanban/store"
 
-const ALL = "__all__"
-
 type OverData = { type?: "card" | "column"; stageId?: string; dealId?: string }
 
 // Collision: prefer VISIBLE card droppables (precise before/after), fall back to
@@ -87,6 +82,129 @@ const collisionDetection: CollisionDetection = (args) => {
   return rectIntersection(args)
 }
 
+// Мультиселект-комбобокс клиентов (UX №17): ЕДИНСТВЕННЫЙ фильтр вместо
+// «поиск по названию + селект клиента». Клик открывает дропдаун со всеми
+// клиентами (выбор чекбоксами, мультивыбор), поле сверху фильтрует список по
+// вводу. Построен на Popover + Input + Checkbox — тот же рабочий паттерн, что
+// `MultiFilterSelect` на /products. Пусто = все клиенты.
+function ClientMultiSelect({
+  values,
+  options,
+  onToggle,
+  onClear,
+}: {
+  values: string[]
+  options: DealClientOption[]
+  onToggle: (id: string) => void
+  onClear: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState("")
+  const selected = new Set(values)
+  const query = q.trim().toLowerCase()
+  const visible = query
+    ? options.filter((c) => c.name.toLowerCase().includes(query))
+    : options
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o)
+        if (!o) setQ("")
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-9 flex-1 min-w-52 justify-between font-normal"
+        >
+          <span className="truncate">
+            {values.length === 0
+              ? "Все клиенты"
+              : `Клиентов выбрано: ${values.length}`}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-(--radix-popover-trigger-width) min-w-60 p-0"
+      >
+        <div className="border-b p-2">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Поиск клиента…"
+            className="h-8"
+          />
+        </div>
+        <div className="max-h-64 overflow-y-auto p-1">
+          {values.length > 0 && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="w-full rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent"
+            >
+              Очистить выбор
+            </button>
+          )}
+          {visible.length === 0 ? (
+            <div className="px-2 py-1.5 text-sm text-muted-foreground">
+              Ничего не найдено
+            </div>
+          ) : (
+            visible.map((c) => (
+              <label
+                key={c.id}
+                className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              >
+                <Checkbox
+                  checked={selected.has(c.id)}
+                  onCheckedChange={() => onToggle(c.id)}
+                />
+                <span className="truncate">{c.name}</span>
+              </label>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// Плашка результата в терминальной колонке (UX №5): цветной фон стадии,
+// подпись «Выиграно/Проиграно» + количество, и КРУПНО сумма — «за что боролись».
+// Одна строка результата внутри карточки «Итоги»: цветная точка + подпись,
+// количество и крупная сумма (UX №4/№5).
+function TerminalRow({
+  label,
+  dotClass,
+  deals,
+}: {
+  label: string
+  dotClass: string
+  deals: DealRow[]
+}) {
+  const sum = aggregateByCurrency(
+    deals.map((d) => ({ amount: dealAmount(d.value), currency: d.currency })),
+  )
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5 text-sm">
+        <span className={`h-2 w-2 rounded-full ${dotClass}`} />
+        <span className="font-medium">{label}</span>
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+          {deals.length}
+        </span>
+      </div>
+      <div className="pl-3.5 text-lg font-semibold tabular-nums">{sum}</div>
+    </div>
+  )
+}
+
+// Строка комбобокса клиента.
 export function DealsBoard({
   deals,
   stages,
@@ -102,10 +220,12 @@ export function DealsBoard({
   const { data: board, loading: boardLoading, refetch: refetchBoard } =
     useBoardIntel()
   const [filter, setFilter] = useState<OwnerFilter>("all")
-  const [query, setQuery] = useState("")
-  const [clientFilter, setClientFilter] = useState<string>(ALL)
-  const [includeCancelled, setIncludeCancelled] = useState(false)
+  // Мультивыбор клиентов (пусто = все). Заменил и поиск по названию, и селект.
+  const [clientFilters, setClientFilters] = useState<string[]>([])
   const [includeDeleted, setIncludeDeleted] = useState(false)
+  // Фильтр «двигал агент» (бывшая кнопка «Предложения агента» — по сути фильтр,
+  // задача UX №19): показывает только сделки с lastMovedBy === 'agent'.
+  const [agentMovedOnly, setAgentMovedOnly] = useState(false)
   const [feedOpen, setFeedOpen] = useState(false)
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -146,17 +266,13 @@ export function DealsBoard({
   )
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const clientSet = new Set(clientFilters)
     return filterByOwner(deals, filter, currentUserId).filter((d) => {
-      if (clientFilter !== ALL && d.clientId !== clientFilter) return false
-      if (q) {
-        const inName = d.name.toLowerCase().includes(q)
-        const inDesc = (d.description ?? "").toLowerCase().includes(q)
-        if (!inName && !inDesc) return false
-      }
+      if (clientSet.size > 0 && !clientSet.has(d.clientId)) return false
+      if (agentMovedOnly && d.lastMovedBy !== "agent") return false
       return true
     })
-  }, [deals, filter, currentUserId, query, clientFilter])
+  }, [deals, filter, currentUserId, clientFilters, agentMovedOnly])
 
   const activeDeals = useMemo(
     () => filtered.filter((d) => d.status === "active"),
@@ -167,11 +283,34 @@ export function DealsBoard({
     () =>
       filtered.filter((d) => {
         if (d.status === "active") return true
-        if (d.status === "cancelled") return includeCancelled
-        if (d.status === "deleted") return includeDeleted
+        // Карточки отменённых И удалённых по умолчанию скрыты, показываются
+        // вместе по чекбоксу «Удалённые» (UX №6). В сумму «Проиграно» отменённые
+        // входят всегда (см. lostDeals) — это статистика, а не карточки.
+        if (d.status === "cancelled" || d.status === "deleted")
+          return includeDeleted
         return false
       }),
-    [filtered, includeCancelled, includeDeleted],
+    [filtered, includeDeleted],
+  )
+
+  // Терминальные итоги (UX №4/№5/№6): «Выиграно» = активные на стадии Closed;
+  // «Проиграно» = активные на стадии Rejected + все отменённые (cancelled).
+  // Deleted в итоги не входят. Считаем из filtered (агрегат виден всегда).
+  const wonDeals = useMemo(
+    () =>
+      filtered.filter(
+        (d) => d.status === "active" && d.funnelStageName === "Closed",
+      ),
+    [filtered],
+  )
+  const lostDeals = useMemo(
+    () =>
+      filtered.filter(
+        (d) =>
+          d.status === "cancelled" ||
+          (d.status === "active" && d.funnelStageName === "Rejected"),
+      ),
+    [filtered],
   )
 
   const flowStages = useMemo(
@@ -354,14 +493,6 @@ export function DealsBoard({
     })
   }
 
-  function handleProposalsChip() {
-    // Агент применяет переводы сам — ожидающих предложений не бывает.
-    // Кнопка стала информационной: объясняет модель и ведёт к следам агента.
-    toast(
-      "Агент применяет переводы сам — его шаги помечены бейджем «перевёл агент» на карточках и видны в ленте решений",
-    )
-  }
-
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Полная ширина, как у остальных страниц (стиль Аналитики). */}
@@ -389,18 +520,8 @@ export function DealsBoard({
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="outline" onClick={handleProposalsChip}>
-                <Sparkles className="h-4 w-4 mr-1" />
-                Предложения агента
-              </Button>
-              <Button
-                size="sm"
-                variant={feedOpen ? "default" : "outline"}
-                onClick={() => setFeedOpen((v) => !v)}
-              >
-                <ListTree className="h-4 w-4 mr-1" />
-                Лента решений
-              </Button>
+              {/* «Найти в источниках» перенесена левее (UX №18, времянка).
+                  «Предложения агента» убрана отсюда → стала фильтром (UX №19). */}
               <DiscoverDealsDialog
                 onDealsGenerated={router.refresh}
                 trigger={
@@ -410,6 +531,14 @@ export function DealsBoard({
                   </Button>
                 }
               />
+              <Button
+                size="sm"
+                variant={feedOpen ? "default" : "outline"}
+                onClick={() => setFeedOpen((v) => !v)}
+              >
+                <ListTree className="h-4 w-4 mr-1" />
+                Лента решений
+              </Button>
               <DealEditDialog
                 mode="create"
                 onSuccess={router.refresh}
@@ -434,32 +563,31 @@ export function DealsBoard({
                 <TabsTrigger value="mine">Мои</TabsTrigger>
               </TabsList>
             </Tabs>
-            <Input
-              placeholder="Поиск по названию или описанию…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 min-w-45"
+            {/* Мультиселект-комбобокс клиентов (UX №17) — единственный фильтр
+                вместо поиска по названию + селекта: клик открывает список всех
+                клиентов, выбор чекбоксами, фильтрация вводом. */}
+            <ClientMultiSelect
+              values={clientFilters}
+              options={clientOptions}
+              onToggle={(id) =>
+                setClientFilters((prev) =>
+                  prev.includes(id)
+                    ? prev.filter((x) => x !== id)
+                    : [...prev, id],
+                )
+              }
+              onClear={() => setClientFilters([])}
             />
-            <Select value={clientFilter} onValueChange={setClientFilter}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Клиент" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>Все клиенты</SelectItem>
-                {clientOptions.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* «Перевёл агент» — тот же термин, что в бейдже карточки (UX №19). */}
             <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
               <Checkbox
-                checked={includeCancelled}
-                onCheckedChange={(v) => setIncludeCancelled(Boolean(v))}
+                checked={agentMovedOnly}
+                onCheckedChange={(v) => setAgentMovedOnly(Boolean(v))}
               />
-              Отменённые
+              Перевёл агент
             </label>
+            {/* Чекбокс «Отменённые» убран (UX №6): отменённые приравнены к
+                проигранным и живут в терминальной колонке (см. § ниже). */}
             <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
               <Checkbox
                 checked={includeDeleted}
@@ -534,7 +662,7 @@ export function DealsBoard({
                   key={column.stage.id}
                   column={column}
                   intelById={board.intel}
-                  nextStepByDeal={board.nextStepByDeal}
+                  tasksByDeal={board.tasksByDeal}
                   intelLoaded={!boardLoading}
                   onChanged={refresh}
                   onOpen={(d) => {
@@ -549,39 +677,26 @@ export function DealsBoard({
             })}
 
             {terminalStages.length > 0 && (
-              <div className="w-44 shrink-0 min-h-0 flex flex-col gap-2">
-                <div className="shrink-0 rounded-lg border p-2.5 bg-muted/40">
-                  <div className="text-sm font-medium">Итоги</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    терминальные стадии
-                  </div>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none flex flex-col gap-2">
-                {terminalStages.map((stage) => {
-                  const items = activeDeals.filter(
-                    (d) => d.funnelStageId === stage.id,
-                  )
-                  return (
-                    <div
-                      key={stage.id}
-                      className={`rounded-lg p-2.5 text-sm ${
-                        STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
-                      }`}
-                    >
-                      <div className="font-medium">
-                        {dealStageLabel(stage.name)} · {items.length}
-                      </div>
-                      <div className="text-xs opacity-80">
-                        {aggregateByCurrency(
-                          items.map((d) => ({
-                            amount: dealAmount(d.value),
-                            currency: d.currency,
-                          })),
-                        )}
-                      </div>
+              // ОДНА итоговая карточка (UX №4/№5): внутри две строки
+              // «Выиграно»/«Проиграно», по каждой количество + сумма.
+              <div className="w-52 shrink-0">
+                <div className="rounded-lg border p-3 space-y-3">
+                  <div>
+                    <div className="text-sm font-medium">Итоги</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      результат по воронке
                     </div>
-                  )
-                })}
+                  </div>
+                  <TerminalRow
+                    label="Выиграно"
+                    dotClass="bg-[#1F7A4D]"
+                    deals={wonDeals}
+                  />
+                  <TerminalRow
+                    label="Проиграно"
+                    dotClass="bg-[#8F0D16]"
+                    deals={lostDeals}
+                  />
                 </div>
               </div>
             )}
@@ -605,6 +720,7 @@ export function DealsBoard({
       <DealDetailDrawer
         deal={openDeal}
         stages={stages}
+        currentUserId={currentUserId}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onChanged={refresh}
