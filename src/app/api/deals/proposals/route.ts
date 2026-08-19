@@ -11,11 +11,20 @@
 // перезапуск сервера (in-memory resolved-set очищается) двигал бы те же
 // сделки вперёд стадия за стадией.
 //
+// ГЕЙТ АВТОМАТИЗАЦИИ: агент двигает сделки ТОЛЬКО если у орги есть хотя бы
+// один рабочий источник (`hasWorkingSource` — активный, с разрешённым
+// автопарсингом и подключённый: секреты заполнены либо в upload-only
+// источник уже что-то залито). Без источников автоматизации нет: маршрут
+// возвращает { proposals: [], applied: 0 } и НИЧЕГО не пишет в БД. Иначе
+// демо-орга без единого канала видит, как «система сама» тасует карточки.
+// TODO(backend): заменить гейт на per-org настройки автоматизации.
+//
 // TODO(backend): генерация предложений — детерминированный мок
 // (см. deals-mock.ts): ~каждая 3-я активная сделка по хэшу id, НЕ реальные
 // сигналы из писем/TG. При реальном движке форма ответа сохраняется.
 import { NextResponse } from "next/server"
 import { listDealFunnelStages, moveDealStage } from "@/server/deals"
+import { hasWorkingSource } from "@/server/sources"
 import {
   requireMockOrg,
   loadBoardDeals,
@@ -39,6 +48,13 @@ function errorResponse(error: unknown) {
 export async function GET() {
   try {
     const { orgId } = await requireMockOrg()
+
+    // Нет ни одного рабочего источника — агент молчит. Ничего не считаем и
+    // ничего не пишем: форма ответа та же, что при «всё применено».
+    if (!(await hasWorkingSource(orgId))) {
+      return NextResponse.json({ proposals: [], applied: 0 })
+    }
+
     const [deals, stages] = await Promise.all([
       loadBoardDeals(),
       listDealFunnelStages(),

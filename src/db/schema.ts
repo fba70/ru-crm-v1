@@ -244,6 +244,17 @@ export const blocklistKind = pgEnum("blocklist_kind", [
 
 export type BlocklistKind = (typeof blocklistKind.enumValues)[number]
 
+// Own-organisation identity registry entry kind (see src/app/CLAUDE.md §
+// "Own-organisation identity registry"). `match_key` is the normalised
+// canonical form per kind: companyMatchKey | bare host | addressMatchKey.
+export const orgIdentityKind = pgEnum("org_identity_kind", [
+  "name",
+  "website",
+  "address",
+])
+
+export type OrgIdentityKind = (typeof orgIdentityKind.enumValues)[number]
+
 // Order lifecycle. `draft` (internal) → `awaiting_client` (handed to the
 // client for review/confirm via a guest link) → `confirmed` (back to
 // internal) → `finalized` (pushed to accounting). `cancelled` is terminal.
@@ -505,6 +516,47 @@ export const discoveryBlocklist = pgTable(
     index("discovery_blocklist_organizationId_idx").on(table.organizationId),
     // Adding the same block twice is a no-op (onConflictDoNothing).
     uniqueIndex("discovery_blocklist_org_kind_key_uidx").on(
+      table.organizationId,
+      table.kind,
+      table.matchKey,
+    ),
+  ],
+)
+
+// Own-organisation identity registry — the owner-curated list of extra names /
+// synonyms, websites and postal addresses that mean "this is US, not a client".
+// The `organization` profile columns (name / web_url / address / email) stay
+// the PRIMARY identity; this table is purely additive, so an org can declare a
+// second brand ("АСТ" ≡ "AST INTER"), a second domain, or a warehouse address
+// without those single-valued columns having to hold a delimited blob.
+//
+// Read by `loadOwnOrgIdentity` (discovery + parse-time own-org filtering) and
+// `getOrgIdentity` (parse-time authorship attribution). Owner-managed from the
+// organisation card on /account.
+export const orgIdentityEntry = pgTable(
+  "org_identity_entry",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: orgIdentityKind("kind").notNull(),
+    // Normalised canonical form (the dedup key): companyMatchKey for `name`,
+    // bare host for `website`, addressMatchKey for `address`.
+    matchKey: text("match_key").notNull(),
+    // Raw value as entered, for display.
+    label: text("label").notNull(),
+    // Optional operator "why" note.
+    note: text("note"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("org_identity_entry_organizationId_idx").on(table.organizationId),
+    // Adding the same value twice is a no-op (onConflictDoNothing).
+    uniqueIndex("org_identity_entry_org_kind_key_uidx").on(
       table.organizationId,
       table.kind,
       table.matchKey,

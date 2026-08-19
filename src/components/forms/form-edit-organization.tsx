@@ -154,9 +154,10 @@ export default function UpdateOrganizationDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="default" className="mt-4">
-          Редактировать организацию
-        </Button>
+        {/* No margin here — the button sits in a shared action row on
+            /account, and a per-trigger margin knocks it out of vertical
+            alignment with its siblings. Spacing belongs to that row. */}
+        <Button variant="default">Редактировать организацию</Button>
       </DialogTrigger>
       <DialogContent className="dark:bg-gray-800">
         <DialogHeader className="mb-2">

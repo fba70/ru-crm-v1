@@ -16,6 +16,7 @@ import { getProvider } from "@/lib/sources/providers"
 import type { SourceProvider } from "@/db/schema"
 import type { OrgIdentity } from "@/server/org-identity"
 import { loadOrgBlocklist } from "@/server/blocklist"
+import { addressMatchesText } from "@/lib/address-match"
 import {
   domainMatches,
   extractEmailDomain,
@@ -107,16 +108,40 @@ export function classifyOrgAttribution(input: {
     }
   }
 
-  // 4. No author + the org website host appears in the content → ours, medium.
+  // 4. No author + ANY own website host appears in the content → ours, medium.
   //    (Envelope-less document case; only medium because a third-party doc
   //    could merely cite our domain — the LLM judge is the authority.)
-  const host = orgIdentity.url ? extractWebsiteDomain(orgIdentity.url) : ""
-  if (host && !isFreemailDomain(host) && contentHaystack.toLowerCase().includes(host)) {
+  //    `webDomains` covers the profile's web_url AND every `website` entry in
+  //    the owner-curated identity registry, so a second brand's domain counts.
+  const hosts =
+    orgIdentity.webDomains.length > 0
+      ? orgIdentity.webDomains
+      : [orgIdentity.url ? extractWebsiteDomain(orgIdentity.url) : ""]
+  const haystackLower = contentHaystack.toLowerCase()
+  for (const host of hosts) {
+    if (!host || isFreemailDomain(host)) continue
+    if (!haystackLower.includes(host)) continue
     return {
       value: "own_org",
       confidence: "medium",
       matchedOn: ["org_url"],
       reason: `Document references the organisation's own domain (${host})`,
+    }
+  }
+
+  // 4b. No author + one of the org's own postal addresses appears in the
+  //     content → ours, medium. Registry-driven (see `addressMatchesText`):
+  //     token-set containment, never an exact string compare. Deliberately
+  //     capped at MEDIUM — a supplier's invoice TO us prints our address too,
+  //     so this must never outrank sender evidence, and the LLM judge stays
+  //     free to overturn it.
+  for (const key of orgIdentity.addressKeys) {
+    if (!addressMatchesText(key, contentHaystack)) continue
+    return {
+      value: "own_org",
+      confidence: "medium",
+      matchedOn: ["org_address"],
+      reason: "Document carries the organisation's own postal address",
     }
   }
 
@@ -156,12 +181,23 @@ async function judgeOrgAuthorship(
       system: JUDGE_SYSTEM,
       prompt: [
         `Owning organisation: ${orgIdentity.name ?? "(unknown name)"}${orgIdentity.url ? ` — ${orgIdentity.url}` : ""}`,
+        // Owner-curated registry context: the org may trade under more than one
+        // name and sit at more than one address, and the judge can only apply
+        // the "who produced this" test if it recognises those forms as us.
+        orgIdentity.nameAliases.length > 0
+          ? `Also known as: ${orgIdentity.nameAliases.join(", ")}`
+          : "",
         `Its owned email domains: ${orgIdentity.emailDomains.join(", ") || "(none known)"}`,
+        orgIdentity.addressLabels.length > 0
+          ? `Its own postal address(es): ${orgIdentity.addressLabels.join(" | ")}`
+          : "",
         "",
         "--- BEGIN DOCUMENT ---",
         content || "(empty)",
         "--- END DOCUMENT ---",
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     })
     return {
       value: output.verdict,

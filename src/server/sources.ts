@@ -454,3 +454,93 @@ export async function getOrCreateAiChatSource(
     idempotent: true,
   })
 }
+
+// ── «Рабочий источник» — гейт автоматизации ──────────────────────────
+//
+// Источник считается РАБОЧИМ, когда он реально может принести сигнал:
+//   • status = 'active' и automated_parsing_is_allowed = true — те же
+//     флаги, которые уважает ночной пайплайн;
+//   • подключён: для провайдеров с секретами это заполненный
+//     `credentials_ref`, для upload-only (dropoff / whatsapp) — хотя бы
+//     один уже загруженный `source_item`;
+//   • не `aichat` — это снимки внутренних AI-чатов, а не клиентский канал.
+//
+// Зачем: гейт агентской автоматизации на доске сделок. В орге без единого
+// подключённого канала агент не двигает сделки сам (см.
+// `/api/deals/proposals`) — иначе тестовая орга без источников видит, как
+// «система сама» переносит карточки по воронке.
+//
+// TODO(backend): заменить на per-org настройки автоматизации, когда они
+// появятся — тогда этот гейт станет дефолтом, а не единственным условием.
+
+// Провайдеры, у которых НЕТ секретов (`credentialsSchema === null` в
+// `src/server/providers/handlers.ts`). Явная запись по всем значениям
+// enum'а: добавление нового провайдера сломает типы здесь, а не молча
+// проскочит в гейт. Реестр handlers не импортируем — он тянет за собой
+// весь sync-слой (imapflow и т.п.) в маршрут, которому это не нужно.
+const PROVIDER_NEEDS_CREDENTIALS: Record<SourceProvider, boolean> = {
+  nylas: true,
+  imap: true,
+  gchat: true,
+  gdrive: true,
+  telegram: true,
+  dropoff: false,
+  whatsapp: false,
+  aichat: false,
+}
+
+// Провайдеры, которые вообще не считаются каналом для автоматизации.
+const PROVIDERS_EXCLUDED_FROM_GATE: SourceProvider[] = ["aichat"]
+
+export async function hasWorkingSource(
+  organizationId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({
+      id: source.id,
+      provider: source.provider,
+      credentialsRef: source.credentialsRef,
+    })
+    .from(source)
+    .where(
+      and(
+        eq(source.ownerOrganizationId, organizationId),
+        eq(source.status, "active"),
+        eq(source.automatedParsingIsAllowed, true),
+      ),
+    )
+
+  const candidates = rows.filter(
+    (r) => !PROVIDERS_EXCLUDED_FROM_GATE.includes(r.provider),
+  )
+
+  // С секретами: достаточно заполненного credentials_ref.
+  if (
+    candidates.some(
+      (r) => PROVIDER_NEEDS_CREDENTIALS[r.provider] && r.credentialsRef,
+    )
+  ) {
+    return true
+  }
+
+  // Upload-only: «рабочий» = в него уже что-то залили.
+  const uploadOnlyIds = candidates
+    .filter((r) => !PROVIDER_NEEDS_CREDENTIALS[r.provider])
+    .map((r) => r.id)
+  if (uploadOnlyIds.length === 0) return false
+
+  const { sourceItem } = await import("@/db/schema")
+  const { inArray } = await import("drizzle-orm")
+  const items = await db
+    .select({ id: sourceItem.id })
+    .from(sourceItem)
+    .where(
+      and(
+        eq(sourceItem.organizationId, organizationId),
+        inArray(sourceItem.sourceId, uploadOnlyIds),
+      ),
+    )
+    .limit(1)
+
+  return items.length > 0
+}
