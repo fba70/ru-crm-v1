@@ -25,7 +25,7 @@ import { companyMatchKey } from "@/lib/translit-ru"
 import { extractWebsiteDomain } from "@/lib/email-domain"
 import { PARSER_CONFIG } from "@/lib/parser-config"
 import { triageInlineImage } from "@/lib/image-triage"
-import nylas from "@/lib/nylas"
+import { getNylasClient } from "@/lib/nylas"
 import { downloadChatAttachmentBytes } from "@/lib/google-chat"
 import {
   parseEmailMessage,
@@ -483,7 +483,7 @@ async function parseNylasAttachment(
 
   let bytes: Uint8Array
   try {
-    const buffer = await nylas.attachments.downloadBytes({
+    const buffer = await getNylasClient(creds).attachments.downloadBytes({
       identifier: creds.grantId,
       attachmentId: ref.attachmentId,
       queryParams: { messageId: ctx.externalId },

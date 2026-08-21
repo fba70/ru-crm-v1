@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { and, eq } from "drizzle-orm"
 import { db } from "@/db/drizzle"
 import { source, sourceItem } from "@/db/schema"
-import nylas from "@/lib/nylas"
+import { getNylasClient } from "@/lib/nylas"
 import { getServerSession } from "@/lib/get-session"
 import { getNylasCredentials } from "@/server/providers/credentials"
 
@@ -72,7 +72,10 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { grantId } = getNylasCredentials(row.sourceId, row.credentialsRef)
+    const creds = getNylasCredentials(row.sourceId, row.credentialsRef)
+    const { grantId } = creds
+    // Per-source Nylas application when the org connected its own account.
+    const nylas = getNylasClient(creds)
 
     const buffer = await nylas.attachments.downloadBytes({
       identifier: grantId,

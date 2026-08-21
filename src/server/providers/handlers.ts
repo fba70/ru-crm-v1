@@ -32,11 +32,50 @@ import {
 
 // ── Per-provider credential payload schemas ──────────────────────────
 //
-// Nylas: only the per-mailbox grant id moves to credentials_ref. The
-// platform-level NYLAS_API_KEY / NYLAS_API_URI stay in env forever
-// (they identify Truffalo to Nylas, not any specific org's mailbox).
+// A blank string from a form field means "not provided" — normalise it to
+// `undefined` so an empty optional input falls back to the platform default
+// instead of failing a `min(1)` check.
+const blankToUndefined = (v: unknown) => {
+  if (typeof v !== "string") return v ?? undefined
+  const t = v.trim()
+  return t === "" ? undefined : t
+}
+
+// Nylas: the whole connection lives in credentials_ref, so an org can point a
+// source at its OWN Nylas application instead of Truffalo's.
+//
+//   grantId — required. Which mailbox to read. Bound to ONE Nylas application
+//             at creation time: a grant id only resolves under the API key of
+//             the app that minted it (wrong app ⇒ 404 `grant.not_found`).
+//   apiKey  — optional. The org's own Nylas application key. Absent ⇒ the
+//             platform NYLAS_API_KEY env var (Truffalo's own app).
+//   apiUri  — optional. Region endpoint of that application, e.g.
+//             https://api.eu.nylas.com or https://api.us.nylas.com. Absent ⇒
+//             the platform NYLAS_API_URI env var.
+//
+// apiKey/apiUri are optional (not required) so every row written before
+// per-org Nylas accounts existed keeps working untouched — see
+// `getNylasClient()` in `src/lib/nylas.ts` for the fallback resolution. They
+// belong in credentials_ref rather than provider_config because the key is a
+// secret and it must travel together with the grant it can resolve.
 export const nylasCredentialsSchema = z.object({
-  grantId: z.string().min(1, "grantId is required"),
+  grantId: z.string().trim().min(1, "grantId is required"),
+  apiKey: z.preprocess(
+    blankToUndefined,
+    z.string().min(1, "apiKey must not be empty").optional(),
+  ),
+  apiUri: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .regex(
+        /^https:\/\/[^\s/]+(\/[^\s]*)?$/i,
+        "apiUri must be an https:// URL, e.g. https://api.eu.nylas.com",
+      )
+      // Trailing slashes would double up in the SDK's request paths.
+      .transform((s) => s.replace(/\/+$/, ""))
+      .optional(),
+  ),
 })
 export type NylasCredentials = z.infer<typeof nylasCredentialsSchema>
 

@@ -178,16 +178,18 @@ type FieldsProps = {
   initialConfig: Record<string, unknown>
 }
 
-// Nylas has no configurable provider_config today — the grant id
-// (the only mailbox identifier) lives in `credentials_ref` instead.
-// Kept as an explicit branch (rather than a fallthrough) so the user
-// gets a clear "nothing to configure here" message.
+// Nylas has no configurable provider_config today — the whole connection
+// (grant id + optional own-account API key / region URI) lives in
+// `credentials_ref` instead, because the key is a secret and the grant only
+// resolves under the app that minted it. Kept as an explicit branch (rather
+// than a fallthrough) so the user gets a clear "nothing to configure here".
 function NylasFields(props: Omit<FieldsProps, "initialConfig">) {
   return (
     <div className="space-y-4 py-2">
       <p className="text-sm text-muted-foreground">
-        У источников Nylas нет несекретных параметров подключения — grant id
-        для каждого почтового ящика настраивается в разделе «Учётные данные».
+        У источников Nylas нет несекретных параметров подключения — grant id,
+        API-ключ и API URI (регион) для каждого почтового ящика настраиваются в
+        разделе «Учётные данные».
       </p>
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={props.onClose}>

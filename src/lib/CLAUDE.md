@@ -24,7 +24,7 @@ This is an asymmetry with the read side of Nylas integration:
 
 | Direction          | Identity                                                                                   | Org-scoped?   |
 | ------------------ | ------------------------------------------------------------------------------------------ | ------------- |
-| **Read (sync/parse)** | per-source `credentials_ref.grantId` — different mailbox per org (or none if not configured) | ✅ Yes        |
+| **Read (sync/parse)** | per-source `credentials_ref` — `grantId` (which mailbox) **plus optional `apiKey`/`apiUri`** (whose Nylas application). Different mailbox — and, when the org connected its own Nylas account, a different application — per source | ✅ Yes        |
 | **Write (sendEmails)** | platform-wide `NYLAS_GRANT_ID` (e.g. `hello@truffalo.ai`)                              | ❌ No (MVP)   |
 
 **Consequence in MVP**: any feature that wants to send mail "from the user's own mailbox" or "from this org's connected Nylas grant" can't use `sendEmails` today. That's a deliberate scope cut: the only outgoing mail the platform produces in MVP is system mail, and system mail should never originate from a customer's mailbox. If an org-initiated outbound flow is ever introduced (e.g. "draft & send an email to a contact from my mailbox"), it must build its own dispatcher that resolves credentials per source — see PHASE2.md item 17.
@@ -38,7 +38,7 @@ This is an asymmetry with the read side of Nylas integration:
 - **Shared auth helper**: `src/lib/google-auth.ts` exposes `getGoogleAuth(scopes, subject?)` — decodes the base64-encoded service-account JSON from `GOOGLE_CHAT_CREDENTIALS` (shared across Chat and Drive) and returns a `google.auth.GoogleAuth` client with the requested scopes. **Optional `subject`**: when provided, the client impersonates that Workspace user via domain-wide delegation (DWD) — required for Chat-media download and any other endpoint that only accepts user-auth scopes. Always prefer this helper to re-reading env vars elsewhere.
 - **Chat client**: `src/lib/google-chat.ts` — `googleapis` with app-auth scopes `chat.bot`, `chat.app.messages.readonly`. Used by the Chats API (see `src/app/CLAUDE.md`).
 - **Drive client**: `src/lib/google-drive.ts` — `getDriveClient()` calls `getGoogleAuth(["https://www.googleapis.com/auth/drive.readonly"])` and returns `google.drive({ version: "v3" })`.
-- **Nylas client**: `src/lib/nylas.ts` — Nylas SDK initialized with `NYLAS_API_KEY` + `NYLAS_API_URI`. Per-mailbox grant id moves to `source.credentials_ref` (Phase 3) — see "Per-source credentials" below.
+- **Nylas client**: `src/lib/nylas.ts` — two exports. The **default** export is the platform app's client (`NYLAS_API_KEY` + `NYLAS_API_URI`), used by `sendEmails` and as the fallback connection. **`getNylasClient(creds)`** returns the client for ONE source: `credentials_ref.apiKey` / `.apiUri` win when set, else the platform env pair (cached per distinct `(apiUri, apiKey)`; throws a named error when neither side supplies one). **Every path that reads an ORG's mailbox must use `getNylasClient(creds)`, never the default export** — a grant id only resolves inside the Nylas application that minted it, and querying it with the wrong key returns `grant.not_found` (404), which reads as "the mailbox disappeared" rather than as an auth problem. Call sites: `sync/nylas.ts`, `parsers/text.ts` (×2), `parse-source-item.ts`, `api/emails/attachments`.
 - **Google clients**: `src/lib/google-{auth,chat,drive}.ts` — `getGoogleAuth(serviceAccountJson, scopes, subject?)` accepts a parsed service-account object, returns a `GoogleAuth` client. Per-source JSON comes from `credentials_ref`; the env-resident `GOOGLE_CHAT_CREDENTIALS` is no longer read at runtime (only by the migration script — see below).
 
 ## Per-source credentials (Phase 3)
@@ -50,13 +50,17 @@ The Sources subsystem stores per-source secrets in `source.credentials_ref` (AES
 3. Returns the typed credentials or throws `MissingCredentialsError` / `InvalidCredentialsError`.
 
 **Env fallback policy:**
-- **nylas** — keeps a fallback to `process.env.NYLAS_GRANT_ID` so bootstrap flows on un-migrated rows still work. Logs a warning when the fallback fires so production drift is visible.
+- **nylas** — the payload is `{ grantId, apiKey?, apiUri? }`, i.e. the WHOLE connection, so an org can point a source at its own Nylas account.
+  - `grantId` (which mailbox) keeps a fallback to `process.env.NYLAS_GRANT_ID` so bootstrap flows on un-migrated rows still work; logs a warning when it fires, so production drift is visible.
+  - `apiKey` / `apiUri` (whose Nylas **application**) fall back to `NYLAS_API_KEY` / `NYLAS_API_URI` — the platform app. The accessor validates but never resolves them: resolution lives in `getNylasClient()` (`src/lib/nylas.ts`), which every mailbox-reading path calls.
+  - **Why they're optional in the schema**: purely back-compat. Rows written before per-org accounts existed hold only a `grantId` and must keep working with no migration. It is NOT a UI affordance — the form requires all three (see "Per-provider credentials form UI" below).
+  - **The invariant that makes this load-bearing**: a grant id resolves ONLY inside the Nylas application that minted it. Query it with another app's key and Nylas returns **404 `grant.not_found`**, not an auth error — so a mis-paired grant reads as "the mailbox disappeared" rather than "wrong credentials". This was a real production symptom (a customer's own grant saved against the platform key: valid UUID, `credentialsConfigured ✓`, every sync 404).
 - **gchat / gdrive** — NO env fallback. After the migration runs, every row carries its own service-account JSON. If `credentials_ref` is null at runtime, the handler throws an actionable error directing the operator to `/sources` → "Manage organization sources" → Configure.
 - **imap** — `getImapCredentials` decrypts `{ host, port, secure, user, password }` (`imapCredentialsSchema`). **NO env fallback** — IMAP is strictly per-org (mirrors gchat/gdrive); throws `MissingCredentialsError` if `credentials_ref` is null. The non-secret mailbox folder lives in `provider_config.mailbox`. See `src/app/CLAUDE.md` § "IMAP email".
 - **telegram** — `getTelegramCredentials` decrypts `{ botToken, webhookSecret }`, with a nylas-style fallback to `process.env.TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET_TOKEN` (BOTH required) when `credentials_ref` is null — a single bootstrap bot before the per-org UI is used. Logs a warning when the fallback fires. Per-org is the norm: each org's admin pastes their own bot's token. See `src/app/CLAUDE.md` § "Telegram Bot (Sources)".
 
 **What stays in `.env` permanently:**
-- `NYLAS_API_KEY`, `NYLAS_API_URI` — platform-level Nylas tenant credentials. Authenticate Truffalo to Nylas; not per-org.
+- `NYLAS_API_KEY`, `NYLAS_API_URI` — the **platform** Nylas application's credentials (Truffalo's own Nylas account). Used by `sendEmails` and as the **fallback** for any source whose `credentials_ref` carries no `apiKey`/`apiUri`. An org that connects its OWN Nylas account overrides both per-source via the credentials form.
 - `NYLAS_CLIENT_ID`, `NYLAS_CALLBACK_URI` — only consulted at OAuth grant-creation time.
 - `CREDENTIALS_ENCRYPTION_KEY` — the master key for `credentials_ref`.
 - `GOOGLE_CHAT_CREDENTIALS`, `GOOGLE_CHAT_IMPERSONATE_USER`, `NYLAS_GRANT_ID` — used ONLY by the migration script to seed existing rows. Once every row has `credentials_ref`, these env vars become vestigial (deletion safe).
@@ -74,7 +78,7 @@ The Sources subsystem stores per-source secrets in `source.credentials_ref` (AES
 
 - `scripts/migrate-credentials-to-db.ts` — one-shot migration that copies env-resident credentials into encrypted `credentials_ref` blobs.
 - Per provider:
-  - **nylas** — encrypts `{ grantId: $NYLAS_GRANT_ID }`. Also strips any `grantId` field out of `providerConfig` (it was a leak of secrets into a non-secret column; new rows go to `credentials_ref` only).
+  - **nylas** — encrypts `{ grantId: $NYLAS_GRANT_ID }` (no `apiKey`/`apiUri` — a migrated row rides on the platform application, which is what it used before). Also strips any `grantId` field out of `providerConfig` (it was a leak of secrets into a non-secret column; new rows go to `credentials_ref` only).
   - **gchat** — encrypts `{ serviceAccountJson: $GOOGLE_CHAT_CREDENTIALS_decoded, impersonateUser: $GOOGLE_CHAT_IMPERSONATE_USER }`.
   - **gdrive** — encrypts `{ serviceAccountJson: $GOOGLE_CHAT_CREDENTIALS_decoded }`. Today gchat + gdrive share one Workspace SA; per-org isolation is achieved later by org owners pasting their own SA via the credentials form.
   - **dropoff / whatsapp / aichat** — no credentials needed, skipped.
@@ -84,8 +88,10 @@ The Sources subsystem stores per-source secrets in `source.credentials_ref` (AES
 
 ## Per-provider credentials form UI
 
-- `src/components/forms/form-source-credentials.tsx` — schema-driven dialog. Branches by provider; each branch is a small zod-shape-aligned form (Nylas: 1 input; gchat: textarea + email; gdrive: textarea). Submits `PUT { sourceId, credentials }` to a configurable `endpoint` so both surfaces (org-owner + admin) can reuse it.
-- **Write-only**: the dialog never displays existing values. The list response carries a `credentialsConfigured: boolean` projection so the row can show "Configured ✓" / "Not configured" without ever fetching plaintext. Re-opening the dialog opens with an empty form. To rotate, paste a fresh value and save.
+- `src/components/forms/form-source-credentials.tsx` — schema-driven dialog. Branches by provider; each branch is a small zod-shape-aligned form (Nylas: grantId + apiKey + apiUri; imap: host/port/secure/user/password; gchat: textarea + email; gdrive: textarea; telegram: botToken + webhookSecret). Submits `PUT { sourceId, credentials }` to a configurable `endpoint` so both surfaces (org-owner + admin) can reuse it.
+- **Nylas branch — all three fields are required by the form**, even though `apiKey`/`apiUri` are optional in the zod schema (that optionality is back-compat only, see above). The three values describe ONE Nylas application, and accepting a bare grant id is what produces the silent `grant.not_found` 404. Labels carry no "(optional)" hint for that reason. EU/US buttons fill `apiUri`; an eye toggle unmasks the key so a paste can be checked before saving.
+- **Autofill suppression is load-bearing, not cosmetic.** The dialog must open empty, but a plain text input next to a `type="password"` one reads as a login form to Chrome's password manager, which autofilled the signed-in user's **email into the Grant ID box** — a wrong value the operator could easily save. `autocomplete="off"` is ignored by the password manager, so the fix is the shared `NO_AUTOFILL` prop set (`autoComplete` + `data-1p-ignore` / `data-lpignore` / `data-form-type` for 1Password / LastPass / Dashlane) plus `autoComplete="new-password"` on the key field (Chrome won't fill saved credentials into a new-password field). Reach for the same set in any future credentials branch.
+- **Write-only**: the dialog never displays existing values — not even masked ones, since the plaintext is never sent to the browser to mask. The list response carries a `credentialsConfigured: boolean` projection so the row can show "Configured ✓" / "Not configured" without ever fetching plaintext. Re-opening the dialog opens with an empty form. To rotate, paste fresh values and save; a save **replaces the whole payload** (no per-field merge), so partially re-typing a multi-field provider drops the fields left blank.
 - **Endpoints**: `PUT /api/sources/org/credentials` (owner) and `PUT /api/admin/sources/credentials` (admin). Both encrypt server-side via `credentials-crypto.ts`, validate against the provider's zod schema, return zod issues as a structured `issues[]` array on 400 so the form can surface field-level errors.
 
 ## AI Chat

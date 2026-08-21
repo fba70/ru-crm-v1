@@ -22,6 +22,7 @@
 //     handing it off.
 
 import { useState } from "react"
+import { Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -163,20 +164,58 @@ type FieldsProps = {
   onSaved: () => void
 }
 
+// Credential dialogs are write-only, so the inputs must open EMPTY — but a
+// text field sitting next to a `type="password"` field looks like a login form
+// to Chrome's password manager, which then autofilled the signed-in user's
+// email into the Grant ID box. `autocomplete="off"` alone is ignored by the
+// password manager; the `data-*` hints cover 1Password / LastPass / Dashlane.
+const NO_AUTOFILL = {
+  autoComplete: "off",
+  spellCheck: false,
+  "data-1p-ignore": true,
+  "data-lpignore": "true",
+  "data-form-type": "other",
+} as const
+
+// Nylas region endpoints — the only two values `apiUri` normally takes.
+const NYLAS_REGIONS = [
+  { label: "EU", uri: "https://api.eu.nylas.com" },
+  { label: "US", uri: "https://api.us.nylas.com" },
+]
+
 function NylasFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
   const [grantId, setGrantId] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const [apiUri, setApiUri] = useState("")
+  const [showKey, setShowKey] = useState(false)
   const [busy, setBusy] = useState(false)
 
   async function handleSave() {
+    // All three are required together: a grant id only resolves inside the
+    // Nylas application that minted it, so a grant saved without its own
+    // key/region gets checked against the wrong application and Nylas answers
+    // `grant.not_found` (404) — which reads as "the mailbox disappeared".
     if (!grantId.trim()) {
       toast.error("Укажите Grant ID")
+      return
+    }
+    if (!apiKey.trim()) {
+      toast.error("Укажите API-ключ")
+      return
+    }
+    if (!apiUri.trim()) {
+      toast.error("Укажите API URI (регион)")
       return
     }
     setBusy(true)
     const out = await submitCredentials({
       endpoint,
       sourceId,
-      credentials: { grantId: grantId.trim() },
+      credentials: {
+        grantId: grantId.trim(),
+        apiKey: apiKey.trim(),
+        apiUri: apiUri.trim(),
+      },
     })
     setBusy(false)
     if (!out.ok) {
@@ -191,27 +230,95 @@ function NylasFields({ sourceId, endpoint, onClose, onSaved }: FieldsProps) {
   return (
     <div className="space-y-4 py-2">
       <div className="space-y-2">
-        <Label htmlFor="nylas-grant-id">Grant ID (это и есть учётные данные)</Label>
+        <Label htmlFor="nylas-grant-id">Grant ID</Label>
         <Input
           id="nylas-grant-id"
+          name="nylas-grant-id"
           value={grantId}
           onChange={(e) => setGrantId(e.target.value)}
           placeholder="напр. 30c70eb1-bbe2-4e0e-9cc7-..."
-          autoComplete="off"
-          spellCheck={false}
+          {...NO_AUTOFILL}
         />
         <p className="text-xs text-muted-foreground">
-          Для источников «Почта» на базе Nylas <strong>Grant ID</strong> —
-          единственные необходимые учётные данные: один Grant ID навсегда
-          привязан к конкретному почтовому ящику в момент создания в Nylas.
-          Чтобы получить его: откройте панель Nylas → Grants → подключите (или
-          выберите) нужный почтовый ящик → скопируйте полученный UUID и вставьте
-          сюда. Платформенные{" "}
-          <code className="text-[10px]">NYLAS_API_KEY</code> /{" "}
-          <code className="text-[10px]">NYLAS_API_URI</code> общие для всех
-          источников в рамках одного приложения Nylas и здесь не настраиваются.
+          Один Grant ID навсегда привязан к конкретному почтовому ящику в момент
+          создания в Nylas. Чтобы получить его: откройте панель Nylas → Grants →
+          подключите (или выберите) нужный почтовый ящик → скопируйте полученный
+          UUID и вставьте сюда.
         </p>
       </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="nylas-api-key">API-ключ</Label>
+        <div className="flex gap-2">
+          <Input
+            id="nylas-api-key"
+            name="nylas-api-key"
+            type={showKey ? "text" : "password"}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="nyk_v0_..."
+            {...NO_AUTOFILL}
+            // `new-password` (not `off`, which Chrome ignores) keeps the
+            // password manager from treating this dialog as a login form and
+            // autofilling the signed-in user's email into the field above.
+            autoComplete="new-password"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={showKey ? "Скрыть ключ" : "Показать ключ"}
+            onClick={() => setShowKey((v) => !v)}
+          >
+            {showKey ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Ключ того приложения Nylas, в котором подключён этот почтовый ящик:
+          панель Nylas → API Keys. Именно этим ключом проверяется Grant ID.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="nylas-api-uri">API URI — регион</Label>
+        <div className="flex gap-2">
+          <Input
+            id="nylas-api-uri"
+            name="nylas-api-uri"
+            value={apiUri}
+            onChange={(e) => setApiUri(e.target.value)}
+            placeholder="https://api.eu.nylas.com"
+            {...NO_AUTOFILL}
+          />
+          {NYLAS_REGIONS.map((r) => (
+            <Button
+              key={r.uri}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setApiUri(r.uri)}
+            >
+              {r.label}
+            </Button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Регион вашего приложения Nylas — EU или US (кнопки справа
+          подставляют адрес). Регион виден в панели Nylas; ключ из одного
+          региона не работает в другом.
+        </p>
+        <p className="text-xs text-amber-600 dark:text-amber-500">
+          Все три значения относятся к одному приложению Nylas и сохраняются
+          вместе. Grant ID действует только внутри того приложения, где он
+          создан: с ключом от другого приложения Nylas ответит «grant not
+          found».
+        </p>
+      </div>
+
       <DialogFooter>
         <Button variant="ghost" type="button" onClick={onClose} disabled={busy}>
           Отмена

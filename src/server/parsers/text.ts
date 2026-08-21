@@ -1,7 +1,7 @@
 import "server-only"
 import { generateText, Output } from "ai"
 import { z } from "zod"
-import nylas from "@/lib/nylas"
+import { getNylasClient } from "@/lib/nylas"
 import { PARSER_CONFIG } from "@/lib/parser-config"
 import type { NylasCredentials } from "@/server/providers/handlers"
 import {
@@ -235,7 +235,7 @@ export async function parseEmailMessage(
   emailId: string,
   creds: NylasCredentials,
 ): Promise<ParsedEmail> {
-  const { data: msg } = await nylas.messages.find({
+  const { data: msg } = await getNylasClient(creds).messages.find({
     identifier: creds.grantId,
     messageId: emailId,
   })
@@ -483,7 +483,7 @@ async function extractCalendarEvent(
   )
   if (!ics?.id) return null
   try {
-    const buffer = await nylas.attachments.downloadBytes({
+    const buffer = await getNylasClient(creds).attachments.downloadBytes({
       identifier: creds.grantId,
       attachmentId: ics.id,
       queryParams: { messageId: msg.id },
