@@ -12,10 +12,10 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import type {
   DealProposal,
-  FeedEvent,
   DealIntel,
   StageCommitments,
 } from "@/server/deals-mock"
+import type { FeedEvent } from "@/server/deals"
 import type { TaskRow } from "@/app/api/tasks/route"
 
 // Задача сделки для карточки (имя + тип/приоритет/статус + исполнитель).

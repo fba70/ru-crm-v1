@@ -41,6 +41,7 @@ import type { DealStatus } from "@/db/schema"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import { CURRENCY_SYMBOL } from "@/lib/deal-board"
 import { DealInitiatorPopover } from "@/components/blocks/deal-initiator-popover"
+import TaskEditDialog from "@/components/forms/form-task-edit"
 
 // Edit-form status options. `active` is the live state; `cancelled` =
 // lost/withdrawn (kept for analytics); `deleted` = test/mistake, hidden
@@ -77,10 +78,18 @@ export default function DealEditDialog({
   const [isPending, startTransition] = useTransition()
   const [clientOptions, setClientOptions] = useState<DealClientOption[]>([])
   const [stageOptions, setStageOptions] = useState<DealFunnelStageOption[]>([])
-  // Опциональная первая задача при СОЗДАНИИ сделки (UX): создаётся после
-  // сделки и сразу привязывается к ней (dealId).
+  // Опциональная первая задача при СОЗДАНИИ сделки (UX): вместо урезанной
+  // копии формы задачи (только имя/срок/исполнитель — не было типа,
+  // приоритета, описания, приходилось потом редактировать в Задачах) сразу
+  // после создания сделки открываем НАСТОЯЩИЙ TaskEditDialog (тот же, что в
+  // разделе «Задачи»), предзаполненный dealId+clientId.
   const [addTask, setAddTask] = useState(false)
   const [taskName, setTaskName] = useState("")
+  const [pendingTaskDeal, setPendingTaskDeal] = useState<{
+    dealId: string
+    clientId: string
+    name?: string
+  } | null>(null)
 
   const form = useForm<DealFormData>({
     defaultValues: {
@@ -172,30 +181,28 @@ export default function DealEditDialog({
           toast.error(err.error || "Не удалось сохранить сделку")
           return
         }
-        // Опциональная первая задача (create): привязываем к созданной сделке.
-        // Ошибка задачи не откатывает уже созданную сделку — отдельный toast.
-        if (mode === "create" && addTask && taskName.trim()) {
+        toast.success(mode === "create" ? "Сделка создана" : "Сделка обновлена")
+        onSuccess?.()
+        setOpen(false)
+        // Опциональная первая задача (create): вместо своей копии формы —
+        // открываем настоящий TaskEditDialog поверх (тот же, что в «Задачах»),
+        // предзаполненный сделкой+клиентом. Название сюда переносим как
+        // стартовое значение, остальное (тип/приоритет/срок/исполнитель/
+        // описание) заполняется в самой форме, без похода в Задачи потом.
+        if (mode === "create" && addTask) {
           const { id: newDealId } = (await res.json().catch(() => ({}))) as {
             id?: string
           }
           if (newDealId) {
-            const tRes = await fetch("/api/tasks", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: taskName.trim(),
-                dealId: newDealId,
-                clientId: data.clientId,
-              }),
+            setPendingTaskDeal({
+              dealId: newDealId,
+              clientId: data.clientId,
+              name: taskName.trim() || undefined,
             })
-            if (!tRes.ok) toast.error("Сделка создана, но задачу добавить не удалось")
           }
         }
-        toast.success(mode === "create" ? "Сделка создана" : "Сделка обновлена")
         setAddTask(false)
         setTaskName("")
-        onSuccess?.()
-        setOpen(false)
       } catch {
         toast.error("Не удалось сохранить сделку")
       }
@@ -214,6 +221,7 @@ export default function DealEditDialog({
       : `Редактирование сделки: ${deal?.name ?? ""}`
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-gray-800">
@@ -382,7 +390,9 @@ export default function DealEditDialog({
             )}
 
             {/* Первая задача — только при создании сделки (UX): чекбокс
-                раскрывает поле названия; задача создастся привязанной к сделке. */}
+                раскрывает поле названия (стартовое значение); саму задачу
+                заполняют в настоящей форме задачи, которая откроется сразу
+                после создания сделки (см. pendingTaskDeal ниже). */}
             {mode === "create" && (
               <div className="rounded-lg border p-3 space-y-2">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -418,5 +428,24 @@ export default function DealEditDialog({
         </Form>
       </DialogContent>
     </Dialog>
+    {/* Настоящая форма задачи (та же, что в «Задачах»), а не урезанный
+        дубль полей — открывается сама сразу после создания сделки. */}
+    {pendingTaskDeal && (
+      <TaskEditDialog
+        mode="create"
+        open
+        onOpenChange={(o) => {
+          if (!o) setPendingTaskDeal(null)
+        }}
+        initialValues={{
+          name: pendingTaskDeal.name,
+          dealId: pendingTaskDeal.dealId,
+          clientId: pendingTaskDeal.clientId,
+        }}
+        onSuccess={onSuccess}
+        trigger={<span className="hidden" aria-hidden />}
+      />
+    )}
+    </>
   )
 }

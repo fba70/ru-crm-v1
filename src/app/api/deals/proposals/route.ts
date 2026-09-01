@@ -31,7 +31,6 @@ import {
   generateProposals,
   getResolvedProposals,
   markProposalResolved,
-  appendFeedEvent,
 } from "@/server/deals-mock"
 
 function errorResponse(error: unknown) {
@@ -74,22 +73,13 @@ export async function GET() {
         continue
       }
       try {
+        // moveDealStage сам пишет строку в deal_activity (журнал) — отдельный
+        // appendFeedEvent (in-memory, дублировал бы запись) больше не нужен.
         await moveDealStage(p.dealId, p.toStageId, p.why || null, {
           actor: "agent",
+          reasoning: p.why || null,
         })
         markProposalResolved(orgId, p.id)
-        appendFeedEvent(orgId, {
-          actor: "Агент",
-          isAI: true,
-          text:
-            "Агент перевёл {deal}: " +
-            p.fromLabel +
-            " → " +
-            p.toLabel +
-            (p.why ? " — " + p.why : "") +
-            ".",
-          dealName: p.dealName,
-        })
         applied++
       } catch {
         // Одна неудача (гонка со скрытием сделки и т.п.) не валит остальные —

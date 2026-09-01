@@ -51,7 +51,11 @@ import {
   TASK_PRIORITY_BADGE,
 } from "@/lib/task-labels"
 import TaskEditDialog from "@/components/forms/form-task-edit"
-import type { DealRow, DealFunnelStageOption } from "@/app/api/deals/route"
+import type {
+  DealRow,
+  DealFunnelStageOption,
+  DealActivityRow,
+} from "@/app/api/deals/route"
 import type { TaskRow } from "@/app/api/tasks/route"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import { formatAmount } from "@/lib/deal-board"
@@ -119,6 +123,12 @@ export function DealDetailDrawer({
     dealId: string
     items: TaskRow[]
   } | null>(null)
+  // Полная хронология сделки (deal_activity) — отдельно от задач, вкладка
+  // «Хронология» показывает оба вперемешку по дате.
+  const [activityData, setActivityData] = useState<{
+    dealId: string
+    items: DealActivityRow[]
+  } | null>(null)
   const [isPending, startTransition] = useTransition()
   // Диалог «Связать с задачей»: задачи клиента без привязки к этой сделке.
   const [linkOpen, setLinkOpen] = useState(false)
@@ -137,6 +147,15 @@ export function DealDetailDrawer({
         setTaskData({ dealId: id, items })
       })
       .catch(() => setTaskData({ dealId: id, items: [] }))
+  }, [])
+
+  const reloadActivity = useCallback((id: string) => {
+    fetch(`/api/deals?activityFor=${id}`)
+      .then((r) => r.json())
+      .then((data: { activity?: DealActivityRow[] }) => {
+        setActivityData({ dealId: id, items: data.activity ?? [] })
+      })
+      .catch(() => setActivityData({ dealId: id, items: [] }))
   }, [])
 
   // Смена статуса задачи из drawer (быстрый statusOnly PUT). Права проверяем
@@ -208,6 +227,14 @@ export function DealDetailDrawer({
     reloadTasks(dealId)
   }, [open, dealId, reloadTasks])
 
+  // Перезагружаем хронологию не только при открытии, но и при любом
+  // изменении updatedAt — перевод стадии могли сделать с доски (drag,
+  // диалог, дропдаун этого же дровера), пока дровер открыт для этой сделки.
+  useEffect(() => {
+    if (!open || !dealId) return
+    reloadActivity(dealId)
+  }, [open, dealId, deal?.updatedAt, reloadActivity])
+
   // Стабильный prefill для «Новая задача по сделке» — иначе новая ссылка на
   // каждый рендер сбрасывала бы форму задачи при вводе (см. TaskEditDialog).
   const taskPrefill = useMemo(
@@ -224,6 +251,8 @@ export function DealDetailDrawer({
   const tasks = taskData && taskData.dealId === deal.id ? taskData.items : []
   function handleStageChange(nextStageId: string) {
     if (!deal || nextStageId === deal.funnelStageId) return
+    const name = stages.find((s) => s.id === nextStageId)?.name
+    const label = name ? dealStageLabel(name) : "этап"
     startTransition(async () => {
       try {
         const res = await fetch("/api/deals", {
@@ -233,7 +262,11 @@ export function DealDetailDrawer({
             id: deal.id,
             move: true,
             funnelStageId: nextStageId,
-            note: "",
+            // Без этого перевод без комментария затирал deal.changes на null —
+            // карточка/дровер пустели, а «Лента решений» вообще не получала
+            // записи. Короткая запись по умолчанию всегда что-то оставляет.
+            note: `Переведено: ${label}`,
+            historyNote: `Переведено: ${label}`,
           }),
         })
         if (!res.ok) {
@@ -241,8 +274,7 @@ export function DealDetailDrawer({
           toast.error(err.error || "Не удалось перевести сделку")
           return
         }
-        const name = stages.find((s) => s.id === nextStageId)?.name
-        toast.success(`Переведено: ${name ? dealStageLabel(name) : "этап"}`)
+        toast.success(`Переведено: ${label}`)
         onChanged()
       } catch {
         toast.error("Не удалось перевести сделку")
@@ -288,7 +320,15 @@ export function DealDetailDrawer({
                 перевёл агент
               </Badge>
             )}
-            {amount && <span className="text-sm font-semibold">{amount}</span>}
+            {amount ? (
+              <span className="text-sm font-semibold">{amount}</span>
+            ) : (
+              // Раньше здесь ничего не рендерилось при пустом value — непонятно,
+              // что поле вообще есть. Приглушённая подсказка + «Редактировать».
+              <span className="text-sm text-muted-foreground">
+                Сумма не указана
+              </span>
+            )}
             {deal.userName && (
               <span className="text-sm text-muted-foreground">
                 · {deal.userName}
@@ -363,7 +403,7 @@ export function DealDetailDrawer({
           <div className="mx-4 mt-3 rounded-lg border border-[#C1121F]/20 bg-[#C1121F]/5 p-3 text-sm space-y-1">
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#A31018] dark:text-[#FF8F96]">
               <AlertTriangle className="h-3.5 w-3.5" />
-              Риск проигрыша
+              Есть риски
             </div>
             <div>{mockRiskReason(deal.id)}</div>
           </div>
@@ -388,14 +428,35 @@ export function DealDetailDrawer({
             className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 text-sm"
           >
             {(() => {
-              const events: { date: string; text: string; meta?: string }[] = []
-              if (deal.changes) {
-                events.push({
-                  date: deal.updatedAt,
-                  text: deal.changes,
-                  meta: "изменение",
+              // Полная история — из deal_activity (журнал, пишется на каждое
+              // создание/перевод, НИКОГДА не перезаписывается — в отличие от
+              // deal.changes, которое живёт только на карточке). Причина
+              // обратного перевода здесь ВИДНА (в отличие от карточки) — это
+              // журнал, а не витрина текущего состояния.
+              const activityItems =
+                activityData && activityData.dealId === deal.id
+                  ? activityData.items
+                  : []
+              const events: { date: string; text: string; meta?: string }[] =
+                activityItems.map((a) => {
+                  if (!a.fromStageName) {
+                    return { date: a.createdAt, text: "Сделка создана" }
+                  }
+                  const move = `${dealStageLabel(a.fromStageName)} → ${dealStageLabel(a.toStageName ?? "")}`
+                  const parts = [move]
+                  if (a.note) parts.push(a.note)
+                  if (a.actor === "agent" && a.reasoning) parts.push(a.reasoning)
+                  return {
+                    date: a.createdAt,
+                    text: parts.join(" — "),
+                    meta:
+                      a.actor === "agent"
+                        ? "перевёл агент"
+                        : a.actorUserName
+                          ? `перевёл: ${a.actorUserName}`
+                          : "изменение",
+                  }
                 })
-              }
               // Создание задач в хронологии (по createdAt). Точное время
               // ПРИВЯЗКИ существующей задачи к сделке отдельно не журналируется
               // (TODO(backend): audit-log привязок) — в хронологии видно само
@@ -407,7 +468,6 @@ export function DealDetailDrawer({
                   meta: `создана · ${TASK_TYPE_LABELS[t.type]}`,
                 })
               }
-              events.push({ date: deal.createdAt, text: "Сделка создана" })
               events.sort((a, b) => b.date.localeCompare(a.date))
               return events.length === 0 ? (
                 <div className="text-muted-foreground">

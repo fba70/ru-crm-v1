@@ -23,6 +23,7 @@ import {
   aggregateByCurrency,
   aggregateByCurrencyCompact,
   dealAmount,
+  pluralizeDeals,
 } from "@/lib/deal-board"
 import type { DealRow } from "@/app/api/deals/route"
 import type { DealIntel } from "@/server/deals-mock"
@@ -72,7 +73,10 @@ export function Column({
     // 11rem не сжимаются — далее скролл. min-h-0: колонка растянута по высоте
     // контейнера, скроллится только её зона карточек (заголовок фиксирован).
     <div className="min-w-44 flex-1 min-h-0 flex flex-col gap-2">
-      <div className={`shrink-0 rounded-lg border p-2.5 ${colorClass}`}>
+      {/* @container — слово «сделок» ниже скрывается по ширине ИМЕННО этой
+          шапки (не вьюпорта): при 8 колонках на 1440px и при 4 на широком
+          экране один и тот же вьюпорт даёт разную ширину колонки. */}
+      <div className={`@container shrink-0 rounded-lg border p-2.5 ${colorClass}`}>
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex items-baseline gap-2 text-sm font-medium">
@@ -81,27 +85,43 @@ export function Column({
                 {Math.round(stage.closureProbability * 100)}%
               </span>
             </div>
-            {/* Суммы сокращены (к/м, UX №1), точные значения — в тултипе. */}
+            {/* Суммы сокращены (к/м, UX №1), точные значения — в тултипе.
+                Две строки (не одна truncate) — иначе на узких колонках
+                (1440px, 7+ колонок) взвешенная сумма обрезается первой.
+                Слово «сделок» само по себе расшифровывает цифру и склоняется
+                по числу; прячется ниже критической ширины — остаётся цифра. */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="truncate text-xs opacity-80 mt-0.5 cursor-default">
-                  {cards.length} ·{" "}
-                  {aggregateByCurrencyCompact(
-                    cards.map((d) => ({
-                      amount: dealAmount(d.value),
-                      currency: d.currency,
-                    })),
-                  )}{" "}
-                  · взвеш.{" "}
-                  {aggregateByCurrencyCompact(
-                    cards.map((d) => ({
-                      amount: dealAmount(d.value) * stage.closureProbability,
-                      currency: d.currency,
-                    })),
-                  )}
+                <div className="text-xs opacity-80 mt-0.5 cursor-default">
+                  <div className="truncate">
+                    {cards.length}
+                    <span className="hidden @[190px]:inline">
+                      {" "}
+                      {pluralizeDeals(cards.length)}
+                    </span>{" "}
+                    ·{" "}
+                    {aggregateByCurrencyCompact(
+                      cards.map((d) => ({
+                        amount: dealAmount(d.value),
+                        currency: d.currency,
+                      })),
+                    )}
+                  </div>
+                  <div className="truncate">
+                    взвеш.{" "}
+                    {aggregateByCurrencyCompact(
+                      cards.map((d) => ({
+                        amount: dealAmount(d.value) * stage.closureProbability,
+                        currency: d.currency,
+                      })),
+                    )}
+                  </div>
                 </div>
               </TooltipTrigger>
               <TooltipContent className="space-y-0.5">
+                {/* Число в шапке (перед суммой) нигде не подписано — тут
+                    расшифровка, что это количество сделок. */}
+                <div>Сделок: {cards.length}</div>
                 <div>
                   Сумма:{" "}
                   {aggregateByCurrency(

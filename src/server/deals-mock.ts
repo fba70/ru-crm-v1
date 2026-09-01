@@ -48,16 +48,8 @@ export type DealProposal = {
   confidence: Confidence
 }
 
-export type FeedEvent = {
-  id: string
-  actor: string
-  isAI: boolean
-  at: string // ISO
-  // Текст события. Может содержать плейсхолдер "{deal}", который UI заменяет на
-  // жирное имя сделки (dealName). Хранить как plain-text — БЕЗ HTML.
-  text: string
-  dealName: string | null
-}
+// FeedEvent переехал в src/server/deals.ts (listRecentDealActivity) — реальный
+// журнал, а не мок-контракт.
 
 export type IntelBadge = {
   kind: "source" | "ai" | "auto" | "lock"
@@ -320,10 +312,8 @@ export function generateProposals(
 // In-memory сторы (per-org). TODO(backend): заменить на БД.
 // ---------------------------------------------------------------------------
 
-const appendedFeed = new Map<string, FeedEvent[]>()
 const resolvedProposals = new Map<string, Set<string>>()
 const rejectionReasons = new Map<string, Record<string, string>>()
-let feedSeq = 0
 
 export function getResolvedProposals(orgId: string): Set<string> {
   let s = resolvedProposals.get(orgId)
@@ -349,53 +339,12 @@ export function markProposalResolved(
   }
 }
 
-export function appendFeedEvent(
-  orgId: string,
-  ev: Omit<FeedEvent, "id" | "at">,
-): FeedEvent {
-  const full: FeedEvent = {
-    ...ev,
-    id: `fe_live_${feedSeq++}`,
-    at: new Date().toISOString(),
-  }
-  const list = appendedFeed.get(orgId) ?? []
-  list.unshift(full)
-  appendedFeed.set(orgId, list)
-  return full
-}
-
-// ---------------------------------------------------------------------------
-// Лента решений: сид из реальных deal.changes + мок-события агента + аппенды.
-// TODO(backend): заменить на реальный журнал событий.
-// ---------------------------------------------------------------------------
-
-export function buildFeed(orgId: string, deals: DealRow[]): FeedEvent[] {
-  const seeded: FeedEvent[] = []
-
-  for (const d of deals) {
-    if (!d.changes) continue
-    const dealName = d.clientName ? `${d.clientName} — ${d.name}` : d.name
-    // Автор события = кто последним двигал сделку (lastMovedBy). Прежний хак
-    // (changes.includes("→")) не срабатывал для агентских авто-переводов —
-    // они пишут changes = причина без стрелки, и события уходили как
-    // пользовательские, поэтому агентских записей в ленте не было видно.
-    const isAI = d.lastMovedBy === "agent"
-    seeded.push({
-      id: `fe_seed_${d.id}`,
-      actor: isAI ? "Агент" : (d.userName ?? "Система"),
-      isAI,
-      at: d.updatedAt,
-      // В агентских — мотивировка (reasoning) как обоснование решения (UX №15).
-      text: isAI
-        ? "{deal}: " + d.changes + (d.reasoning ? ". " + d.reasoning : "")
-        : "{deal}: " + d.changes + ".",
-      dealName,
-    })
-  }
-
-  const appended = appendedFeed.get(orgId) ?? []
-  return [...appended, ...seeded].sort((a, b) => b.at.localeCompare(a.at))
-}
+// Лента решений больше не мок — реальный журнал deal_activity, см.
+// listRecentDealActivity в src/server/deals.ts (и moveDealStage/createDeal,
+// которые в него пишут). buildFeed/appendFeedEvent/appendedFeed удалены —
+// каждый вызов moveDealStage (включая агентские авто-переводы в
+// /api/deals/proposals) теперь сам пишет строку в deal_activity, отдельный
+// in-memory аппенд стал не нужен.
 
 // ---------------------------------------------------------------------------
 // Общий auth-контекст для роутов (реюз паттерна из server/deals.ts).

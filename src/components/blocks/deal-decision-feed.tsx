@@ -8,7 +8,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Sparkles, User } from "lucide-react"
-import type { FeedEvent } from "@/server/deals-mock"
+import type { FeedEvent } from "@/server/deals"
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString("ru-RU", {

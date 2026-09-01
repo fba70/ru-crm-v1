@@ -201,7 +201,10 @@ export function DealsBoard({
   const [filter, setFilter] = useState<OwnerFilter>("all")
   // Мультивыбор клиентов (пусто = все). Заменил и поиск по названию, и селект.
   const [clientFilters, setClientFilters] = useState<string[]>([])
-  const [includeDeleted, setIncludeDeleted] = useState(false)
+  // «Не состоялись» (бывший чекбокс «Удалённые») — раскрывает проигранные
+  // карточки в колонке «Закрытие» под разделителем (по умолчанию скрыты).
+  // Удалённые сделки (ошибки ввода) больше вообще не показываются на доске.
+  const [showLostDeals, setShowLostDeals] = useState(false)
   // Фильтр «двигал агент» (бывшая кнопка «Предложения агента» — по сути фильтр,
   // задача UX №19): показывает только сделки с lastMovedBy === 'agent'.
   const [agentMovedOnly, setAgentMovedOnly] = useState(false)
@@ -267,18 +270,12 @@ export function DealsBoard({
     [filtered],
   )
 
+  // Обычные колонки — только активные сделки. Отменённые = не состоялись →
+  // показываются КАРТОЧКАМИ в финальной колонке «Закрытие» (см. terminalCards).
+  // Удалённые (ошибки ввода) в обычных колонках не показываются никогда.
   const boardDeals = useMemo(
-    () =>
-      filtered.filter((d) => {
-        if (d.status === "active") return true
-        // Отменённые = проиграно → показываются КАРТОЧКАМИ в финальной колонке
-        // «Закрытие» (см. terminalCards), а не в обычных колонках, поэтому счётчик
-        // «Проиграно» совпадает с числом карточек. В обычных колонках под
-        // чекбоксом «Удалённые» — только реально удалённые (trash).
-        if (d.status === "deleted") return includeDeleted
-        return false
-      }),
-    [filtered, includeDeleted],
+    () => filtered.filter((d) => d.status === "active"),
+    [filtered],
   )
 
   // Терминальные итоги (UX №4/№5/№6): «Выиграно» = активные на стадии Closed;
@@ -496,6 +493,15 @@ export function DealsBoard({
     } catch {
       position = null
     }
+    // Короткая запись по умолчанию, если комментарий пуст — перевод без
+    // комментария раньше затирал deal.changes на null (карточка/дровер
+    // пустели). Обратный перевод: причина обязательна в диалоге и ВСЕГДА
+    // попадает в журнал (historyNote → Хронология/Лента решений) — только
+    // карточечное deal.changes (note) её не показывает (дежурная запись
+    // вместо неё), чтобы не путать с реальным текущим состоянием сделки.
+    const stamp = `Переведено: ${move.toLabel}`
+    const realNote = note.trim() || stamp
+    const noteToSend = move.direction === "back" ? stamp : realNote
     startTransition(async () => {
       try {
         const res = await fetch("/api/deals", {
@@ -505,7 +511,8 @@ export function DealsBoard({
             id: move.dealId,
             move: true,
             funnelStageId: move.toStageId,
-            note,
+            note: noteToSend,
+            historyNote: realNote,
             position,
           }),
         })
@@ -549,7 +556,9 @@ export function DealsBoard({
     } catch {
       position = null
     }
-    const label = result === "won" ? "Выиграно" : "Проиграно"
+    const label = result === "won" ? "Выиграно" : "Не состоялось"
+    // Короткая запись по умолчанию, если комментарий пуст — см. confirmMove.
+    const noteToSend = note.trim() || `Переведено: ${label}`
     startTransition(async () => {
       try {
         const res = await fetch("/api/deals", {
@@ -559,7 +568,8 @@ export function DealsBoard({
             id: outcome.dealId,
             move: true,
             funnelStageId: stage.id,
-            note,
+            note: noteToSend,
+            historyNote: noteToSend,
             position,
           }),
         })
@@ -625,7 +635,15 @@ export function DealsBoard({
               </Button>
               <DealEditDialog
                 mode="create"
-                onSuccess={router.refresh}
+                // router.refresh() один сам по себе обновляет только серверный
+                // список сделок (карточка сделки появлялась сразу) — интел
+                // борда (tasksByDeal и т.п., useBoardIntel) — отдельный
+                // клиентский фетч, который router.refresh() не трогает.
+                // Из-за этого задача, созданная сразу вместе со сделкой
+                // (см. pendingTaskDeal в form-deal-edit.tsx — тот же onSuccess
+                // используется и для неё), не появлялась на карточке без
+                // ручного обновления страницы. `refresh` делает оба шага.
+                onSuccess={refresh}
                 trigger={
                   <Button size="sm">
                     <Plus className="h-4 w-4 mr-1" />
@@ -671,13 +689,17 @@ export function DealsBoard({
               Перевёл агент
             </label>
             {/* Чекбокс «Отменённые» убран (UX №6): отменённые приравнены к
-                проигранным и живут в терминальной колонке (см. § ниже). */}
+                не состоявшимся и живут в терминальной колонке (см. § ниже).
+                «Удалённые» тоже убран — удалённые сделки (ошибки ввода) на
+                доске больше не показываются вовсе. Вместо него — «Не
+                состоялись»: раскрывает проигранные карточки в колонке
+                «Закрытие» под разделителем (по умолчанию скрыты). */}
             <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
               <Checkbox
-                checked={includeDeleted}
-                onCheckedChange={(v) => setIncludeDeleted(Boolean(v))}
+                checked={showLostDeals}
+                onCheckedChange={(v) => setShowLostDeals(Boolean(v))}
               />
-              Удалённые
+              Не состоялись
             </label>
             <TooltipProvider>
               <Tooltip>
@@ -768,6 +790,7 @@ export function DealsBoard({
                 cards={terminalCards}
                 wonDeals={wonDeals}
                 lostDeals={lostDeals}
+                showLost={showLostDeals}
                 mode={finalSort}
                 onSortChange={setFinalSort}
                 collapsed={finalCollapsed}

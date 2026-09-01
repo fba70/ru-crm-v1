@@ -3,6 +3,7 @@
 import { db } from "@/db/drizzle"
 import {
   deal,
+  dealActivity,
   dealContact,
   dealFunnelStage,
   client,
@@ -13,9 +14,10 @@ import {
   type DealStatus,
   type DealContactRole,
 } from "@/db/schema"
-import { and, asc, desc, eq, inArray, ne } from "drizzle-orm"
+import { aliasedTable, and, asc, desc, eq, inArray, ne } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
+import { dealStageLabel } from "@/lib/deal-funnel"
 
 export type DealContactSummary = { id: string; name: string }
 
@@ -447,6 +449,16 @@ export async function createDeal(data: {
       )
   }
 
+  await db.insert(dealActivity).values({
+    id: randomUUID(),
+    dealId: id,
+    actor: "user",
+    actorUserId: session.user.id,
+    fromStageId: null,
+    toStageId: data.funnelStageId,
+    createdAt: now,
+  })
+
   return { id }
 }
 
@@ -552,14 +564,32 @@ export async function moveDealStage(
   dealId: string,
   funnelStageId: string,
   note: string | null,
-  opts?: { position?: string | null; actor?: "agent" | "user" },
+  opts?: {
+    position?: string | null
+    actor?: "agent" | "user"
+    // Текст события для журнала (deal_activity), если отличается от `note`
+    // (карточечное поле deal.changes). Сегодня используется только обратным
+    // переводом: карточке — дежурная запись «Переведено: X» (не путать с
+    // реальным изменением состояния), а в журнал ВСЕГДА идёт настоящая
+    // причина. По умолчанию совпадает с `note`.
+    historyNote?: string | null
+    reasoning?: string | null
+  },
 ) {
-  const { activeOrgId } = await requireOrgContext()
+  const { session, activeOrgId } = await requireOrgContext()
   await assertDealInOrg(dealId, activeOrgId)
   await assertFunnelStageAccessible(funnelStageId, activeOrgId)
 
+  const before = await db
+    .select({ funnelStageId: deal.funnelStageId })
+    .from(deal)
+    .where(eq(deal.id, dealId))
+    .limit(1)
+  const fromStageId = before[0]?.funnelStageId ?? null
+
   const trimmed = note?.trim()
   const position = opts?.position
+  const actor = opts?.actor ?? "user"
   // Всегда переписываем `changes` (заметка или null), чтобы при переводе без
   // заметки в provenance не оставался устаревший текст прошлого изменения.
   // `lastMovedBy` помечает автора перевода: 'agent' (авто-применённое
@@ -570,12 +600,26 @@ export async function moveDealStage(
     .set({
       funnelStageId,
       changes: trimmed || null,
-      lastMovedBy: opts?.actor ?? "user",
+      lastMovedBy: actor,
       ...(typeof position === "string" && position.length > 0
         ? { position }
         : {}),
     })
     .where(eq(deal.id, dealId))
+
+  // Журнал (deal_activity) — ПОЛНАЯ история, отдельно от карточечного
+  // deal.changes: пишется на КАЖДЫЙ перевод, никогда не перезаписывается.
+  const historyTrimmed = (opts?.historyNote ?? note)?.trim()
+  await db.insert(dealActivity).values({
+    id: randomUUID(),
+    dealId,
+    actor,
+    actorUserId: actor === "agent" ? null : session.user.id,
+    fromStageId,
+    toStageId: funnelStageId,
+    note: historyTrimmed || null,
+    reasoning: opts?.reasoning ?? null,
+  })
 }
 
 export type DealContactWithRole = {
@@ -649,6 +693,119 @@ export async function removeDealContact(dealId: string, contactId: string) {
         eq(dealContact.contactId, contactId),
       ),
     )
+}
+
+export type DealActivityRow = {
+  id: string
+  actor: "agent" | "user"
+  actorUserName: string | null
+  fromStageName: string | null
+  toStageName: string | null
+  note: string | null
+  reasoning: string | null
+  createdAt: string
+}
+
+// Полная хронология ОДНОЙ сделки (drawer, вкладка «Хронология») — читает
+// deal_activity, а не deal.changes (которое переписывается на каждый перевод).
+export async function listDealActivity(
+  dealId: string,
+): Promise<DealActivityRow[]> {
+  const { activeOrgId } = await requireOrgContext()
+  await assertDealInOrg(dealId, activeOrgId)
+
+  const fromStage = aliasedTable(dealFunnelStage, "from_stage")
+  const toStage = aliasedTable(dealFunnelStage, "to_stage")
+
+  const rows = await db
+    .select({
+      id: dealActivity.id,
+      actor: dealActivity.actor,
+      actorUserName: user.name,
+      fromStageName: fromStage.name,
+      toStageName: toStage.name,
+      note: dealActivity.note,
+      reasoning: dealActivity.reasoning,
+      createdAt: dealActivity.createdAt,
+    })
+    .from(dealActivity)
+    .leftJoin(user, eq(dealActivity.actorUserId, user.id))
+    .leftJoin(fromStage, eq(dealActivity.fromStageId, fromStage.id))
+    .leftJoin(toStage, eq(dealActivity.toStageId, toStage.id))
+    .where(eq(dealActivity.dealId, dealId))
+    .orderBy(desc(dealActivity.createdAt))
+
+  return rows.map((r) => ({
+    ...r,
+    actor: r.actor as "agent" | "user",
+    createdAt: r.createdAt.toISOString(),
+  }))
+}
+
+// Форма события для «Ленты решений» (top bar) — тот же контракт, что раньше
+// отдавал мок buildFeed (src/server/deals-mock.ts), поэтому клиентский
+// deal-decision-feed.tsx не пришлось менять. `{deal}` в тексте — плейсхолдер,
+// UI подставляет вместо него жирное имя сделки.
+export type FeedEvent = {
+  id: string
+  actor: string
+  isAI: boolean
+  at: string
+  text: string
+  dealName: string | null
+}
+
+// Последние события по ВСЕЙ орге (не одной сделке) — реальный журнал вместо
+// deal.changes-сида + in-memory аппендов агента (deals-mock.ts, TODO(backend),
+// теперь устарело: каждый moveDealStage/createDeal сам пишет в deal_activity).
+export async function listRecentDealActivity(
+  organizationId: string,
+  limit = 100,
+): Promise<FeedEvent[]> {
+  const fromStage = aliasedTable(dealFunnelStage, "from_stage")
+  const toStage = aliasedTable(dealFunnelStage, "to_stage")
+
+  const rows = await db
+    .select({
+      id: dealActivity.id,
+      actor: dealActivity.actor,
+      actorUserName: user.name,
+      dealName: deal.name,
+      clientName: client.name,
+      fromStageName: fromStage.name,
+      toStageName: toStage.name,
+      note: dealActivity.note,
+      reasoning: dealActivity.reasoning,
+      createdAt: dealActivity.createdAt,
+    })
+    .from(dealActivity)
+    .innerJoin(deal, eq(dealActivity.dealId, deal.id))
+    .leftJoin(client, eq(deal.clientId, client.id))
+    .leftJoin(user, eq(dealActivity.actorUserId, user.id))
+    .leftJoin(fromStage, eq(dealActivity.fromStageId, fromStage.id))
+    .leftJoin(toStage, eq(dealActivity.toStageId, toStage.id))
+    .where(eq(deal.organizationId, organizationId))
+    .orderBy(desc(dealActivity.createdAt))
+    .limit(limit)
+
+  return rows.map((r) => {
+    const isAI = r.actor === "agent"
+    const dealName = r.clientName ? `${r.clientName} — ${r.dealName}` : r.dealName
+    const move = r.fromStageName
+      ? `${dealStageLabel(r.fromStageName)} → ${dealStageLabel(r.toStageName ?? "")}`
+      : "Сделка создана"
+    const parts = [move]
+    if (r.note) parts.push(r.note)
+    if (isAI && r.reasoning) parts.push(r.reasoning)
+    return {
+      id: r.id,
+      actor: isAI ? "Агент" : (r.actorUserName ?? "Пользователь"),
+      isAI,
+      at: r.createdAt.toISOString(),
+      text: "{deal}: " + parts.join(" — ") + ".",
+      dealName,
+    }
+  })
 }
 
 // Kanban drag: move a deal to a column (funnel stage) at a manual-order slot.

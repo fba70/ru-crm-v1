@@ -772,6 +772,41 @@ export const deal = pgTable(
   ],
 )
 
+// Append-only журнал событий сделки (создание + каждый перевод стадии) —
+// «Хронология» (drawer) и «Лента решений» (top bar) читают ОТСЮДА, а не из
+// deal.changes (то поле — только для карточки, одно мутируемое значение,
+// не история). Добавлено через scripts/add-deal-activity.ts (additive SQL,
+// НЕ `drizzle-kit push`, см. root CLAUDE.md § Commands).
+export const dealActivity = pgTable(
+  "deal_activity",
+  {
+    id: text("id").primaryKey(),
+    dealId: text("deal_id")
+      .notNull()
+      .references(() => deal.id, { onDelete: "cascade" }),
+    // 'user' | 'agent' — как lastMovedBy на deal, не отдельный enum.
+    actor: text("actor").notNull(),
+    // Кто из людей совершил действие (null для агентских событий).
+    actorUserId: text("actor_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    // null у события создания сделки (нет «откуда»).
+    fromStageId: text("from_stage_id").references(() => dealFunnelStage.id, {
+      onDelete: "set null",
+    }),
+    toStageId: text("to_stage_id").references(() => dealFunnelStage.id, {
+      onDelete: "set null",
+    }),
+    note: text("note"),
+    reasoning: text("reasoning"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("deal_activity_dealId_idx").on(table.dealId),
+    index("deal_activity_createdAt_idx").on(table.createdAt),
+  ],
+)
+
 // Many-to-many: deal ↔ contact. Composite PK doubles as the dedup index
 // on (dealId, contactId). Cascading on either side keeps the join table
 // clean if a parent is ever hard-deleted (not expected today).

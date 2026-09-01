@@ -107,6 +107,13 @@ type Props = {
   // Pass a stable reference (memoize in the parent) so the open-effect's
   // form.reset doesn't re-run and wipe edits while the dialog is open.
   initialValues?: Partial<TaskFormData>
+  // Optional controlled open state — lets a parent open this SAME dialog
+  // programmatically (e.g. right after creating a deal, so "create a task
+  // with it" uses the real task form instead of a stripped-down duplicate)
+  // without a click on `trigger`. Omit both for the usual uncontrolled
+  // click-to-open behaviour (all other call sites).
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export default function TaskEditDialog({
@@ -115,8 +122,12 @@ export default function TaskEditDialog({
   trigger,
   onSuccess,
   initialValues,
+  open: controlledOpen,
+  onOpenChange: setControlledOpen,
 }: Props) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = setControlledOpen ?? setInternalOpen
   const [isPending, startTransition] = useTransition()
   const [members, setMembers] = useState<OrgMemberOption[]>([])
   const [clientOptions, setClientOptions] = useState<TaskClientOption[]>([])

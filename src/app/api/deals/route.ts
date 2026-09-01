@@ -10,6 +10,7 @@ import {
   moveDealStage,
   moveDeal,
   getDeal,
+  listDealActivity,
 } from "@/server/deals"
 import { dealStatus, type DealStatus } from "@/db/schema"
 
@@ -19,6 +20,7 @@ export {
   type DealContactOption,
   type DealFunnelStageOption,
   type DealContactSummary,
+  type DealActivityRow,
 } from "@/server/deals"
 
 function errorResponse(error: unknown) {
@@ -47,6 +49,11 @@ export async function GET(request: NextRequest) {
     if (url.searchParams.get("funnelStages") === "1") {
       const stages = await listDealFunnelStages()
       return NextResponse.json({ stages })
+    }
+    const activityFor = url.searchParams.get("activityFor")
+    if (activityFor) {
+      const activity = await listDealActivity(activityFor)
+      return NextResponse.json({ activity })
     }
     const id = url.searchParams.get("id")
     if (id) {
@@ -141,6 +148,7 @@ export async function PUT(request: NextRequest) {
           typeof position === "string" && position.length > 0
             ? position
             : null,
+        historyNote: body.historyNote ?? undefined,
       })
       return NextResponse.json({ success: true })
     }

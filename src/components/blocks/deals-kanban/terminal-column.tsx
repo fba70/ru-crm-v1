@@ -26,6 +26,7 @@ import {
   aggregateByCurrency,
   aggregateByCurrencyCompact,
   dealAmount,
+  pluralizeDeals,
 } from "@/lib/deal-board"
 import type { DealRow } from "@/app/api/deals/route"
 import type { DealIntel } from "@/server/deals-mock"
@@ -61,6 +62,7 @@ export function TerminalColumn({
   cards,
   wonDeals,
   lostDeals,
+  showLost,
   mode,
   onSortChange,
   collapsed,
@@ -75,6 +77,9 @@ export function TerminalColumn({
   cards: DealRow[]
   wonDeals: DealRow[]
   lostDeals: DealRow[]
+  // «Не состоялись» (чекбокс в фильтрах доски) — раскрывает проигранные
+  // карточки ниже разделителя. По умолчанию скрыты.
+  showLost: boolean
   mode: TerminalSortMode
   onSortChange: (mode: TerminalSortMode) => void
   collapsed: boolean
@@ -150,7 +155,9 @@ export function TerminalColumn({
 
   return (
     <div className="min-w-44 flex-1 min-h-0 flex flex-col gap-2">
-      <div className={`shrink-0 rounded-lg border p-2.5 ${DIAMOND_HEADER}`}>
+      {/* @container — слово «сделок» ниже скрывается по ширине ИМЕННО этой
+          шапки (не вьюпорта), см. column.tsx. */}
+      <div className={`@container shrink-0 rounded-lg border p-2.5 ${DIAMOND_HEADER}`}>
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             {/* Заголовок как у обычных колонок: название + процент закрытия.
@@ -159,27 +166,52 @@ export function TerminalColumn({
               <span className="truncate">Закрытие</span>
               <span className="text-xs opacity-70 shrink-0">100%</span>
             </div>
-            {/* Подзаголовок в ОДНУ строку (тот же размер/шрифт, что строка
-                статистики у обычных колонок): флажок = выиграно, корзина =
-                проиграно. Точные суммы — в тултипе. */}
+            {/* Подзаголовок в ДВЕ строки (флажок = выиграно, корзина = не
+                состоялись) — одна truncate-строка с обоими исходами
+                обрезалась на узких колонках (1440px, 7+ колонок). Точные
+                суммы — в тултипе. Слово «сделок» расшифровывает цифру и
+                склоняется по числу; прячется ниже критической ширины. */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-white/80 cursor-default">
-                  <span className="inline-flex items-center gap-1 tabular-nums">
+                <div className="mt-0.5 text-xs text-white/80 cursor-default">
+                  {/* truncate на span'е с текстом, а не на flex-контейнере —
+                      text-overflow: ellipsis ненадёжен на display:flex и мог
+                      раздувать высоту шапки вместо обрезания строки. */}
+                  <div className="flex items-center gap-1 tabular-nums min-w-0">
                     <Trophy className="h-3 w-3 shrink-0" />
-                    {wonDeals.length} ·{" "}
-                    {aggregateByCurrencyCompact(entriesOf(wonDeals))}
-                  </span>
-                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    <span className="truncate min-w-0">
+                      {wonDeals.length}
+                      <span className="hidden @[190px]:inline">
+                        {" "}
+                        {pluralizeDeals(wonDeals.length)}
+                      </span>{" "}
+                      · {aggregateByCurrencyCompact(entriesOf(wonDeals))}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 tabular-nums min-w-0">
                     <Trash2 className="h-3 w-3 shrink-0" />
-                    {lostDeals.length} ·{" "}
-                    {aggregateByCurrencyCompact(entriesOf(lostDeals))}
-                  </span>
+                    <span className="truncate min-w-0">
+                      {lostDeals.length}
+                      <span className="hidden @[190px]:inline">
+                        {" "}
+                        {pluralizeDeals(lostDeals.length)}
+                      </span>{" "}
+                      · {aggregateByCurrencyCompact(entriesOf(lostDeals))}
+                    </span>
+                  </div>
                 </div>
               </TooltipTrigger>
               <TooltipContent className="space-y-0.5">
-                <div>Выиграно: {aggregateByCurrency(entriesOf(wonDeals))}</div>
-                <div>Проиграно: {aggregateByCurrency(entriesOf(lostDeals))}</div>
+                {/* Числа в шапке (перед суммами) нигде не подписаны — тут
+                    расшифровка, что это количество сделок. */}
+                <div>
+                  Выиграно: {wonDeals.length} сделок ·{" "}
+                  {aggregateByCurrency(entriesOf(wonDeals))}
+                </div>
+                <div>
+                  Не состоялись: {lostDeals.length} сделок ·{" "}
+                  {aggregateByCurrency(entriesOf(lostDeals))}
+                </div>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -233,31 +265,65 @@ export function TerminalColumn({
           </div>
         </div>
       </div>
-      <div
-        ref={setNodeRef}
-        className={`flex flex-col gap-2 min-h-24 flex-1 overflow-y-auto scrollbar-none rounded-lg transition-colors ${
-          isOver ? "outline outline-2 outline-dashed outline-primary" : ""
-        }`}
-      >
-        {cards.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-            Перетащите сюда сделку, чтобы закрыть её как выигранную или
-            проигранную.
+      {(() => {
+        // Тело = выигранные всегда + проигранные ТОЛЬКО когда включён чекбокс
+        // «Не состоялись» (доска), ниже визуального разделителя. `cards` уже
+        // отсортирован (sortTerminalCards) — фильтрация сохраняет порядок.
+        const wonIds = new Set(wonDeals.map((d) => d.id))
+        const visibleCards = cards.filter((d) => wonIds.has(d.id))
+        const hiddenLostCards = cards.filter((d) => !wonIds.has(d.id))
+        const revealLost = showLost && hiddenLostCards.length > 0
+        const isEmpty = visibleCards.length === 0 && !revealLost
+        return (
+          <div
+            ref={setNodeRef}
+            className={`flex flex-col gap-2 min-h-24 flex-1 overflow-y-auto scrollbar-none rounded-lg transition-colors ${
+              isOver ? "outline outline-2 outline-dashed outline-primary" : ""
+            }`}
+          >
+            {isEmpty ? (
+              <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+                Перетащите сюда сделку, чтобы закрыть её как выигранную или
+                проигранную.
+              </div>
+            ) : (
+              <>
+                {visibleCards.map((d) => (
+                  <DealKanbanCard
+                    key={d.id}
+                    deal={d}
+                    onChanged={onChanged}
+                    onOpen={onOpen}
+                    tasks={tasksByDeal[d.id] ?? []}
+                    intel={intelById[d.id]}
+                    intelLoaded={intelLoaded}
+                  />
+                ))}
+                {revealLost && (
+                  <>
+                    <div className="flex items-center gap-2 px-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <span className="h-px flex-1 bg-border" />
+                      Не состоялись
+                      <span className="h-px flex-1 bg-border" />
+                    </div>
+                    {hiddenLostCards.map((d) => (
+                      <DealKanbanCard
+                        key={d.id}
+                        deal={d}
+                        onChanged={onChanged}
+                        onOpen={onOpen}
+                        tasks={tasksByDeal[d.id] ?? []}
+                        intel={intelById[d.id]}
+                        intelLoaded={intelLoaded}
+                      />
+                    ))}
+                  </>
+                )}
+              </>
+            )}
           </div>
-        ) : (
-          cards.map((d) => (
-            <DealKanbanCard
-              key={d.id}
-              deal={d}
-              onChanged={onChanged}
-              onOpen={onOpen}
-              tasks={tasksByDeal[d.id] ?? []}
-              intel={intelById[d.id]}
-              intelLoaded={intelLoaded}
-            />
-          ))
-        )}
-      </div>
+        )
+      })()}
     </div>
   )
 }

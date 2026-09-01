@@ -157,14 +157,16 @@ export function DealKanbanCard({
   const atRisk = isActive && !isTerminal && mockAtRisk(deal.id)
   const hasBadgeRow = badges.length > 0 || isStale || movedByAgent || atRisk
 
-  // Графитовый фон + светлый текст для «негативных» карточек: удалённые (trash)
-  // И проигранные (проиграно == отменено == активная Rejected) — все читаются
-  // единообразно тёмными. Выигранные и обычные — обычная светлая поверхность.
+  // «Негативные» карточки (удалённые/отменённые/не состоявшиеся = активная
+  // Rejected) — обычная тема-зависимая поверхность карточки, просто
+  // притушенная (opacity), а не отдельный жёстко-тёмный фон: тот фон был
+  // захардкожен под тёмную тему и в светлой выглядел чужеродным плотным
+  // чёрным блоком среди светлых карточек.
   const isGraphite =
     deal.status === "deleted" || deal.status === "cancelled" || isLost
-  const surfaceClass = isGraphite
-    ? "bg-[#26262b] text-zinc-100 border-[#3c3c43]"
-    : "bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06]"
+  const normalSurface =
+    "bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06]"
+  const surfaceClass = isGraphite ? `${normalSurface} opacity-55` : normalSurface
 
   return (
     <Card
@@ -176,7 +178,7 @@ export function DealKanbanCard({
       {...attributes}
       {...listeners}
       className={`group p-3 space-y-1 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] ${surfaceClass} ${
-        isActive ? "cursor-grab active:cursor-grabbing" : "opacity-60"
+        isActive ? "cursor-grab active:cursor-grabbing" : "cursor-default"
       } ${isDragging ? "opacity-40" : ""}`}
       aria-label={`Открыть сделку: ${deal.clientName ?? deal.name}`}
       onClick={() => onOpen(deal)}
@@ -222,18 +224,27 @@ export function DealKanbanCard({
         </Badge>
       )}
       {isLost && (
-        <Badge variant="secondary" className="gap-1 bg-white/10 text-zinc-200">
+        <Badge
+          variant="secondary"
+          className="gap-1 bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
+        >
           <Trash2 className="h-3 w-3" />
-          Проиграно
+          Не состоялась
         </Badge>
       )}
       {deal.status === "cancelled" && (
-        <Badge variant="secondary" className="bg-white/10 text-zinc-200">
+        <Badge
+          variant="secondary"
+          className="bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
+        >
           Отменена
         </Badge>
       )}
       {deal.status === "deleted" && (
-        <Badge variant="secondary" className="bg-red-400/20 text-red-200">
+        <Badge
+          variant="secondary"
+          className="bg-red-500/15 text-red-600 dark:text-red-300"
+        >
           Удалена
         </Badge>
       )}
@@ -241,10 +252,14 @@ export function DealKanbanCard({
       <DealMetaLine deal={deal} />
 
       {/* Последнее изменение (UX №10) — целиком, в отдельной плашке с чётким
-          фоном+рамкой (полупрозрачная карточка «съедала» muted/50), без иконки. */}
-      {isActive && deal.changes && (
+          фоном+рамкой (полупрозрачная карточка «съедала» muted/50), без иконки.
+          Фолбэк на reasoning, если changes пуст (перевод без комментария
+          затирает changes на null) — карточка не должна пустеть, пока есть
+          хоть какое-то состояние сделки (тот же reasoning || changes, что и
+          в дровере). */}
+      {isActive && (deal.changes || deal.reasoning) && (
         <div className="rounded-md border border-border bg-muted p-2 text-xs text-foreground/80">
-          {deal.changes}
+          {deal.changes ?? deal.reasoning}
         </div>
       )}
 
@@ -312,7 +327,8 @@ export function DealKanbanCard({
         ))}
 
       {hasBadgeRow && (
-        <div className="flex flex-wrap gap-1">
+        // Все бейджи строго в столбик, один под другим — не строкой/wrap.
+        <div className="flex flex-col items-start gap-1">
           {badges.map((b, i) => {
             const Icon = BADGE_ICON[b.icon]
             return (
@@ -333,7 +349,7 @@ export function DealKanbanCard({
                 <span
                   tabIndex={0}
                   className="inline-flex cursor-help"
-                  aria-label="Почему риск проигрыша"
+                  aria-label="Почему есть риски"
                   onPointerDown={stop}
                   onClick={stop}
                 >
@@ -342,7 +358,7 @@ export function DealKanbanCard({
                     className="gap-1 bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]"
                   >
                     <AlertTriangle className="h-3 w-3" />
-                    риск проигрыша
+                    есть риски
                   </Badge>
                 </span>
               </TooltipTrigger>
@@ -394,41 +410,37 @@ export function DealKanbanCard({
             </Popover>
           )}
           {movedByAgent && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
+            // Наведение (не клик) — тот же паттерн, что у бейджа «есть риски»:
+            // ризонинг агента виден сразу по hover.
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="inline-flex cursor-help"
+                  aria-label="Почему стадию перевёл агент"
                   onPointerDown={stop}
                   onClick={stop}
-                  aria-label="Стадию перевёл агент"
                 >
                   <Badge
                     variant="secondary"
-                    className="gap-1 cursor-pointer bg-violet-500/15 text-violet-600 dark:text-violet-300"
+                    className="gap-1 bg-violet-500/15 text-violet-600 dark:text-violet-300"
                   >
                     <Sparkles className="h-3 w-3" />
                     перевёл агент
                   </Badge>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="w-72 text-sm space-y-2"
-                onClick={stop}
-              >
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Стадию перевёл агент
-                </div>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent align="start" className="max-w-xs text-xs space-y-1.5">
                 <div>
                   {deal.changes ??
                     deal.reasoning ??
                     "Автоматический перевод по сигналу из источников."}
                 </div>
-                <div className="text-xs text-muted-foreground pt-1 border-t">
+                <div className="text-muted-foreground pt-1 border-t border-white/10">
                   Не согласны — просто перетащите карточку на нужную стадию.
                 </div>
-              </PopoverContent>
-            </Popover>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       )}

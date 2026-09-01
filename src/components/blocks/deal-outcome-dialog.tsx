@@ -82,7 +82,7 @@ export function DealOutcomeDialog({
               className="border-[#242424]/40 text-[#242424] hover:bg-[#242424]/5 dark:border-[#8a8a90]/50 dark:text-[#D6D6DA] dark:hover:bg-[#3B3B40]/40"
             >
               <XCircle className="h-4 w-4 mr-1" />
-              Проиграно
+              Не состоялось
             </Button>
             <Button
               onClick={() => onConfirm("won", note)}

@@ -1,7 +1,10 @@
-// TODO(backend): здесь должна быть ручка — журнал решений (audit log) по орге. Сейчас сид из реальных deal.changes + мок-события агента + in-memory аппенды, см. deals-mock.ts
+// Лента решений — реальный журнал (deal_activity), одна строка на КАЖДЫЙ
+// перевод/создание сделки, пишется в src/server/deals.ts (moveDealStage,
+// createDeal). Больше не мок/деривация из deal.changes.
 
 import { NextResponse } from "next/server"
-import { buildFeed, loadBoardDeals, requireMockOrg } from "@/server/deals-mock"
+import { listRecentDealActivity } from "@/server/deals"
+import { getServerSession } from "@/lib/get-session"
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Unknown error"
@@ -16,9 +19,12 @@ function errorResponse(error: unknown) {
 
 export async function GET() {
   try {
-    const { orgId } = await requireMockOrg()
-    const deals = await loadBoardDeals()
-    return NextResponse.json({ events: buildFeed(orgId, deals) })
+    const session = await getServerSession()
+    if (!session) throw new Error("Unauthorized")
+    const orgId = session.session.activeOrganizationId
+    if (!orgId) throw new Error("No active organization")
+    const events = await listRecentDealActivity(orgId)
+    return NextResponse.json({ events })
   } catch (error) {
     return errorResponse(error)
   }
