@@ -5,6 +5,8 @@ import {
   getClientDetail,
 } from "@/server/client-content"
 import { listOrgSources } from "@/server/sources"
+import { listClientRevenue12mo } from "@/server/clients"
+import { listDeals } from "@/server/deals"
 import { ClientDetailShell } from "@/components/blocks/client-detail-shell"
 
 export default async function ClientDetailPage({
@@ -34,11 +36,30 @@ export default async function ClientDetailPage({
   // Source dropdown for the Client Content table.
   const sources = await listOrgSources(activeOrgId)
 
+  // Аккаунт-менеджмент (см. клиентский список): выручка за 12 мес. + активная
+  // сделка компании. Переиспользуем те же батч-функции, что и список
+  // /clients, просто берём одну запись — без отдельной "по одному клиенту"
+  // server-функции.
+  const [revenueByClient, deals] = await Promise.all([
+    listClientRevenue12mo(),
+    listDeals(),
+  ])
+  const revenue = revenueByClient[id]
+  const clientDeals = deals
+    .filter((d) => d.clientId === id)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const activeDeal = clientDeals[0]
+
   return (
     <div className="flex flex-col gap-6 items-center justify-start min-h-screen pb-8">
-      <h1 className="text-2xl font-medium mt-2">КЛИЕНТ</h1>
+      <h1 className="text-2xl font-medium mt-2">КОМПАНИЯ</h1>
       <div className="w-full max-w-7xl px-4">
-        <ClientDetailShell detail={detail} sources={sources} />
+        <ClientDetailShell
+          detail={detail}
+          sources={sources}
+          revenue={revenue}
+          activeDeal={activeDeal}
+        />
       </div>
     </div>
   )

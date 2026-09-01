@@ -808,6 +808,48 @@ export async function listRecentDealActivity(
   })
 }
 
+// «Не состоялись» по своим колонкам (доска): активная Rejected-сделка не
+// хранит, с какого этапа её отклонили — funnel_stage_id указывает на сам
+// Rejected. Источник — журнал deal_activity: последняя запись, где
+// to_stage_id = Rejected, её from_stage_id и есть исходный этап. Для сделок,
+// отклонённых ДО появления журнала (бэкфилл без истории — see
+// scripts/add-deal-activity.ts), fromStageId может отсутствовать — таких
+// в возвращаемой карте просто нет, вызывающая сторона (deals-board.tsx)
+// откатывается на fallback-показ в колонке «Закрытие».
+// (Отменённые (`cancelled`) сделки сюда не входят — их funnelStageId сам по
+// себе уже корректный «этап, на котором отменили», т.к. setDealStatus()
+// его не трогает — доп. запрос не нужен.)
+export async function listRejectedDealOrigins(): Promise<
+  Record<string, string>
+> {
+  const { activeOrgId } = await requireOrgContext()
+  const stages = await listDealFunnelStages()
+  const rejected = stages.find((s) => s.name === "Rejected")
+  if (!rejected) return {}
+
+  const rows = await db
+    .select({
+      dealId: dealActivity.dealId,
+      fromStageId: dealActivity.fromStageId,
+      createdAt: dealActivity.createdAt,
+    })
+    .from(dealActivity)
+    .innerJoin(deal, eq(dealActivity.dealId, deal.id))
+    .where(
+      and(
+        eq(deal.organizationId, activeOrgId),
+        eq(dealActivity.toStageId, rejected.id),
+      ),
+    )
+    .orderBy(desc(dealActivity.createdAt))
+
+  const result: Record<string, string> = {}
+  for (const r of rows) {
+    if (!result[r.dealId] && r.fromStageId) result[r.dealId] = r.fromStageId
+  }
+  return result
+}
+
 // Kanban drag: move a deal to a column (funnel stage) at a manual-order slot.
 // The CLIENT computes `position` via fractional-indexing (computePosition in
 // src/lib/kanban-move.ts) from the neighbours at the drop point; the server

@@ -43,19 +43,25 @@ import {
 // сам (см. /api/deals/proposals), карточка несёт бейдж «перевёл агент».
 export function Column({
   column,
+  lostCards,
+  showLost,
   intelById,
   tasksByDeal,
   intelLoaded,
-  onChanged,
   onOpen,
   onCollapse,
   onSortChange,
 }: {
   column: BoardColumn
+  // Проигранные/отменённые сделки, закрытые именно с ЭТОГО этапа — см.
+  // lostByStage в deals-board.tsx (listRejectedDealOrigins для Rejected,
+  // funnelStageId напрямую для cancelled). Показаны под разделителем «Не
+  // состоялись» ТОЛЬКО когда showLost включён (чекбокс в фильтрах доски).
+  lostCards: DealRow[]
+  showLost: boolean
   intelById: Record<string, DealIntel>
   tasksByDeal: Record<string, DealTaskInfo[]>
   intelLoaded: boolean
-  onChanged: () => void
   onOpen: (deal: DealRow) => void
   onCollapse: () => void
   onSortChange: (mode: SortMode) => void
@@ -201,13 +207,33 @@ export function Column({
           <DealKanbanCard
             key={d.id}
             deal={d}
-            onChanged={onChanged}
             onOpen={onOpen}
             tasks={tasksByDeal[d.id] ?? []}
             intel={intelById[d.id]}
             intelLoaded={intelLoaded}
           />
         ))}
+        {showLost && lostCards.length > 0 && (
+          <>
+            {/* Тот же разделитель, что в terminal-column.tsx — сделки,
+                закрытые/отменённые именно с этого этапа. */}
+            <div className="flex items-center gap-2 px-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              Не состоялись
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            {lostCards.map((d) => (
+              <DealKanbanCard
+                key={d.id}
+                deal={d}
+                onOpen={onOpen}
+                tasks={tasksByDeal[d.id] ?? []}
+                intel={intelById[d.id]}
+                intelLoaded={intelLoaded}
+              />
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

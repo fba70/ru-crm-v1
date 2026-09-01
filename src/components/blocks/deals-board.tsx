@@ -233,10 +233,27 @@ export function DealsBoard({
   const justDraggedRef = useRef(false)
   const boardScrollRef = useRef<HTMLDivElement>(null)
   const [isPending, startTransition] = useTransition()
+  // «Не состоялись» по своим колонкам: для активных Rejected-сделок нужен их
+  // исходный этап (не сам Rejected) — см. listRejectedDealOrigins в
+  // src/server/deals.ts (читает журнал deal_activity). Отменённые сделки
+  // сюда не входят — их funnelStageId уже корректный, доп. данные не нужны.
+  const [rejectedOrigins, setRejectedOrigins] = useState<
+    Record<string, string>
+  >({})
+  const loadRejectedOrigins = () => {
+    fetch("/api/deals?rejectedOrigins=1")
+      .then((r) => r.json())
+      .then((d) => setRejectedOrigins(d.origins ?? {}))
+      .catch(() => {})
+  }
+  useEffect(() => {
+    loadRejectedOrigins()
+  }, [])
 
   const refresh = () => {
     router.refresh()
     refetchBoard()
+    loadRejectedOrigins()
   }
 
   // Агент авто-применил переводы во время загрузки интела — подтягиваем свежие
@@ -256,14 +273,23 @@ export function DealsBoard({
     useSensor(KeyboardSensor),
   )
 
-  const filtered = useMemo(() => {
+  // Владелец + клиенты, БЕЗ фильтра «Перевёл агент» — источник для «Не
+  // состоялись» (см. lostDeals ниже): этот раздел управляется отдельным
+  // чекбоксом showLostDeals и не должен пропадать при включении agentMovedOnly
+  // (иначе «Не состоялись» включён, но карточки исчезают — баг, о котором
+  // сообщил пользователь).
+  const filteredBase = useMemo(() => {
     const clientSet = new Set(clientFilters)
-    return filterByOwner(deals, filter, currentUserId).filter((d) => {
-      if (clientSet.size > 0 && !clientSet.has(d.clientId)) return false
-      if (agentMovedOnly && d.lastMovedBy !== "agent") return false
-      return true
-    })
-  }, [deals, filter, currentUserId, clientFilters, agentMovedOnly])
+    return filterByOwner(deals, filter, currentUserId).filter(
+      (d) => clientSet.size === 0 || clientSet.has(d.clientId),
+    )
+  }, [deals, filter, currentUserId, clientFilters])
+
+  const filtered = useMemo(
+    () =>
+      filteredBase.filter((d) => !agentMovedOnly || d.lastMovedBy === "agent"),
+    [filteredBase, agentMovedOnly],
+  )
 
   const activeDeals = useMemo(
     () => filtered.filter((d) => d.status === "active"),
@@ -290,19 +316,49 @@ export function DealsBoard({
   )
   const lostDeals = useMemo(
     () =>
-      filtered.filter(
+      filteredBase.filter(
         (d) =>
           d.status === "cancelled" ||
           (d.status === "active" && d.funnelStageName === "Rejected"),
       ),
-    [filtered],
+    [filteredBase],
   )
-  // Карточки финальной колонки = выигранные (active Closed) + ВСЕ проигранные
-  // (active Rejected + отменённые), в выбранной сортировке (view-only). Совпадает
-  // с множествами статистики (wonDeals/lostDeals) → счётчики = число карточек.
+
+  // «Не состоялись» по своим колонкам (не одной кучей в «Закрытие»): каждая
+  // проигранная/отменённая сделка показывается под разделителем в ТОЙ
+  // обычной колонке, с которой её закрыли. cancelled → funnelStageId уже
+  // корректный (setDealStatus его не трогает). Активная Rejected → исходный
+  // этап из rejectedOrigins (журнал deal_activity). Сделки без derivable-
+  // происхождения (старые, до журнала) остаются в lostNoOrigin — fallback,
+  // показываются в колонке «Закрытие» под тем же разделителем, чтобы не
+  // потеряться молча.
+  const flowStageIds = useMemo(
+    () => new Set(stages.filter((s) => !isTerminalStage(s.name)).map((s) => s.id)),
+    [stages],
+  )
+  const { lostByStage, lostNoOrigin } = useMemo(() => {
+    const byStage: Record<string, DealRow[]> = {}
+    const noOrigin: DealRow[] = []
+    for (const d of lostDeals) {
+      const originStageId =
+        d.status === "cancelled" ? d.funnelStageId : rejectedOrigins[d.id]
+      if (originStageId && flowStageIds.has(originStageId)) {
+        ;(byStage[originStageId] ??= []).push(d)
+      } else {
+        noOrigin.push(d)
+      }
+    }
+    return { lostByStage: byStage, lostNoOrigin: noOrigin }
+  }, [lostDeals, rejectedOrigins, flowStageIds])
+
+  // Карточки финальной колонки = выигранные (active Closed) + проигранные БЕЗ
+  // derivable-происхождения (см. lostNoOrigin выше) — остальные проигранные
+  // теперь показываются в своих обычных колонках. Заголовок колонки
+  // (Trophy/Trash) считает ВСЕ lostDeals по орге, а не только lostNoOrigin —
+  // это общий тотал, независимо от того, где физически лежат карточки.
   const terminalCards = useMemo(
-    () => sortTerminalCards([...wonDeals, ...lostDeals], finalSort),
-    [wonDeals, lostDeals, finalSort],
+    () => sortTerminalCards([...wonDeals, ...lostNoOrigin], finalSort),
+    [wonDeals, lostNoOrigin, finalSort],
   )
 
   const flowStages = useMemo(
@@ -473,6 +529,39 @@ export function DealsBoard({
     })
   }
 
+  // Смена этапа из выбора в дровере (Select) — заводит ТОТ ЖЕ
+  // confirm/reason-диалог, что и перетаскивание карточки (см. handleDragEnd
+  // выше): обязательное обоснование для обратного перевода, подтверждение
+  // исхода при переводе в терминальную стадию (Closed/Rejected). Дровер
+  // больше не пишет в /api/deals напрямую в обход этих диалогов.
+  function requestStageChange(deal: DealRow, toStageId: string) {
+    if (deal.status !== "active") return
+    if (toStageId === deal.funnelStageId) return
+    const toStage = stages.find((s) => s.id === toStageId)
+    if (!toStage) return
+    const fromStage = stages.find((s) => s.id === deal.funnelStageId)
+
+    if (isTerminalStage(toStage.name)) {
+      if (finalCollapsed) setFinalCollapsed(false)
+      setPendingOutcome({
+        dealId: deal.id,
+        dealName: deal.name,
+        fromLabel: dealStageLabel(fromStage?.name ?? ""),
+      })
+      return
+    }
+
+    if (store.collapsed[toStageId]) store.expand(toStageId)
+    setPendingMove({
+      dealId: deal.id,
+      dealName: deal.name,
+      toStageId: toStage.id,
+      fromLabel: dealStageLabel(fromStage?.name ?? ""),
+      toLabel: dealStageLabel(toStage.name),
+      direction: moveDirection(fromStage?.sortOrder ?? 0, toStage.sortOrder),
+    })
+  }
+
   function confirmMove(note: string) {
     if (!pendingMove) return
     const move = pendingMove
@@ -634,7 +723,6 @@ export function DealsBoard({
                 Лента решений
               </Button>
               <DealEditDialog
-                mode="create"
                 // router.refresh() один сам по себе обновляет только серверный
                 // список сделок (карточка сделки появлялась сразу) — интел
                 // борда (tasksByDeal и т.п., useBoardIntel) — отдельный
@@ -767,10 +855,11 @@ export function DealsBoard({
                 <Column
                   key={column.stage.id}
                   column={column}
+                  lostCards={lostByStage[column.stage.id] ?? []}
+                  showLost={showLostDeals}
                   intelById={board.intel}
                   tasksByDeal={board.tasksByDeal}
                   intelLoaded={!boardLoading}
-                  onChanged={refresh}
                   onOpen={(d) => {
                     if (justDraggedRef.current) return
                     setOpenDealId(d.id)
@@ -799,7 +888,6 @@ export function DealsBoard({
                 intelById={board.intel}
                 tasksByDeal={board.tasksByDeal}
                 intelLoaded={!boardLoading}
-                onChanged={refresh}
                 onOpen={(d) => {
                   if (justDraggedRef.current) return
                   setOpenDealId(d.id)
@@ -833,10 +921,12 @@ export function DealsBoard({
       <DealDetailDrawer
         deal={openDeal}
         stages={stages}
+        clientOptions={clientOptions}
         currentUserId={currentUserId}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onChanged={refresh}
+        onRequestStageChange={requestStageChange}
       />
       <DealDecisionFeed
         open={feedOpen}

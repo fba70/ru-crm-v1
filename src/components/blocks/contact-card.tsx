@@ -8,15 +8,17 @@ import type { ContactRow } from "@/app/api/contacts/route"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 
-// `initial` is the auto-discovered state — orange accent for review
-// attention. `suspended` stays muted (archived). `deleted` is the soft-
-// delete (excluded from discovery) — red accent + dimmed card. `blocked` is
-// the blocklist suppression. Mirrors the same palette as the client card.
+// `initial` is the auto-discovered state — accent for review attention.
+// `suspended` stays muted (archived). `deleted` is the soft-delete (excluded
+// from discovery) — red accent + dimmed card. `blocked` is the blocklist
+// suppression. Mirrors the same palette as the client card — hues from the
+// deals board (src/lib/deal-board.ts + deal-kanban-card.tsx), not ad-hoc
+// Tailwind colors.
 const STATUS_COLOR: Record<string, string> = {
-  initial: "bg-orange-500/15 text-orange-600 dark:text-orange-300",
+  initial: "bg-[#C2410C]/15 text-[#C2410C] dark:text-[#E5824A]",
   suspended: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  deleted: "bg-red-500/15 text-red-600 dark:text-red-400",
-  blocked: "bg-rose-600/15 text-rose-700 dark:text-rose-300",
+  deleted: "bg-red-500/15 text-red-600 dark:text-red-300",
+  blocked: "bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]",
 }
 
 // UI display labels for the status badge (DB enum values stay English).
@@ -40,7 +42,7 @@ export function ContactCard({
 }) {
   return (
     <Card
-      className={`flex flex-col dark:border-gray-600 ${
+      className={`flex flex-col ${
         contact.status === "deleted" || contact.status === "blocked"
           ? "opacity-60"
           : ""

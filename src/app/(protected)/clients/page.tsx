@@ -20,8 +20,9 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination"
 import { Ban, Loader, Plus, Sparkles, X } from "lucide-react"
-import type { ClientRow } from "@/app/api/clients/route"
+import type { ClientRow, ClientRevenueSummary } from "@/app/api/clients/route"
 import type { ContactRow } from "@/app/api/contacts/route"
+import type { DealRow } from "@/app/api/deals/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ClientCard } from "@/components/blocks/client-card"
@@ -134,6 +135,14 @@ function PagerNav({
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientRow[]>([])
   const [contacts, setContacts] = useState<ContactRow[]>([])
+  // Аккаунт-менеджмент: выручка за 12 мес. по компании + её активная сделка —
+  // оба батчево, один запрос на страницу, не по одному на карточку.
+  const [revenueByClient, setRevenueByClient] = useState<
+    Record<string, ClientRevenueSummary>
+  >({})
+  const [activeDealByClient, setActiveDealByClient] = useState<
+    Record<string, DealRow>
+  >({})
   const [loading, setLoading] = useState(true)
   // Owner-only: drives the blocklist management button + per-entity/candidate
   // Block actions. Best-effort gate (the server is the real one).
@@ -151,6 +160,7 @@ export default function ClientsPage() {
     const res = await fetch("/api/clients")
     const data = await res.json()
     setClients(data.clients ?? [])
+    setRevenueByClient(data.revenue12mo ?? {})
   }, [])
 
   const loadContacts = useCallback(async () => {
@@ -159,9 +169,26 @@ export default function ClientsPage() {
     setContacts(data.contacts ?? [])
   }, [])
 
+  // Активная сделка на компанию для карточки аккаунт-менеджмента — берём
+  // самую недавно тронутую активную сделку клиента (group-by на клиенте,
+  // без новой server-функции: listDeals() уже возвращает clientId на
+  // каждой активной сделке — тот же паттерн, что board.tasksByDeal на
+  // доске сделок).
+  const loadDeals = useCallback(async () => {
+    const res = await fetch("/api/deals")
+    const data = await res.json()
+    const deals: DealRow[] = data.deals ?? []
+    const byClient: Record<string, DealRow> = {}
+    for (const d of deals) {
+      const current = byClient[d.clientId]
+      if (!current || d.updatedAt > current.updatedAt) byClient[d.clientId] = d
+    }
+    setActiveDealByClient(byClient)
+  }, [])
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadClients(), loadContacts()])
-  }, [loadClients, loadContacts])
+    await Promise.all([loadClients(), loadContacts(), loadDeals()])
+  }, [loadClients, loadContacts, loadDeals])
 
   // Resolve whether the current user can manage the blocklist (org owner).
   useEffect(() => {
@@ -253,9 +280,11 @@ export default function ClientsPage() {
           client={c}
           onChanged={refreshAll}
           canBlock={canBlock}
+          revenue={revenueByClient[c.id]}
+          activeDeal={activeDealByClient[c.id]}
         />
       )),
-    [clientPaged.pageItems, refreshAll, canBlock],
+    [clientPaged.pageItems, refreshAll, canBlock, revenueByClient, activeDealByClient],
   )
 
   const contactGrid = useMemo(
@@ -295,7 +324,7 @@ export default function ClientsPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
-      <h1 className="text-xl font-medium">Клиенты & контакты</h1>
+      <h1 className="text-xl font-medium">Компании & контакты</h1>
 
       <div className="w-full space-y-4">
         {/* Shared toolbar for both sections: создание — слева, остальное —
@@ -307,7 +336,7 @@ export default function ClientsPage() {
             trigger={
               <Button size="sm" variant="outline">
                 <Plus className="h-4 w-4 mr-1" />
-                Новый клиент
+                Новая компания
               </Button>
             }
           />
@@ -353,7 +382,7 @@ export default function ClientsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Клиенты</CardTitle>
+            <CardTitle>Компании</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -408,7 +437,7 @@ export default function ClientsPage() {
 
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-xs text-muted-foreground">
-                {filteredClients.length} из {clients.length} клиентов
+                {filteredClients.length} из {clients.length} компаний
               </div>
               <Button
                 variant="ghost"
@@ -426,9 +455,9 @@ export default function ClientsPage() {
                 <Loader className="animate-spin h-6 w-6" />
               </div>
             ) : clients.length === 0 ? (
-              <EmptyState label="Пока нет клиентов." />
+              <EmptyState label="Пока нет компаний." />
             ) : filteredClients.length === 0 ? (
-              <EmptyState label="Нет клиентов по заданным фильтрам." />
+              <EmptyState label="Нет компаний по заданным фильтрам." />
             ) : (
               <>
                 <div className="grid grid-cols-3 gap-4">{clientGrid}</div>

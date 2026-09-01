@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { listClients, createClient, updateClient } from "@/server/clients"
+import {
+  listClients,
+  listClientRevenue12mo,
+  createClient,
+  updateClient,
+} from "@/server/clients"
 import { getServerSession } from "@/lib/get-session"
 import {
   getClientDetail,
@@ -7,7 +12,11 @@ import {
   type ClientDetail,
 } from "@/server/client-content"
 
-export { type ClientRow, type ClientContactPreview } from "@/server/clients"
+export {
+  type ClientRow,
+  type ClientContactPreview,
+  type ClientRevenueSummary,
+} from "@/server/clients"
 export type { ClientDetail }
 
 function errorResponse(error: unknown) {
@@ -43,8 +52,13 @@ export async function GET(request: NextRequest) {
         throw e
       }
     }
-    const clients = await listClients()
-    return NextResponse.json({ clients })
+    // Компания-карточки (аккаунт-менеджмент) показывают выручку за 12 мес.
+    // рядом с базовым списком — один батч-запрос, не по одному на карточку.
+    const [clients, revenue12mo] = await Promise.all([
+      listClients(),
+      listClientRevenue12mo(),
+    ])
+    return NextResponse.json({ clients, revenue12mo })
   } catch (error) {
     return errorResponse(error)
   }

@@ -5,6 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   ArrowRight,
   Mail,
   Phone,
@@ -12,21 +17,33 @@ import {
   Globe,
   Pencil,
   MessageSquare,
+  Clock,
+  Briefcase,
 } from "lucide-react"
-import type { ClientRow } from "@/app/api/clients/route"
+import type { ClientRow, ClientRevenueSummary } from "@/app/api/clients/route"
+import type { DealRow } from "@/app/api/deals/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
 import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
+import { formatAmount, formatCompactNumber, CURRENCY_SYMBOL } from "@/lib/deal-board"
+import { dealStageLabel } from "@/lib/deal-funnel"
+import {
+  clientAtRisk,
+  clientStaleDays,
+  pluralizeOrders,
+} from "@/lib/client-mocks"
 
 // `initial` is the auto-discovered state — give it a distinct accent so
 // it stands out for review. `suspended` stays muted (archived). `deleted`
 // is the soft-delete (excluded from discovery) — red accent + the card is
 // dimmed below.
+// Хью — те же, что уже использует доска сделок (src/lib/deal-board.ts +
+// deal-kanban-card.tsx), а не разрозненные Tailwind-цвета.
 const STATUS_COLOR: Record<string, string> = {
-  initial: "bg-orange-500/15 text-orange-600 dark:text-orange-300",
+  initial: "bg-[#C2410C]/15 text-[#C2410C] dark:text-[#E5824A]",
   suspended: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  deleted: "bg-red-500/15 text-red-600 dark:text-red-400",
-  blocked: "bg-rose-600/15 text-rose-700 dark:text-rose-300",
+  deleted: "bg-red-500/15 text-red-600 dark:text-red-300",
+  blocked: "bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]",
 }
 
 // UI display labels for the status badge (DB enum values stay English).
@@ -38,22 +55,100 @@ const STATUS_LABEL: Record<string, string> = {
   blocked: "Заблокирован",
 }
 
+// Блок аккаунт-менеджмента (UX со звонка 14.08): выручка за 12 мес., активная
+// сделка, риск «давно не было контакта» — то, ради чего вообще открывают
+// карточку компании, а не адрес/директор.
+export function AccountSummary({
+  client,
+  revenue,
+  activeDeal,
+}: {
+  client: ClientRow
+  revenue?: ClientRevenueSummary
+  activeDeal?: DealRow
+}) {
+  const days = clientStaleDays(client.updatedAt)
+  const stale = clientAtRisk(client.updatedAt)
+  const symbol = (
+    CURRENCY_SYMBOL[client.currency.toUpperCase()] ?? client.currency
+  ).trim()
+  const dealAmount = activeDeal
+    ? formatAmount(activeDeal.value, activeDeal.currency)
+    : null
+
+  return (
+    <div className="rounded-md border border-border bg-muted p-2.5 space-y-1.5 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          Выручка за 12 мес.
+        </span>
+        <span className="font-semibold tabular-nums">
+          {revenue && revenue.revenue > 0
+            ? `${formatCompactNumber(revenue.revenue)} ${symbol} · ${revenue.orders} ${pluralizeOrders(revenue.orders)}`
+            : "нет заказов"}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground truncate flex items-center gap-1">
+          <Briefcase className="h-3 w-3 shrink-0" />
+          {activeDeal ? activeDeal.name : "Нет активной сделки"}
+        </span>
+        {activeDeal && (
+          <span className="text-xs shrink-0 text-right">
+            {dealStageLabel(activeDeal.funnelStageName)}
+            {dealAmount ? ` · ${dealAmount}` : ""}
+          </span>
+        )}
+      </div>
+      {stale && (
+        // Тот же визуальный язык, что «остывание» на карточке сделки
+        // (deal-kanban-card.tsx) — Clock-бейдж + тултип по наведению.
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className="inline-flex cursor-help"
+              aria-label="Давно не было контакта"
+            >
+              <Badge
+                variant="secondary"
+                className="gap-1 bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]"
+              >
+                <Clock className="h-3 w-3" />
+                {days} дн без контакта
+              </Badge>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent align="start" className="max-w-xs text-xs">
+            Компания давно не касалась ни одной записи в системе — возможно,
+            стоит связаться.
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
 export function ClientCard({
   client,
   onChanged,
   canBlock = false,
+  revenue,
+  activeDeal,
 }: {
   client: ClientRow
   onChanged: () => void
   // When true (owner), show the "add to blocklist" action.
   canBlock?: boolean
+  revenue?: ClientRevenueSummary
+  activeDeal?: DealRow
 }) {
   const preview = client.contacts.slice(0, 2)
   const moreCount = Math.max(0, client.contacts.length - preview.length)
 
   return (
     <Card
-      className={`flex flex-col dark:border-gray-600 ${
+      className={`flex flex-col ${
         client.status === "deleted" || client.status === "blocked"
           ? "opacity-60"
           : ""
@@ -100,7 +195,7 @@ export function ClientCard({
             client={client}
             onSuccess={onChanged}
             trigger={
-              <Button variant="ghost" size="icon" aria-label="Редактировать клиента">
+              <Button variant="ghost" size="icon" aria-label="Редактировать компанию">
                 <Pencil className="h-4 w-4" />
               </Button>
             }
@@ -116,45 +211,66 @@ export function ClientCard({
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col space-y-3 text-sm">
-        <div className="space-y-1 text-muted-foreground">
-          {client.email && (
-            <div className="flex items-center gap-2 truncate">
-              <Mail className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{client.email}</span>
+        <AccountSummary
+          client={client}
+          revenue={revenue}
+          activeDeal={activeDeal}
+        />
+
+        {(client.email || client.phone) && (
+          <div className="space-y-1 text-muted-foreground">
+            {client.email && (
+              <div className="flex items-center gap-2 truncate">
+                <Mail className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{client.email}</span>
+              </div>
+            )}
+            {client.phone && (
+              <div className="flex items-center gap-2 truncate">
+                <Phone className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{client.phone}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Адрес/сайт/комментарий — второстепенная справочная информация,
+            свёрнута по умолчанию (это не то, ради чего открывают карточку
+            компании — см. обсуждение аккаунт-менеджмента). */}
+        {(client.address || client.webUrl || client.comment) && (
+          <details className="text-muted-foreground text-xs">
+            <summary className="cursor-pointer select-none hover:text-foreground">
+              Ещё о компании
+            </summary>
+            <div className="mt-1.5 space-y-1">
+              {client.address && (
+                <div className="flex items-center gap-2 truncate">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{client.address}</span>
+                </div>
+              )}
+              {client.webUrl && (
+                <div className="flex items-center gap-2 truncate">
+                  <Globe className="h-3.5 w-3.5 shrink-0" />
+                  <a
+                    href={client.webUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="truncate hover:underline text-[#2F5D77] dark:text-[#9FC4DC]"
+                  >
+                    {client.webUrl}
+                  </a>
+                </div>
+              )}
+              {client.comment && (
+                <div className="flex items-start gap-2">
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span className="line-clamp-2">{client.comment}</span>
+                </div>
+              )}
             </div>
-          )}
-          {client.phone && (
-            <div className="flex items-center gap-2 truncate">
-              <Phone className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{client.phone}</span>
-            </div>
-          )}
-          {client.address && (
-            <div className="flex items-center gap-2 truncate">
-              <MapPin className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{client.address}</span>
-            </div>
-          )}
-          {client.webUrl && (
-            <div className="flex items-center gap-2 truncate">
-              <Globe className="h-3.5 w-3.5 shrink-0" />
-              <a
-                href={client.webUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate hover:underline text-blue-600 dark:text-blue-400"
-              >
-                {client.webUrl}
-              </a>
-            </div>
-          )}
-          {client.comment && (
-            <div className="flex items-start gap-2">
-              <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span className="line-clamp-2">{client.comment}</span>
-            </div>
-          )}
-        </div>
+          </details>
+        )}
 
         {client.contacts.length > 0 && (
           <div className="rounded-md border p-2 space-y-1">

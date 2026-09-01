@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button"
 import { LoadingButton } from "@/components/blocks/loading-button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
@@ -33,47 +32,32 @@ import {
 } from "@/components/ui/form"
 import { toast } from "sonner"
 import type {
-  DealRow,
   DealClientOption,
   DealFunnelStageOption,
 } from "@/app/api/deals/route"
-import type { DealStatus } from "@/db/schema"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import { CURRENCY_SYMBOL } from "@/lib/deal-board"
-import { DealInitiatorPopover } from "@/components/blocks/deal-initiator-popover"
 import TaskEditDialog from "@/components/forms/form-task-edit"
 
-// Edit-form status options. `active` is the live state; `cancelled` =
-// lost/withdrawn (kept for analytics); `deleted` = test/mistake, hidden
-// from the board AND excluded from deal discovery.
-const DEAL_STATUS_OPTIONS: { value: DealStatus; label: string }[] = [
-  { value: "active", label: "Активна" },
-  { value: "cancelled", label: "Отменена (проиграна / отозвана)" },
-  { value: "deleted", label: "Удалена (скрыта, исключена из поиска)" },
-]
-
+// Create-only — редактирование существующей сделки теперь идёт через
+// <DealDetailDrawer> (inline-форма прямо в панели подробностей), не через
+// эту модалку. Было mode="create"|"edit"; edit-ветки убраны как мёртвый код
+// после того, как оба вызывающих места (карточка, дровер) переключились на
+// дровер.
 type DealFormData = {
   name: string
   description: string
   funnelStageId: string
   clientId: string
   value: string
-  status: DealStatus
 }
 
 type Props = {
-  mode: "create" | "edit"
-  deal?: DealRow
   trigger: React.ReactNode
   onSuccess?: () => void
 }
 
-export default function DealEditDialog({
-  mode,
-  deal,
-  trigger,
-  onSuccess,
-}: Props) {
+export default function DealEditDialog({ trigger, onSuccess }: Props) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [clientOptions, setClientOptions] = useState<DealClientOption[]>([])
@@ -93,12 +77,11 @@ export default function DealEditDialog({
 
   const form = useForm<DealFormData>({
     defaultValues: {
-      name: deal?.name ?? "",
-      description: deal?.description ?? "",
-      funnelStageId: deal?.funnelStageId ?? "",
-      clientId: deal?.clientId ?? "",
-      value: deal?.value ?? "",
-      status: deal?.status ?? "active",
+      name: "",
+      description: "",
+      funnelStageId: "",
+      clientId: "",
+      value: "",
     },
   })
 
@@ -122,27 +105,21 @@ export default function DealEditDialog({
         setClientOptions(cRes.options ?? [])
         setStageOptions(stages)
 
-        // Default for create mode: lowest sortOrder stage (Qualification
-        // in the seeded funnel). Edit mode: keep whatever the deal has.
-        const defaultFunnelStageId =
-          mode === "create"
-            ? (stages[0]?.id ?? "")
-            : (deal?.funnelStageId ?? "")
-
+        // Default: lowest sortOrder stage (Qualification in the seeded
+        // funnel).
         form.reset({
-          name: deal?.name ?? "",
-          description: deal?.description ?? "",
-          funnelStageId: defaultFunnelStageId,
-          clientId: deal?.clientId ?? "",
-          value: deal?.value ?? "",
-          status: deal?.status ?? "active",
+          name: "",
+          description: "",
+          funnelStageId: stages[0]?.id ?? "",
+          clientId: "",
+          value: "",
         })
       } catch {}
     })()
     return () => {
       cancelled = true
     }
-  }, [open, deal, form, mode])
+  }, [open, form])
 
   const onSubmit = (data: DealFormData) => {
     startTransition(async () => {
@@ -153,43 +130,31 @@ export default function DealEditDialog({
           toast.error("Сумма должна быть числом")
           return
         }
-        const payload =
-          mode === "create"
-            ? {
-                name: data.name,
-                description: data.description,
-                funnelStageId: data.funnelStageId,
-                clientId: data.clientId,
-                value: numericValue,
-              }
-            : {
-                id: deal!.id,
-                name: data.name,
-                description: data.description,
-                funnelStageId: data.funnelStageId,
-                clientId: data.clientId,
-                value: numericValue,
-                status: data.status,
-              }
         const res = await fetch("/api/deals", {
-          method: mode === "create" ? "POST" : "PUT",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            name: data.name,
+            description: data.description,
+            funnelStageId: data.funnelStageId,
+            clientId: data.clientId,
+            value: numericValue,
+          }),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
           toast.error(err.error || "Не удалось сохранить сделку")
           return
         }
-        toast.success(mode === "create" ? "Сделка создана" : "Сделка обновлена")
+        toast.success("Сделка создана")
         onSuccess?.()
         setOpen(false)
-        // Опциональная первая задача (create): вместо своей копии формы —
-        // открываем настоящий TaskEditDialog поверх (тот же, что в «Задачах»),
+        // Опциональная первая задача: вместо своей копии формы — открываем
+        // настоящий TaskEditDialog поверх (тот же, что в «Задачах»),
         // предзаполненный сделкой+клиентом. Название сюда переносим как
         // стартовое значение, остальное (тип/приоритет/срок/исполнитель/
         // описание) заполняется в самой форме, без похода в Задачи потом.
-        if (mode === "create" && addTask) {
+        if (addTask) {
           const { id: newDealId } = (await res.json().catch(() => ({}))) as {
             id?: string
           }
@@ -215,18 +180,13 @@ export default function DealEditDialog({
     CURRENCY_SYMBOL[(selectedClient?.currency ?? "RUB").toUpperCase()] ??
     (selectedClient?.currency ?? "RUB")
 
-  const title =
-    mode === "create"
-      ? "Новая сделка"
-      : `Редактирование сделки: ${deal?.name ?? ""}`
-
   return (
     <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-gray-800">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>Новая сделка</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -262,17 +222,6 @@ export default function DealEditDialog({
                 </FormItem>
               )}
             />
-
-            {mode === "edit" && !!deal?.contacts?.length && (
-              <div className="space-y-2">
-                <Label className="text-gray-400">Инициатор</Label>
-                <div className="flex flex-wrap gap-x-3 gap-y-1">
-                  {deal.contacts.map((c) => (
-                    <DealInitiatorPopover key={c.id} contactId={c.id} name={c.name} />
-                  ))}
-                </div>
-              </div>
-            )}
 
             <div className="grid grid-cols-2 gap-3">
               <FormField
@@ -359,58 +308,26 @@ export default function DealEditDialog({
               )}
             />
 
-            {mode === "edit" && (
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Статус</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {DEAL_STATUS_OPTIONS.map((o) => (
-                          <SelectItem key={o.value} value={o.value}>
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
-            {/* Первая задача — только при создании сделки (UX): чекбокс
-                раскрывает поле названия (стартовое значение); саму задачу
-                заполняют в настоящей форме задачи, которая откроется сразу
-                после создания сделки (см. pendingTaskDeal ниже). */}
-            {mode === "create" && (
-              <div className="rounded-lg border p-3 space-y-2">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox
-                    checked={addTask}
-                    onCheckedChange={(v) => setAddTask(Boolean(v))}
-                  />
-                  Создать задачу для этой сделки
-                </label>
-                {addTask && (
-                  <Input
-                    value={taskName}
-                    onChange={(e) => setTaskName(e.target.value)}
-                    placeholder="Название задачи (напр. «Позвонить клиенту»)"
-                  />
-                )}
-              </div>
-            )}
+            {/* Первая задача — чекбокс раскрывает поле названия (стартовое
+                значение); саму задачу заполняют в настоящей форме задачи,
+                которая откроется сразу после создания сделки (см.
+                pendingTaskDeal ниже). */}
+            <div className="rounded-lg border p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={addTask}
+                  onCheckedChange={(v) => setAddTask(Boolean(v))}
+                />
+                Создать задачу для этой сделки
+              </label>
+              {addTask && (
+                <Input
+                  value={taskName}
+                  onChange={(e) => setTaskName(e.target.value)}
+                  placeholder="Название задачи (напр. «Позвонить клиенту»)"
+                />
+              )}
+            </div>
 
             <DialogFooter>
               <Button
@@ -421,7 +338,7 @@ export default function DealEditDialog({
                 Отмена
               </Button>
               <LoadingButton type="submit" loading={isPending}>
-                {mode === "create" ? "Создать" : "Сохранить"}
+                Создать
               </LoadingButton>
             </DialogFooter>
           </form>

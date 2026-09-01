@@ -59,17 +59,21 @@ const CATEGORY_LABEL: Record<CardCategory, string> = {
   support: "Поддержка",
 }
 
+// Хью взяты из палитры доски сделок («драгоценные тона», src/lib/deal-board.ts
+// STAGE_COLOR + бейджи deal-kanban-card.tsx), а не разрозненного набора Tailwind-
+// цветов — чтобы Домашняя читалась как часть того же продукта, что и Сделки.
 const CATEGORY_COLOR: Record<CardCategory, string> = {
   client_activity: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
-  colleagues_activity: "bg-purple-500/15 text-purple-600 dark:text-purple-300",
+  colleagues_activity: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
   business_info: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  action_required: "bg-red-500/15 text-red-600 dark:text-red-300",
-  ambiguity: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-  data_intelligence: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-300",
+  action_required:
+    "bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]",
+  ambiguity: "bg-[#C2410C]/15 text-[#C2410C] dark:text-[#E5824A]",
+  data_intelligence: "bg-[#294A6B]/15 text-[#294A6B] dark:text-[#8FB4D9]",
   momentum: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
   log_only: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  new_order: "bg-lime-500/15 text-lime-700 dark:text-lime-300",
-  support: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
+  new_order: "bg-[#1F7A4D]/15 text-[#1F7A4D] dark:text-[#5BD69A]",
+  support: "bg-[#669BBC]/20 text-[#2F5D77] dark:text-[#9FC4DC]",
 }
 
 const PRIORITY_COLOR: Record<CardPriority, string> = {
@@ -249,7 +253,7 @@ export function DashboardCard({
         // action row without forcing line-clamp across the card boundary,
         // while staying tight enough that short cards don't leave a big
         // gap between the source ref and the action row.
-        "flex flex-col h-120 dark:border-gray-600 overflow-hidden",
+        "flex flex-col h-120 overflow-hidden",
         PRIORITY_GRADIENT[card.priority],
       )}
     >
@@ -376,11 +380,7 @@ export function DashboardCard({
         {(card.category === "new_order" || !resolved) && (
           <div className="flex flex-col gap-2 pt-2 mt-auto">
             {card.category === "new_order" && (
-              <Button
-                asChild
-                size="sm"
-                className="bg-lime-600 text-white hover:bg-lime-600/90"
-              >
+              <Button asChild size="sm">
                 {/* Hands the card off to /products, where the New Order dialog
                     opens prefilled with the linked client + the verbatim
                     client message (message.orderRequest). */}

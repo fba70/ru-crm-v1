@@ -4,12 +4,14 @@ import { db } from "@/db/drizzle"
 import {
   client,
   contact,
-  user,
+  order,
   type FunnelPhase,
   type EntityStatus,
   type ClientLookupCandidateJson,
+  user,
 } from "@/db/schema"
-import { and, eq, ne, desc, isNull, or, count, inArray } from "drizzle-orm"
+import { and, eq, ne, desc, isNull, or, count, inArray, gte } from "drizzle-orm"
+import { computeOrderDiscount } from "@/lib/orders-format"
 import { generateText, Output, stepCountIs } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
@@ -144,6 +146,49 @@ export async function listClients(): Promise<ClientRow[]> {
     updatedAt: r.client.updatedAt.toISOString(),
     contacts: contactsByClient.get(r.client.id) ?? [],
   }))
+}
+
+export type ClientRevenueSummary = { revenue: number; orders: number }
+
+// Выручка по компании за последние 12 мес. — один батч-запрос на всю
+// страницу (не по одному на карточку). Те же BOOKED (finalized|confirmed) +
+// NET (computeOrderDiscount) правила, что и в аналитике
+// (src/server/analytics-query.ts), но без top-12-лимита и с окном "последний
+// год" вместо произвольного диапазона дашборда.
+export async function listClientRevenue12mo(): Promise<
+  Record<string, ClientRevenueSummary>
+> {
+  const { activeOrgId } = await requireOrgContext()
+  const since = new Date()
+  since.setFullYear(since.getFullYear() - 1)
+
+  const rows = await db
+    .select({
+      clientId: order.clientId,
+      totalAmount: order.totalAmount,
+      discountPercent: order.discountPercent,
+    })
+    .from(order)
+    .where(
+      and(
+        eq(order.organizationId, activeOrgId),
+        inArray(order.status, ["finalized", "confirmed"]),
+        gte(order.orderDate, since),
+      ),
+    )
+
+  const result: Record<string, ClientRevenueSummary> = {}
+  for (const r of rows) {
+    const { discountedTotal } = computeOrderDiscount(
+      Number(r.totalAmount),
+      Number(r.discountPercent),
+    )
+    const bucket = result[r.clientId] ?? { revenue: 0, orders: 0 }
+    bucket.revenue += discountedTotal
+    bucket.orders += 1
+    result[r.clientId] = bucket
+  }
+  return result
 }
 
 /** Trim, drop empties + dups; return null for an empty list. */

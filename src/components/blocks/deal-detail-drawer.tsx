@@ -7,6 +7,7 @@ import {
   useState,
   useTransition,
 } from "react"
+import { useForm } from "react-hook-form"
 import {
   Sheet,
   SheetContent,
@@ -23,6 +24,17 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from "@/components/ui/form"
 import {
   Dialog,
   DialogContent,
@@ -30,7 +42,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Pencil,
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Sparkles,
   Send,
   Mail,
@@ -39,8 +58,9 @@ import {
   ChevronDown,
   Link2,
   AlertTriangle,
+  Save,
 } from "lucide-react"
-import type { TaskStatus } from "@/db/schema"
+import type { TaskStatus, DealStatus } from "@/db/schema"
 import { mockAtRisk, mockRiskReason } from "@/lib/deal-mocks"
 import { toast } from "sonner"
 import {
@@ -55,12 +75,30 @@ import type {
   DealRow,
   DealFunnelStageOption,
   DealActivityRow,
+  DealClientOption,
 } from "@/app/api/deals/route"
 import type { TaskRow } from "@/app/api/tasks/route"
 import { dealStageLabel } from "@/lib/deal-funnel"
-import { formatAmount } from "@/lib/deal-board"
-import DealEditDialog from "@/components/forms/form-deal-edit"
+import { CURRENCY_SYMBOL } from "@/lib/deal-board"
+import { DealInitiatorPopover } from "@/components/blocks/deal-initiator-popover"
 import { DealContactsRoles } from "@/components/blocks/deal-contacts-roles"
+
+// Тот же список, что раньше был в модалке-редакторе (form-deal-edit.tsx) —
+// не импортируем оттуда, чтобы не тянуть create-only компонент ради одной
+// константы после того, как edit-режим оттуда убран.
+const DEAL_STATUS_OPTIONS: { value: DealStatus; label: string }[] = [
+  { value: "active", label: "Активна" },
+  { value: "cancelled", label: "Отменена (проиграна / отозвана)" },
+  { value: "deleted", label: "Удалена (скрыта, исключена из поиска)" },
+]
+
+type DealEditFormData = {
+  name: string
+  description: string
+  clientId: string
+  value: string
+  status: DealStatus
+}
 
 // МОК происхождения сделки (UX №14): из какого канала заведена. Реальный
 // источник должен приходить с бэка (source_item сделки). Детерминированно
@@ -102,18 +140,29 @@ function TaskMeta({ label, value }: { label: string; value: string | null }) {
 export function DealDetailDrawer({
   deal,
   stages,
+  clientOptions = [],
   currentUserId,
   open,
   onOpenChange,
   onChanged,
+  onRequestStageChange,
 }: {
   deal: DealRow | null
   stages: DealFunnelStageOption[]
+  // Для инлайн-формы редактирования (Клиент-селект) — тот же массив, что
+  // deals-board.tsx уже фетчит для формы создания сделки, доп. запрос не
+  // нужен.
+  clientOptions?: DealClientOption[]
   // Для прав смены статуса задачи (инициатор/исполнитель).
   currentUserId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   onChanged: () => void
+  // Смена этапа из дровера идёт через ТОТ ЖЕ confirm/reason-диалог, что и
+  // перетаскивание карточки на доске (deals-board.tsx уже владеет
+  // pendingMove/pendingOutcome + DealMoveDialog/DealOutcomeDialog) — не
+  // дублируем эту логику здесь и не переводим стадию в обход диалога.
+  onRequestStageChange: (deal: DealRow, toStageId: string) => void
 }) {
   // Стадию берём прямо из deal.funnelStageId — после перевода onChanged →
   // router.refresh обновляет проп (deal выводится из живого списка на доске).
@@ -133,6 +182,9 @@ export function DealDetailDrawer({
   // Диалог «Связать с задачей»: задачи клиента без привязки к этой сделке.
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkCandidates, setLinkCandidates] = useState<TaskRow[]>([])
+  // Попытка закрыть дровер (крестик/Esc/клик вовне) при несохранённой правке —
+  // вместо тихого закрытия спрашиваем, что делать с изменениями.
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false)
 
   const dealId = deal?.id
   // Загрузка задач сделки, вынесена для повторного вызова после создания
@@ -242,17 +294,51 @@ export function DealDetailDrawer({
     [deal?.id, deal?.clientId],
   )
 
-  if (!deal) return null
+  // Карточка подробностей слита с формой редактирования (было: read-only +
+  // отдельная модалка `<DealEditDialog mode="edit">`) — все поля сразу
+  // редактируемые, «Сохранить» пишет через PUT /api/deals. funnelStageId
+  // сюда сознательно НЕ входит — этап меняется только через отдельный
+  // Select ниже (handleStageChange → moveDealStage, с записью в журнал).
+  const editForm = useForm<DealEditFormData>({
+    defaultValues: {
+      name: deal?.name ?? "",
+      description: deal?.description ?? "",
+      clientId: deal?.clientId ?? "",
+      value: deal?.value ?? "",
+      status: deal?.status ?? "active",
+    },
+  })
+  const watchedClientId = editForm.watch("clientId")
+  const currencySymbol =
+    CURRENCY_SYMBOL[
+      (clientOptions.find((c) => c.id === watchedClientId)?.currency ??
+        "RUB"
+      ).toUpperCase()
+    ] ?? ""
 
-  const isActive = deal.status === "active"
-  const company = deal.clientName ?? deal.name
-  const product = deal.clientName ? deal.name : null
-  const amount = formatAmount(deal.value, deal.currency)
-  const tasks = taskData && taskData.dealId === deal.id ? taskData.items : []
-  function handleStageChange(nextStageId: string) {
-    if (!deal || nextStageId === deal.funnelStageId) return
-    const name = stages.find((s) => s.id === nextStageId)?.name
-    const label = name ? dealStageLabel(name) : "этап"
+  // Сброс формы ТОЛЬКО при смене сделки (deal?.id), не на каждый ре-рендер —
+  // иначе фоновый refresh (кто-то перевёл ДРУГУЮ сделку → router.refresh() →
+  // новые ссылки на все deal-объекты) стирал бы недосохранённый ввод.
+  useEffect(() => {
+    if (!deal) return
+    editForm.reset({
+      name: deal.name,
+      description: deal.description ?? "",
+      clientId: deal.clientId,
+      value: deal.value ?? "",
+      status: deal.status,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deal?.id])
+
+  function onSaveDeal(data: DealEditFormData, opts?: { closeAfter?: boolean }) {
+    if (!deal) return
+    const trimmedValue = data.value.trim()
+    const numericValue = trimmedValue === "" ? null : Number(trimmedValue)
+    if (numericValue !== null && !Number.isFinite(numericValue)) {
+      toast.error("Сумма должна быть числом")
+      return
+    }
     startTransition(async () => {
       try {
         const res = await fetch("/api/deals", {
@@ -260,117 +346,242 @@ export function DealDetailDrawer({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: deal.id,
-            move: true,
-            funnelStageId: nextStageId,
-            // Без этого перевод без комментария затирал deal.changes на null —
-            // карточка/дровер пустели, а «Лента решений» вообще не получала
-            // записи. Короткая запись по умолчанию всегда что-то оставляет.
-            note: `Переведено: ${label}`,
-            historyNote: `Переведено: ${label}`,
+            name: data.name,
+            description: data.description,
+            clientId: data.clientId,
+            value: numericValue,
+            status: data.status,
           }),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Не удалось перевести сделку")
+          toast.error(err.error || "Не удалось сохранить сделку")
           return
         }
-        toast.success(`Переведено: ${label}`)
+        toast.success("Сделка обновлена")
+        // Сброс к только что сохранённым значениям — иначе isDirty остаётся
+        // true (RHF сравнивает с исходным defaultValues, не с сервером), и
+        // диалог «есть несохранённые изменения» ложно всплывал бы снова.
+        editForm.reset(data)
         onChanged()
+        if (opts?.closeAfter) onOpenChange(false)
       } catch {
-        toast.error("Не удалось перевести сделку")
+        toast.error("Не удалось сохранить сделку")
       }
     })
   }
 
+  function handleSheetOpenChange(next: boolean) {
+    if (!next && editForm.formState.isDirty) {
+      setConfirmCloseOpen(true)
+      return
+    }
+    onOpenChange(next)
+  }
+
+  function discardAndClose() {
+    if (deal) {
+      editForm.reset({
+        name: deal.name,
+        description: deal.description ?? "",
+        clientId: deal.clientId,
+        value: deal.value ?? "",
+        status: deal.status,
+      })
+    }
+    setConfirmCloseOpen(false)
+    onOpenChange(false)
+  }
+
+  if (!deal) return null
+
+  const isActive = deal.status === "active"
+  const tasks = taskData && taskData.dealId === deal.id ? taskData.items : []
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleSheetOpenChange}>
       <SheetContent className="w-full sm:max-w-xl flex flex-col gap-0 p-0">
-        <SheetHeader className="p-4 pb-3 border-b">
-          {/* pr-8 — чтобы кнопка «Редактировать» не залезала под крестик закрытия */}
-          <div className="flex items-start justify-between gap-2 pr-8">
-            <div className="min-w-0">
-              <SheetTitle className="truncate">{company}</SheetTitle>
-              {product && (
-                <div className="text-sm text-muted-foreground truncate">
-                  {product}
+        <SheetHeader className="p-4 pb-3 border-b space-y-3">
+          {/* Карточка подробностей слита с формой редактирования — все поля
+              сразу в режиме правки, «Сохранить» пишет через PUT /api/deals.
+              Отдельной модалки-редактора для СУЩЕСТВУЮЩИХ сделок больше нет
+              (карандаш на карточке и клик по карточке одинаково открывают
+              этот дровер). funnelStageId сюда не входит — см. Select ниже. */}
+          <Form {...editForm}>
+            <form
+              onSubmit={editForm.handleSubmit((data) => onSaveDeal(data))}
+              className="space-y-3"
+            >
+              {/* Визуальный заголовок — само поле «Название», редактируемое.
+                  sr-only SheetTitle остаётся для доступности (Radix Dialog
+                  требует заголовок). pr-8, чтобы не залезать под крестик
+                  закрытия. */}
+              <SheetTitle className="sr-only">{deal.name}</SheetTitle>
+              <div className="pr-8">
+                <FormField
+                  control={editForm.control}
+                  name="name"
+                  rules={{ required: "Укажите название" }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          className="text-base font-semibold border-none px-0 shadow-none focus-visible:ring-0 dark:bg-transparent selection:bg-muted-foreground/30 selection:text-inherit"
+                          placeholder="Название сделки"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {(deal.userName || !!deal.contacts?.length) && (
+                <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+                  {deal.userName ? <span>Автор: {deal.userName}</span> : <span />}
+                  {!!deal.contacts?.length && (
+                    <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
+                      <span>Инициатор:</span>
+                      <div className="flex flex-wrap gap-x-2 gap-y-1">
+                        {deal.contacts.map((c) => (
+                          <DealInitiatorPopover
+                            key={c.id}
+                            contactId={c.id}
+                            name={c.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-            <DealEditDialog
-              mode="edit"
-              deal={deal}
-              onSuccess={onChanged}
-              trigger={
-                <Button variant="outline" size="sm">
-                  <Pencil className="h-3.5 w-3.5 mr-1" />
-                  Редактировать
+
+              <FormField
+                control={editForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        rows={2}
+                        placeholder="Описание (необязательно)"
+                        className="text-sm"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {/* Клиент/Сумма/Статус — единым столбиком (не в ряд): вместе с
+                  Этапом раньше выходила запутанная сетка, где Этап (не часть
+                  формы, применяется сразу) визуально путался со Статусом
+                  (часть формы, применяется по «Сохранить»). Этап вынесен из
+                  формы целиком — см. блок под «Состояние сделки» ниже. */}
+              <FormField
+                control={editForm.control}
+                name="clientId"
+                rules={{ required: "Укажите клиента" }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs text-muted-foreground">
+                      Клиент
+                    </FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Выберите клиента" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {clientOptions.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="value"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs text-muted-foreground">
+                      Сумма
+                    </FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                          {currencySymbol}
+                        </span>
+                        <Input
+                          className="pl-7"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          inputMode="decimal"
+                          placeholder="0"
+                          {...field}
+                        />
+                      </div>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs text-muted-foreground">
+                      Статус
+                    </FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {DEAL_STATUS_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex items-center justify-between gap-2">
+                {deal.lastMovedBy === "agent" && (
+                  <Badge
+                    variant="secondary"
+                    className="gap-1 bg-violet-500/15 text-violet-600 dark:text-violet-300"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    перевёл агент
+                  </Badge>
+                )}
+                {/* size="default" (не "sm") — иначе высота кнопки не совпадала
+                    с Select/Input рядом (sm = h-8, default = h-9, как у них). */}
+                <Button
+                  type="submit"
+                  className="ml-auto"
+                  disabled={isPending || !editForm.formState.isDirty}
+                >
+                  <Save className="h-3.5 w-3.5 mr-1" />
+                  Сохранить
                 </Button>
-              }
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {/* Бейдж этапа убран — ниже есть селект этапа с текущим значением. */}
-            {deal.lastMovedBy === "agent" && (
-              <Badge
-                variant="secondary"
-                className="gap-1 bg-violet-500/15 text-violet-600 dark:text-violet-300"
-              >
-                <Sparkles className="h-3 w-3" />
-                перевёл агент
-              </Badge>
-            )}
-            {amount ? (
-              <span className="text-sm font-semibold">{amount}</span>
-            ) : (
-              // Раньше здесь ничего не рендерилось при пустом value — непонятно,
-              // что поле вообще есть. Приглушённая подсказка + «Редактировать».
-              <span className="text-sm text-muted-foreground">
-                Сумма не указана
-              </span>
-            )}
-            {deal.userName && (
-              <span className="text-sm text-muted-foreground">
-                · {deal.userName}
-              </span>
-            )}
-            {deal.status === "cancelled" && (
-              <Badge
-                variant="secondary"
-                className="bg-zinc-500/15 text-zinc-600 dark:text-zinc-300"
-              >
-                Отменена
-              </Badge>
-            )}
-            {deal.status === "deleted" && (
-              <Badge
-                variant="secondary"
-                className="bg-red-500/15 text-red-600 dark:text-red-300"
-              >
-                Удалена
-              </Badge>
-            )}
-          </div>
-
-          <div className="pt-1">
-            <Select
-              value={deal.funnelStageId}
-              onValueChange={handleStageChange}
-              disabled={isPending || !isActive}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Перевести по воронке" />
-              </SelectTrigger>
-              <SelectContent>
-                {stages.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {dealStageLabel(s.name)} (
-                    {Math.round(s.closureProbability * 100)}%)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              </div>
+            </form>
+          </Form>
         </SheetHeader>
 
         {/* Состояние сделки (UX №13): суть происходящего и что важно сейчас —
@@ -397,6 +608,34 @@ export function DealDetailDrawer({
           </div>
         )}
 
+        {/* Этап — вынесен из формы и из-под кнопки «Сохранить»: применяется
+            СРАЗУ по выбору (не ждёт «Сохранить»), но не PUT-ом в обход
+            диалогов — идёт через onRequestStageChange → deals-board.tsx,
+            который заводит тот же confirm/reason-диалог (DealMoveDialog /
+            DealOutcomeDialog), что и перетаскивание карточки на доске:
+            обязательное обоснование для обратного перевода, подтверждение
+            исхода при переводе в Closed/Rejected. */}
+        <div className="mx-4 mt-3 space-y-2">
+          <Label className="text-xs text-muted-foreground">Этап</Label>
+          <Select
+            value={deal.funnelStageId}
+            onValueChange={(next) => onRequestStageChange(deal, next)}
+            disabled={isPending || !isActive}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Перевести по воронке" />
+            </SelectTrigger>
+            <SelectContent>
+              {stages.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {dealStageLabel(s.name)} (
+                  {Math.round(s.closureProbability * 100)}%)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Риск проигрыша (мок-инсайт) — отдельная плашка с причиной, как
             «Состояние сделки». TODO(backend): реальный сигнал риска. */}
         {isActive && mockAtRisk(deal.id) && (
@@ -410,7 +649,7 @@ export function DealDetailDrawer({
         )}
 
         <Tabs defaultValue="tasks" className="flex-1 min-h-0 flex flex-col">
-          <TabsList className="mx-4 mt-3 w-fit">
+          <TabsList variant="line" className="mx-4 mt-3 w-fit">
             <TabsTrigger value="tasks">
               Задачи
               {tasks.length > 0 && (
@@ -639,6 +878,44 @@ export function DealDetailDrawer({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Попытка закрыть дровер с несохранённой правкой (крестик/Esc/клик
+          вовне) — три исхода: сохранить и закрыть, отменить правку и
+          закрыть, либо остаться в редактировании. */}
+      <AlertDialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Есть несохранённые изменения</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы отредактировали сделку, но не нажали «Сохранить». Что сделать
+              с изменениями?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {/* Короткие подписи (macOS/Chrome-паттерн Save/Don't Save/Cancel) —
+              с полными "Продолжить редактирование"/"Отменить изменения" три
+              кнопки не влезали в один ряд дефолтного footer и уезжали за
+              край диалога. */}
+          <AlertDialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmCloseOpen(false)}>
+              Отмена
+            </Button>
+            <Button variant="outline" onClick={discardAndClose}>
+              Не сохранять
+            </Button>
+            <Button
+              disabled={isPending}
+              onClick={() => {
+                setConfirmCloseOpen(false)
+                editForm.handleSubmit((data) =>
+                  onSaveDeal(data, { closeAfter: true }),
+                )()
+              }}
+            >
+              Сохранить
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   )
 }

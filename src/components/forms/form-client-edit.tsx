@@ -235,22 +235,22 @@ export default function ClientEditDialog({
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          toast.error(err.error || "Не удалось сохранить клиента")
+          toast.error(err.error || "Не удалось сохранить компанию")
           return
         }
-        toast.success(mode === "create" ? "Клиент создан" : "Клиент обновлён")
+        toast.success(mode === "create" ? "Компания создана" : "Компания обновлена")
         onSuccess?.()
         setOpen(false)
       } catch {
-        toast.error("Не удалось сохранить клиента")
+        toast.error("Не удалось сохранить компанию")
       }
     })
   }
 
   const title =
     mode === "create"
-      ? "Новый клиент"
-      : `Редактирование клиента: ${client?.name ?? ""}`
+      ? "Новая компания"
+      : `Редактирование компании: ${client?.name ?? ""}`
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -269,7 +269,7 @@ export default function ClientEditDialog({
                 <FormItem>
                   <FormLabel className="text-gray-400">Название *</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Название клиента" />
+                    <Input {...field} placeholder="Название компании" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -429,7 +429,7 @@ export default function ClientEditDialog({
                     <Textarea
                       {...field}
                       rows={3}
-                      placeholder="Заметки, помогающие опознать клиента"
+                      placeholder="Заметки, помогающие опознать компанию"
                     />
                   </FormControl>
                   <FormMessage />

@@ -11,6 +11,7 @@ import {
   moveDeal,
   getDeal,
   listDealActivity,
+  listRejectedDealOrigins,
 } from "@/server/deals"
 import { dealStatus, type DealStatus } from "@/db/schema"
 
@@ -54,6 +55,10 @@ export async function GET(request: NextRequest) {
     if (activityFor) {
       const activity = await listDealActivity(activityFor)
       return NextResponse.json({ activity })
+    }
+    if (url.searchParams.get("rejectedOrigins") === "1") {
+      const origins = await listRejectedDealOrigins()
+      return NextResponse.json({ origins })
     }
     const id = url.searchParams.get("id")
     if (id) {

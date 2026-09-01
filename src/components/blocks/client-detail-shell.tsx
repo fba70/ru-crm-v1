@@ -33,8 +33,10 @@ import ClientEditDialog from "@/components/forms/form-client-edit"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
 import { ClientContentTable } from "@/components/blocks/client-content-table"
+import { AccountSummary } from "@/components/blocks/client-card"
 import type { ClientDetail } from "@/server/client-content"
-import type { ClientRow } from "@/app/api/clients/route"
+import type { ClientRow, ClientRevenueSummary } from "@/app/api/clients/route"
+import type { DealRow } from "@/app/api/deals/route"
 import type { SourceSummary } from "@/server/sources"
 
 const PHASE_COLOR: Record<string, string> = {
@@ -75,9 +77,13 @@ function formatDateTime(iso: string): string {
 export function ClientDetailShell({
   detail,
   sources,
+  revenue,
+  activeDeal,
 }: {
   detail: ClientDetail
   sources: SourceSummary[]
+  revenue?: ClientRevenueSummary
+  activeDeal?: DealRow
 }) {
   const router = useRouter()
   const refresh = () => router.refresh()
@@ -136,13 +142,13 @@ export function ClientDetailShell({
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link href="/clients">
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Назад к клиентам
+            Назад к компаниям
           </Link>
         </Button>
       </div>
 
-      {/* Big client card */}
-      <Card className="dark:border-gray-600">
+      {/* Big company card */}
+      <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <CardTitle className="text-2xl truncate">{detail.name}</CardTitle>
@@ -194,6 +200,13 @@ export function ClientDetailShell({
           </div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-muted-foreground">
+          <div className="sm:col-span-2">
+            <AccountSummary
+              client={clientRowForEdit}
+              revenue={revenue}
+              activeDeal={activeDeal}
+            />
+          </div>
           <DetailRow icon={<Mail className="h-4 w-4" />} value={detail.email} />
           <DetailRow icon={<Phone className="h-4 w-4" />} value={detail.phone} />
           <DetailRow
@@ -219,7 +232,7 @@ export function ClientDetailShell({
       </Card>
 
       {/* Contacts list (active + suspended) */}
-      <Card className="dark:border-gray-600">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle className="text-base">
             Контакты ({detail.contacts.length})
@@ -238,7 +251,7 @@ export function ClientDetailShell({
         <CardContent className="space-y-3">
           {detail.contacts.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
-              К этому клиенту ещё не привязаны контакты.
+              К этой компании ещё не привязаны контакты.
             </p>
           ) : (
             <>
@@ -350,11 +363,11 @@ export function ClientDetailShell({
       </Card>
 
       {/* Client Content table */}
-      <Card className="dark:border-gray-600">
+      <Card>
         <CardHeader>
-          <CardTitle className="text-base">Материалы клиента</CardTitle>
+          <CardTitle className="text-base">Материалы компании</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Разобранные элементы источников, относящиеся к этому клиенту
+            Разобранные элементы источников, относящиеся к этой компании
             (сопоставление по названию, адресу, сайту, а также именам/email
             контактов). Показаны только материалы, загруженные в R2 — полный
             поиск по тексту появится позже.
@@ -393,7 +406,7 @@ function DetailRow({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="truncate hover:underline text-blue-600 dark:text-blue-400"
+          className="truncate hover:underline text-[#2F5D77] dark:text-[#9FC4DC]"
         >
           {value}
         </a>

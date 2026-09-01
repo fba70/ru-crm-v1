@@ -46,7 +46,7 @@ export const items = [
     icon: Home,
   },
   {
-    title: "Клиенты",
+    title: "Компании",
     url: "/clients",
     icon: Users,
   },

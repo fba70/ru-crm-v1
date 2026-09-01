@@ -71,7 +71,6 @@ export function TerminalColumn({
   intelById,
   tasksByDeal,
   intelLoaded,
-  onChanged,
   onOpen,
 }: {
   cards: DealRow[]
@@ -88,7 +87,6 @@ export function TerminalColumn({
   intelById: Record<string, DealIntel>
   tasksByDeal: Record<string, DealTaskInfo[]>
   intelLoaded: boolean
-  onChanged: () => void
   onOpen: (deal: DealRow) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -292,7 +290,6 @@ export function TerminalColumn({
                   <DealKanbanCard
                     key={d.id}
                     deal={d}
-                    onChanged={onChanged}
                     onOpen={onOpen}
                     tasks={tasksByDeal[d.id] ?? []}
                     intel={intelById[d.id]}
@@ -310,7 +307,6 @@ export function TerminalColumn({
                       <DealKanbanCard
                         key={d.id}
                         deal={d}
-                        onChanged={onChanged}
                         onOpen={onOpen}
                         tasks={tasksByDeal[d.id] ?? []}
                         intel={intelById[d.id]}

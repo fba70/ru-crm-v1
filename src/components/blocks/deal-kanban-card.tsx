@@ -16,7 +16,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
-  Pencil,
   AlertTriangle,
   Clock,
   Send,
@@ -34,7 +33,6 @@ import type { DealRow } from "@/app/api/deals/route"
 import type { DealIntel, IntelBadge } from "@/server/deals-mock"
 import type { DealTaskInfo } from "@/hooks/use-board-intel"
 import { mockAtRisk, mockRiskReason } from "@/lib/deal-mocks"
-import DealEditDialog from "@/components/forms/form-deal-edit"
 import { formatAmount } from "@/lib/deal-board"
 
 // Мок-бейджи (из /api/deals/intel) несут имя lucide-иконки в kebab-case.
@@ -95,14 +93,12 @@ function DealMetaLine({ deal }: { deal: DealRow }) {
 
 export function DealKanbanCard({
   deal,
-  onChanged,
   onOpen,
   tasks = [],
   intel,
   intelLoaded = false,
 }: {
   deal: DealRow
-  onChanged: () => void
   onOpen: (deal: DealRow) => void
   // Все задачи сделки (по createdAt desc). Карточка листает их шевронами.
   tasks?: DealTaskInfo[]
@@ -177,7 +173,7 @@ export function DealKanbanCard({
       data-deal-id={deal.id}
       {...attributes}
       {...listeners}
-      className={`group p-3 space-y-1 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] ${surfaceClass} ${
+      className={`p-3 space-y-1 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] ${surfaceClass} ${
         isActive ? "cursor-grab active:cursor-grabbing" : "cursor-default"
       } ${isDragging ? "opacity-40" : ""}`}
       aria-label={`Открыть сделку: ${deal.clientName ?? deal.name}`}
@@ -193,26 +189,10 @@ export function DealKanbanCard({
         }
       }}
     >
-      <div className="flex items-start justify-between gap-2">
-        <DealTitle deal={deal} />
-        <DealEditDialog
-          mode="edit"
-          deal={deal}
-          onSuccess={onChanged}
-          trigger={
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-              aria-label="Редактировать сделку"
-              onPointerDown={stop}
-              onClick={stop}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-          }
-        />
-      </div>
+      {/* Редактирование — только через дровер (карточка подробностей слита с
+          формой правки); клик по всей карточке уже открывает его, отдельной
+          кнопки-карандаша на карточке больше нет. */}
+      <DealTitle deal={deal} />
 
       {isWon && (
         <Badge
