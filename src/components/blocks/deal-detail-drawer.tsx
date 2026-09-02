@@ -8,6 +8,7 @@ import {
   useTransition,
 } from "react"
 import { useForm } from "react-hook-form"
+import { useRouter } from "next/navigation"
 import {
   Sheet,
   SheetContent,
@@ -15,6 +16,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
 import {
   Select,
   SelectContent,
@@ -55,7 +61,6 @@ import {
   Mail,
   Phone,
   Plus,
-  ChevronDown,
   Link2,
   AlertTriangle,
   Save,
@@ -69,6 +74,7 @@ import {
   TASK_TYPE_LABELS,
   TASK_PRIORITY_LABELS,
   TASK_PRIORITY_BADGE,
+  TASK_STATUS_BADGE,
 } from "@/lib/task-labels"
 import TaskEditDialog from "@/components/forms/form-task-edit"
 import type {
@@ -179,6 +185,7 @@ export function DealDetailDrawer({
     items: DealActivityRow[]
   } | null>(null)
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
   // Диалог «Связать с задачей»: задачи клиента без привязки к этой сделке.
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkCandidates, setLinkCandidates] = useState<TaskRow[]>([])
@@ -400,7 +407,7 @@ export function DealDetailDrawer({
 
   return (
     <Sheet open={open} onOpenChange={handleSheetOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl flex flex-col gap-0 p-0">
+      <SheetContent className="w-full sm:w-fit sm:min-w-[36rem] sm:max-w-[90vw] flex flex-col gap-0 p-0">
         <SheetHeader className="p-4 pb-3 border-b space-y-3">
           {/* Карточка подробностей слита с формой редактирования — все поля
               сразу в режиме правки, «Сохранить» пишет через PUT /api/deals.
@@ -584,25 +591,34 @@ export function DealDetailDrawer({
           </Form>
         </SheetHeader>
 
-        {/* Состояние сделки (UX №13): суть происходящего и что важно сейчас —
-            чтобы быстро вспомнить контекст без чтения всей истории. Пока
-            собирается из reasoning/changes (МОК summary); реальный текст
-            генерирует LLM. TODO(backend): summary состояния сделки от LLM. */}
-        {(deal.reasoning || deal.changes) && (
-          <div className="mx-4 mt-3 rounded-lg border bg-violet-500/5 p-3 text-sm space-y-2">
+        {/* Единый горизонтальный отступ (px-4) для всего тела дровера —
+            вместо mx-4 на каждом отдельном блоке (карточки, табы), чтобы
+            ширина строки табов считалась от одного источника и не могла
+            разъехаться с остальным контентом. */}
+        <div className="flex flex-1 min-h-0 flex-col px-4">
+          {/* Состояние сделки (UX №13): суть происходящего и что важно сейчас —
+              чтобы быстро вспомнить контекст без чтения всей истории. Пока
+              собирается из reasoning/changes (МОК summary); реальный текст
+              генерирует LLM. TODO(backend): summary состояния сделки от LLM. */}
+          {(deal.reasoning || deal.changes) && (
+            <div className="mt-3 rounded-lg border bg-violet-500/5 p-3 text-sm space-y-2">
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
               <Sparkles className="h-3.5 w-3.5" />
               Состояние сделки
             </div>
             {deal.reasoning && (
-              <div className="whitespace-pre-wrap">{deal.reasoning}</div>
+              <div className="max-w-[32rem] whitespace-pre-wrap">
+                {deal.reasoning}
+              </div>
             )}
             {deal.changes && (
               <div>
                 <div className="text-xs text-muted-foreground">
                   Последнее изменение
                 </div>
-                <div className="whitespace-pre-wrap">{deal.changes}</div>
+                <div className="max-w-[32rem] whitespace-pre-wrap">
+                  {deal.changes}
+                </div>
               </div>
             )}
           </div>
@@ -615,7 +631,7 @@ export function DealDetailDrawer({
             DealOutcomeDialog), что и перетаскивание карточки на доске:
             обязательное обоснование для обратного перевода, подтверждение
             исхода при переводе в Closed/Rejected. */}
-        <div className="mx-4 mt-3 space-y-2">
+        <div className="mt-3 space-y-2">
           <Label className="text-xs text-muted-foreground">Этап</Label>
           <Select
             value={deal.funnelStageId}
@@ -639,18 +655,21 @@ export function DealDetailDrawer({
         {/* Риск проигрыша (мок-инсайт) — отдельная плашка с причиной, как
             «Состояние сделки». TODO(backend): реальный сигнал риска. */}
         {isActive && mockAtRisk(deal.id) && (
-          <div className="mx-4 mt-3 rounded-lg border border-[#C1121F]/20 bg-[#C1121F]/5 p-3 text-sm space-y-1">
+          <div className="mt-3 rounded-lg border border-[#C1121F]/20 bg-[#C1121F]/5 p-3 text-sm space-y-1">
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#A31018] dark:text-[#FF8F96]">
               <AlertTriangle className="h-3.5 w-3.5" />
               Есть риски
             </div>
-            <div>{mockRiskReason(deal.id)}</div>
+            <div className="max-w-[32rem]">{mockRiskReason(deal.id)}</div>
           </div>
         )}
 
         <Tabs defaultValue="tasks" className="flex-1 min-h-0 flex flex-col">
-          <TabsList variant="line" className="mx-4 mt-3 w-fit">
-            <TabsTrigger value="tasks">
+          <TabsList
+            variant="line"
+            className="mt-3 w-full justify-between border-b"
+          >
+            <TabsTrigger value="tasks" className="flex-none">
               Задачи
               {tasks.length > 0 && (
                 <span className="ml-1.5 text-xs text-muted-foreground">
@@ -658,13 +677,20 @@ export function DealDetailDrawer({
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="chronology">Хронология</TabsTrigger>
-            <TabsTrigger value="contacts">Контакты</TabsTrigger>
+            <TabsTrigger value="chronology" className="flex-none">
+              Хронология
+            </TabsTrigger>
+            <TabsTrigger value="contacts" className="flex-none">
+              Контакты
+            </TabsTrigger>
+            <TabsTrigger value="origin" className="flex-none">
+              Происхождение
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
             value="chronology"
-            className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 text-sm"
+            className="flex-1 min-h-0 overflow-y-auto py-4 space-y-2 text-sm"
           >
             {(() => {
               // Полная история — из deal_activity (журнал, пишется на каждое
@@ -719,7 +745,9 @@ export function DealDetailDrawer({
                       {formatDate(e.date)}
                       {e.meta ? ` · ${e.meta}` : ""}
                     </div>
-                    <div className="whitespace-pre-wrap">{e.text}</div>
+                    <div className="max-w-[32rem] whitespace-pre-wrap">
+                      {e.text}
+                    </div>
                   </div>
                 ))
               )
@@ -728,14 +756,14 @@ export function DealDetailDrawer({
 
           <TabsContent
             value="contacts"
-            className="flex-1 min-h-0 overflow-y-auto p-4 text-sm"
+            className="flex-1 min-h-0 overflow-y-auto py-4 text-sm"
           >
             <DealContactsRoles dealId={deal.id} clientId={deal.clientId} />
           </TabsContent>
 
           <TabsContent
             value="tasks"
-            className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 text-sm"
+            className="flex-1 min-h-0 overflow-y-auto py-4 space-y-2 text-sm"
           >
             {/* Две кнопки: создать новую (dealId+клиент предзаполнены) и
                 связать существующую задачу клиента с этой сделкой. */}
@@ -767,83 +795,108 @@ export function DealDetailDrawer({
                 const canEdit =
                   currentUserId === t.userId || currentUserId === t.assigneeId
                 return (
-                  <div key={t.id} className="rounded-md border p-2.5 space-y-2.5">
-                    <div className="min-w-0 space-y-1">
+                  <HoverCard key={t.id} openDelay={200}>
+                    <HoverCardTrigger asChild>
+                      {/* Клик — переход к задаче в разделе «Задачи»; наведение —
+                          полная инфа в HoverCard (описание + мета-поля, чтобы
+                          сама карточка оставалась компактной: заголовок + бейджи). */}
+                      <div
+                        className="cursor-pointer space-y-2 rounded-md border p-2.5 transition-colors hover:bg-accent/50"
+                        onClick={() => router.push(`/tasks?openTask=${t.id}`)}
+                      >
+                        <div className="max-w-[32rem] font-medium leading-snug">
+                          {t.name}
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-wrap gap-1">
+                            <Badge variant="secondary" className="text-[10px]">
+                              {TASK_TYPE_LABELS[t.type]}
+                            </Badge>
+                            <Badge
+                              variant="secondary"
+                              className={`text-[10px] ${TASK_PRIORITY_BADGE[t.priority]}`}
+                            >
+                              {TASK_PRIORITY_LABELS[t.priority]}
+                            </Badge>
+                            <Badge
+                              variant="secondary"
+                              className={`text-[10px] ${TASK_STATUS_BADGE[t.status]}`}
+                            >
+                              {TASK_STATUS_LABELS[t.status]}
+                            </Badge>
+                          </div>
+                          {/* Смена статуса — только инициатору/исполнителю;
+                              прижата в правую часть строки с бейджами. */}
+                          {canEdit && (
+                            <Select
+                              value={t.status}
+                              onValueChange={(v) =>
+                                setTaskStatus(t.id, v as TaskStatus)
+                              }
+                              disabled={isPending}
+                            >
+                              <SelectTrigger
+                                className="h-7 w-auto shrink-0 text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TASK_STATUSES.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {TASK_STATUS_LABELS[s]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      </div>
+                    </HoverCardTrigger>
+                    <HoverCardContent className="w-80 space-y-2 text-sm">
                       <div className="font-medium leading-snug">{t.name}</div>
                       {t.description && (
-                        <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                        <div className="whitespace-pre-wrap text-xs text-muted-foreground">
                           {t.description}
                         </div>
                       )}
-                    </div>
-                    {/* Бейджи под заголовком: тип, приоритет, статус. */}
-                    <div className="flex flex-wrap gap-1">
-                      <Badge variant="secondary" className="text-[10px]">
-                        {TASK_TYPE_LABELS[t.type]}
-                      </Badge>
-                      <Badge
-                        variant="secondary"
-                        className={`text-[10px] ${TASK_PRIORITY_BADGE[t.priority]}`}
-                      >
-                        {TASK_PRIORITY_LABELS[t.priority]}
-                      </Badge>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {TASK_STATUS_LABELS[t.status]}
-                      </Badge>
-                    </div>
-                    {/* Мета-поля в две колонки — без «столбика» и пустоты справа. */}
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                      <TaskMeta label="Срок" value={formatDate(t.dueDate)} />
-                      <TaskMeta label="Исполнитель" value={t.assigneeName} />
-                      <TaskMeta label="Клиент" value={t.clientName} />
-                      <TaskMeta label="Контакт" value={t.contactName} />
-                    </div>
-                    {/* Смена статуса — только инициатору/исполнителю. */}
-                    {canEdit && (
-                      <Select
-                        value={t.status}
-                        onValueChange={(v) => setTaskStatus(t.id, v as TaskStatus)}
-                        disabled={isPending}
-                      >
-                        <SelectTrigger className="h-8 w-full">
-                          <SelectValue placeholder="Изменить статус" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TASK_STATUSES.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {TASK_STATUS_LABELS[s]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                        <TaskMeta label="Срок" value={formatDate(t.dueDate)} />
+                        <TaskMeta
+                          label="Исполнитель"
+                          value={t.assigneeName}
+                        />
+                        <TaskMeta label="Клиент" value={t.clientName} />
+                        <TaskMeta label="Контакт" value={t.contactName} />
+                      </div>
+                    </HoverCardContent>
+                  </HoverCard>
                 )
               })
             )}
           </TabsContent>
-        </Tabs>
 
-        {/* Происхождение (UX №14): не самая важная инфа — прибита к подвалу
-            (shrink-0, вне скролла), аккуратный раскрывающийся блок со
-            скруглениями в стиле продукта, по умолчанию закрыт, неяркий. */}
-        {(() => {
-          const origin = dealOriginMock(deal.id)
-          return (
-            <div className="shrink-0 border-t p-3">
-              <details className="group rounded-lg border bg-muted/30 text-xs text-muted-foreground">
-                <summary className="flex cursor-pointer select-none items-center justify-between gap-2 rounded-lg px-3 py-2 font-medium hover:bg-muted/50">
-                  Происхождение
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
-                </summary>
-                <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-0.5">
+          {/* Происхождение (UX №14): раньше был отдельным раскрывающимся
+              блоком, прибитым к подвалу дровера, — на Safari вложенный
+              flex+overflow-y-auto над ним не клипал контент вкладки «Задачи»
+              и она просвечивала сквозь блок снизу. Перенесено в обычный таб,
+              чтобы не зависеть от независимого от скролла позиционирования. */}
+          <TabsContent
+            value="origin"
+            className="flex-1 min-h-0 overflow-y-auto py-4 text-sm"
+          >
+            {(() => {
+              const origin = dealOriginMock(deal.id)
+              return (
+                <div className="flex items-center gap-1.5 text-muted-foreground">
                   <origin.Icon className="h-3.5 w-3.5 shrink-0" />
                   Создано {origin.label} · {formatDate(deal.createdAt)}
                 </div>
-              </details>
-            </div>
-          )
-        })()}
+              )
+            })()}
+          </TabsContent>
+        </Tabs>
+        </div>
       </SheetContent>
 
       {/* Диалог «Связать с задачей» (UX): задачи текущего клиента, ещё не

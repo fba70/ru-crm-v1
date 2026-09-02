@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -177,6 +178,16 @@ function StatusBucket({
 }
 
 export default function TasksPage() {
+  return (
+    <Suspense fallback={null}>
+      <TasksPageContent />
+    </Suspense>
+  )
+}
+
+function TasksPageContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -186,6 +197,19 @@ export default function TasksPage() {
   const [dealOptions, setDealOptions] = useState<
     { id: string; name: string; clientName: string | null }[]
   >([])
+
+  // Открытие конкретной задачи по ссылке (?openTask=<id>) — например, из
+  // карточки задачи в дровере сделки. Диалог открывается сам, как только
+  // задача появится в загруженном списке.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  useEffect(() => {
+    const id = searchParams.get("openTask")
+    if (id) setOpenTaskId(id)
+  }, [searchParams])
+  const openTask = useMemo(
+    () => tasks.find((t) => t.id === openTaskId) ?? null,
+    [tasks, openTaskId],
+  )
 
   const [nameFilter, setNameFilter] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>(ALL)
@@ -488,6 +512,22 @@ export default function TasksPage() {
           )}
         </CardContent>
       </Card>
+
+      {openTask && (
+        <TaskEditDialog
+          mode="edit"
+          task={openTask}
+          trigger={<span />}
+          open
+          onOpenChange={(o) => {
+            if (!o) {
+              setOpenTaskId(null)
+              router.replace("/tasks")
+            }
+          }}
+          onSuccess={refreshAll}
+        />
+      )}
     </div>
   )
 }
