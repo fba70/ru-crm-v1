@@ -407,7 +407,7 @@ export function DealDetailDrawer({
 
   return (
     <Sheet open={open} onOpenChange={handleSheetOpenChange}>
-      <SheetContent className="w-full sm:w-fit sm:min-w-[36rem] sm:max-w-[90vw] flex flex-col gap-0 p-0">
+      <SheetContent className="w-full sm:max-w-xl flex flex-col gap-0 p-0">
         <SheetHeader className="p-4 pb-3 border-b space-y-3">
           {/* Карточка подробностей слита с формой редактирования — все поля
               сразу в режиме правки, «Сохранить» пишет через PUT /api/deals.
