@@ -262,6 +262,14 @@ export async function updateAdminSourceCredentials(
   }
 
   const validated = handler.credentialsSchema.parse(plainCredentials)
+
+  // Live probe before the write — see the note in
+  // `updateOwnerOrgSourceCredentials`.
+  const { verifyProviderCredentials } = await import(
+    "@/server/providers/verify"
+  )
+  await verifyProviderCredentials(row.provider, validated)
+
   const ciphertext = encryptCredentials(validated)
 
   await db

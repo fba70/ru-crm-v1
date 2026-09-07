@@ -58,8 +58,30 @@ const blankToUndefined = (v: unknown) => {
 // `getNylasClient()` in `src/lib/nylas.ts` for the fallback resolution. They
 // belong in credentials_ref rather than provider_config because the key is a
 // secret and it must travel together with the grant it can resolve.
+//
+// grantId is checked against the UUID shape, not just `min(1)`. Nylas mints
+// every grant as a UUID, and a non-UUID value doesn't merely fail auth — it
+// builds a URL their gateway has no route for, so the API answers with a
+// PLAIN-TEXT 404 (`Cannot GET /v3/grants/<junk>/messages`). The Nylas SDK
+// expects JSON and can't parse that, surfacing as the opaque "Received an
+// error but could not parse response from the server with flow ID …". A
+// placeholder typed into the form used to save cleanly and only fail later,
+// at sync time, with that unreadable message. Rejecting it here also guards
+// every READ path: `getNylasCredentials` re-parses this schema after
+// decrypt, so an already-poisoned row now throws a named
+// `InvalidCredentialsError` instead of reaching Nylas at all.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export const nylasCredentialsSchema = z.object({
-  grantId: z.string().trim().min(1, "grantId is required"),
+  grantId: z
+    .string()
+    .trim()
+    .min(1, "grantId is required")
+    .regex(
+      UUID_RE,
+      "grantId must be the UUID Nylas issued for the mailbox, e.g. 30c70eb1-bbe2-4e0e-9cc7-5d9cc8190a16",
+    ),
   apiKey: z.preprocess(
     blankToUndefined,
     z.string().min(1, "apiKey must not be empty").optional(),

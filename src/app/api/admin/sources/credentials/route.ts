@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ZodError } from "zod"
 import { updateAdminSourceCredentials } from "@/server/admin-sources"
+import { CredentialsVerificationError } from "@/server/providers/verify"
 
 // Admin-only credentials update. Body: `{ sourceId, credentials }`.
 // Mirrors the owner-side flow at /api/sources/org/credentials but skips
 // the org-ownership check — admin can edit any source's credentials.
 //
-// Errors mirror the owner route (400 / 401 / 403 / 404 / 500).
+// Errors mirror the owner route (400 / 401 / 403 / 404 / 500) — including
+// the save-time provider probe (`CredentialsVerificationError` → 400).
 // `requireAdmin()` inside the server fn throws on non-admin; the catch
 // arm here surfaces it as 401/403 based on the message. Keep the
 // admin auth contract simple: a non-admin sees a generic 401.
@@ -40,6 +42,13 @@ export async function PUT(request: NextRequest) {
     await updateAdminSourceCredentials(sourceId, b.credentials)
     return NextResponse.json({ ok: true })
   } catch (error) {
+    // Well-formed payload the provider itself rejected (bad key, unknown
+    // grant, wrong region) — 400, and the message is already written for
+    // the operator. Must precede the generic `instanceof Error` arm below,
+    // which would otherwise bury it as a 500.
+    if (error instanceof CredentialsVerificationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     if (error instanceof ZodError) {
       return NextResponse.json(
         {

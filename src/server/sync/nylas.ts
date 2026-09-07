@@ -1,6 +1,6 @@
 "use server"
 
-import { getNylasClient } from "@/lib/nylas"
+import { getNylasClient, describeNylasError } from "@/lib/nylas"
 import {
   upsertSourceItem,
   getLatestSourceCreatedAt,
@@ -63,15 +63,23 @@ export async function syncNylasEmails(
   }
   const receivedBefore = windowUntil ?? undefined
 
-  const response = await client.messages.list({
-    identifier: grantId,
-    queryParams: {
-      limit: SYNC_PAGE_LIMIT,
-      in: ["INBOX"],
-      ...(receivedAfter !== undefined ? { receivedAfter } : {}),
-      ...(receivedBefore !== undefined ? { receivedBefore } : {}),
-    },
-  })
+  // `describeNylasError` only rewrites the SDK's unreadable
+  // "could not parse response" case; everything else passes through
+  // untouched so the provider-missing classifiers still recognise it.
+  let response
+  try {
+    response = await client.messages.list({
+      identifier: grantId,
+      queryParams: {
+        limit: SYNC_PAGE_LIMIT,
+        in: ["INBOX"],
+        ...(receivedAfter !== undefined ? { receivedAfter } : {}),
+        ...(receivedBefore !== undefined ? { receivedBefore } : {}),
+      },
+    })
+  } catch (err) {
+    throw describeNylasError(err, ctx.id)
+  }
 
   let inserted = 0
   let updated = 0

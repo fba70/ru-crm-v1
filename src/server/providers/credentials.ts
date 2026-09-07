@@ -16,6 +16,8 @@
 
 import "server-only"
 
+import { ZodError } from "zod"
+
 import { decryptCredentials } from "@/lib/credentials-crypto"
 import {
   type GchatCredentials,
@@ -53,6 +55,22 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
+// A ZodError's `.message` is the raw JSON issue array — unreadable when it
+// lands in a sync log or an operator-facing toast. Render the issues as
+// `field: reason` instead, keeping every one (a credentials payload can
+// fail on more than one field at a time).
+function describeValidationError(err: unknown): string {
+  if (err instanceof ZodError) {
+    return err.issues
+      .map((i) => {
+        const path = i.path.join(".")
+        return path ? `${path}: ${i.message}` : i.message
+      })
+      .join("; ")
+  }
+  return err instanceof Error ? err.message : String(err)
+}
+
 // Internal: decrypt + zod-validate. Throws on missing/malformed.
 function decryptAndValidate<T>(
   sourceId: string,
@@ -79,7 +97,7 @@ function decryptAndValidate<T>(
     throw new InvalidCredentialsError(
       sourceId,
       provider,
-      err instanceof Error ? err.message : String(err),
+      describeValidationError(err),
     )
   }
 }

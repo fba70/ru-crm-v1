@@ -5,6 +5,7 @@ import {
   OrgOwnerError,
   SourceScopeError,
 } from "@/server/sources"
+import { CredentialsVerificationError } from "@/server/providers/verify"
 
 // Owner-only credentials update. Body: `{ sourceId, credentials }`.
 //
@@ -20,6 +21,8 @@ import {
 //   404 — sourceId doesn't exist
 //   400 — bad body OR provider has no credentials schema OR zod payload
 //         validation failed (issues returned in `issues` for the form)
+//         OR the provider itself rejected the credentials at save time
+//         (`CredentialsVerificationError` — see providers/verify.ts)
 export async function PUT(request: NextRequest) {
   let body: unknown
   try {
@@ -61,6 +64,12 @@ export async function PUT(request: NextRequest) {
         { error: error.message },
         { status: error.reason === "not_found" ? 404 : 403 },
       )
+    }
+    // The payload was well-formed but the provider rejected it (bad key,
+    // unknown grant, wrong region). 400, not 500 — the caller must fix the
+    // input, and `error.message` is already written for them.
+    if (error instanceof CredentialsVerificationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
     }
     if (error instanceof ZodError) {
       return NextResponse.json(

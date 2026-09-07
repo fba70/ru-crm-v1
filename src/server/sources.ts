@@ -389,6 +389,17 @@ export async function updateOwnerOrgSourceCredentials(
   // Zod parse — throws ZodError on bad payload, surfaced to the route
   // handler which translates it to a 400.
   const validated = handler.credentialsSchema.parse(plainCredentials)
+
+  // Live probe BEFORE the write: zod proves the payload is well-shaped, not
+  // that it works. A well-formed-but-wrong grant id or a revoked API key
+  // used to save cleanly and only fail at sync time, deep inside the
+  // provider SDK. Throws `CredentialsVerificationError` → 400 on the route,
+  // so the operator sees it while the dialog is still open.
+  const { verifyProviderCredentials } = await import(
+    "@/server/providers/verify"
+  )
+  await verifyProviderCredentials(row.provider, validated)
+
   const ciphertext = encryptCredentials(validated)
 
   await db
