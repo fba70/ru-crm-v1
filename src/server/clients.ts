@@ -17,6 +17,8 @@ import { google } from "@ai-sdk/google"
 import { z } from "zod"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
+import { request as httpsRequest } from "node:https"
+import { request as httpRequest } from "node:http"
 import {
   isClientType,
   normalizeDiscountPercent,
@@ -356,14 +358,53 @@ const LOOKUP_EXTRACT_MODEL = "google/gemini-2.5-flash"
 // fetch the homepage + a few likely contact/legal pages and feed the raw
 // text straight into the structured-extract pass as primary-source evidence.
 const FETCH_TIMEOUT_MS = 8000 // per page
-const MAX_EXTRA_PAGES = 3 // contact/impressum/about pages beyond the homepage
-const MAX_PAGE_BYTES = 400_000 // cap each page body before stripping
-const MAX_SITE_TEXT = 14_000 // cap the combined text handed to the LLM
+const MAX_EXTRA_PAGES = 4 // contact/impressum/about pages beyond the homepage
+const MAX_REDIRECTS = 3
+// Raw-HTML cap. Deliberately generous: a Tilda-style one-pager weighs ~1 MB of
+// markup but strips down to ~5 KB of text, and the footer — where the phone and
+// the address live — is the LAST thing in the file. The previous 400 KB cap cut
+// it off silently, which is why site-published phones never reached the model.
+const MAX_PAGE_BYTES = 3_000_000
+const MAX_PAGE_TEXT = 6_000 // per-page text budget (head + footer sample)
+const MAX_SITE_TEXT = 16_000 // cap the combined text handed to the LLM
+// A real browser UA. Anti-DDoS front-ends (DDoS-Guard, Qrator) answer a bot UA
+// with 403 on every sub-page — ntechlab.ru/about does exactly that.
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 // Anchors whose href or label hint at where an address usually lives.
 const ADDRESS_PAGE_HINT =
-  /(contact|kontakt|contacto|contatti|impressum|imprint|about|legal|mentions[-\s]?l[eé]gales|company|firma|standort|location)/i
+  /(contact|kontakt|contacto|contatti|impressum|imprint|about|legal|mentions[-\s]?l[eé]gales|company|firma|standort|location|контакт|адрес|реквизит|о[-\s]?нас|о[-\s]?компании|kontakty|rekvizity|o-kompanii|o-nas)/i
 // Fallback guesses used only when the homepage exposes no hinted links.
-const ADDRESS_PAGE_GUESSES = ["/contact", "/kontakt", "/impressum"]
+const ADDRESS_PAGE_GUESSES = [
+  "/contacts",
+  "/contact",
+  "/kontakty",
+  "/kontakt",
+  "/about",
+  "/o-kompanii",
+  "/impressum",
+]
+
+/**
+ * Accept whatever a human types into the "Сайт" field. A scheme-less
+ * "ntechlab.ru" made `new URL()` throw, which silently disabled the whole
+ * own-site fetch and left the URL-pinned research branch chasing a bare
+ * hostname. Returns "" when there is nothing usable.
+ */
+function normalizeSiteUrl(raw: string | null | undefined): string {
+  const trimmed = (raw ?? "").trim()
+  if (!trimmed) return ""
+  const withScheme = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`
+  try {
+    const u = new URL(withScheme)
+    if (!u.hostname.includes(".")) return ""
+    return u.toString().replace(/\/$/, "")
+  } catch {
+    return ""
+  }
+}
 
 // Minimal HTML → text: drop non-content tags, turn block boundaries into
 // newlines, decode the handful of entities that matter, collapse whitespace.
@@ -388,30 +429,97 @@ function htmlToText(html: string): string {
     .trim()
 }
 
+// Keep a page's text inside budget WITHOUT losing the footer — that is where
+// the address and the phone usually sit, so a plain head-slice throws away the
+// very thing we came for. Sample the head and the tail instead.
+function clampPageText(text: string): string {
+  if (text.length <= MAX_PAGE_TEXT) return text
+  const head = text.slice(0, Math.floor(MAX_PAGE_TEXT * 0.55))
+  const tail = text.slice(-Math.floor(MAX_PAGE_TEXT * 0.45))
+  return `${head}\n…(middle omitted)…\n${tail}`
+}
+
 // Fetch one page → capped raw HTML, or "" on any failure (never throws).
-async function fetchPageRaw(url: string): Promise<string> {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
-  try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      redirect: "follow",
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (compatible; TruffaloBot/1.0; +https://truffalo.ai)",
-        accept: "text/html,application/xhtml+xml",
+//
+// Uses node:https directly instead of global fetch for ONE reason: anti-DDoS
+// front-ends (ntechlab.ru sits behind DDoS-Guard) hand a self-signed
+// certificate to non-browser clients, so `fetch` dies with
+// DEPTH_ZERO_SELF_SIGNED_CERT before a single byte is read. These are public
+// marketing pages and we send no credentials with the request, so a relaxed
+// certificate check is the difference between reading the company's own site
+// and guessing from third-party news articles.
+function fetchPageRaw(url: string, depth = 0): Promise<string> {
+  return new Promise((resolve) => {
+    let target: URL
+    try {
+      target = new URL(url)
+    } catch {
+      return resolve("")
+    }
+    if (target.protocol !== "https:" && target.protocol !== "http:") {
+      return resolve("")
+    }
+    const secure = target.protocol === "https:"
+    const req = (secure ? httpsRequest : httpRequest)(
+      {
+        hostname: target.hostname,
+        port: target.port || undefined,
+        path: `${target.pathname}${target.search}`,
+        method: "GET",
+        ...(secure
+          ? { rejectUnauthorized: false, servername: target.hostname }
+          : {}),
+        headers: {
+          "user-agent": BROWSER_UA,
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "accept-language": "ru-RU,ru;q=0.9,en;q=0.8",
+          // No gzip — we would have to inflate it ourselves here.
+          "accept-encoding": "identity",
+        },
       },
+      (res) => {
+        const status = res.statusCode ?? 0
+        const location = res.headers.location
+        if (status >= 300 && status < 400 && location && depth < MAX_REDIRECTS) {
+          res.resume()
+          let next: string
+          try {
+            next = new URL(location, target).toString()
+          } catch {
+            return resolve("")
+          }
+          return resolve(fetchPageRaw(next, depth + 1))
+        }
+        if (status !== 200) {
+          res.resume()
+          return resolve("")
+        }
+        const ct = String(res.headers["content-type"] ?? "")
+        if (ct && !ct.includes("html") && !ct.includes("xml")) {
+          res.resume()
+          return resolve("")
+        }
+        let body = ""
+        res.setEncoding("utf8")
+        res.on("data", (chunk: string) => {
+          body += chunk
+          if (body.length > MAX_PAGE_BYTES) {
+            body = body.slice(0, MAX_PAGE_BYTES)
+            res.destroy()
+          }
+        })
+        res.on("close", () => resolve(body))
+        res.on("error", () => resolve(body))
+      },
+    )
+    req.on("error", () => resolve(""))
+    req.setTimeout(FETCH_TIMEOUT_MS, () => {
+      req.destroy()
+      resolve("")
     })
-    if (!res.ok) return ""
-    const ct = res.headers.get("content-type") ?? ""
-    if (ct && !ct.includes("html") && !ct.includes("xml")) return ""
-    const raw = await res.text()
-    return raw.slice(0, MAX_PAGE_BYTES)
-  } catch {
-    return ""
-  } finally {
-    clearTimeout(timer)
-  }
+    req.end()
+  })
 }
 
 // Same-site anchors (homepage host or a sub/parent of it) whose href/label
@@ -446,27 +554,40 @@ function findAddressPageLinks(homeHtml: string, base: URL): string[] {
  * extract pass. Best-effort: returns "" if the homepage can't be fetched.
  */
 async function fetchSiteTextForLookup(knownUrl: string): Promise<string> {
+  const normalized = normalizeSiteUrl(knownUrl)
+  if (!normalized) return ""
   let base: URL
   try {
-    base = new URL(knownUrl)
+    base = new URL(normalized)
   } catch {
     return ""
   }
 
-  const homeRaw = await fetchPageRaw(base.toString())
+  let homeRaw = await fetchPageRaw(base.toString())
+  // Some older RU corporate sites still answer on http only.
+  if (!homeRaw && base.protocol === "https:") {
+    const plain = new URL(base.toString())
+    plain.protocol = "http:"
+    homeRaw = await fetchPageRaw(plain.toString())
+    if (homeRaw) base = plain
+  }
   if (!homeRaw) return ""
 
   let links = findAddressPageLinks(homeRaw, base)
   // No hinted links on the homepage → try a few well-known paths.
   if (links.length === 0) {
-    links = ADDRESS_PAGE_GUESSES.map((p) => new URL(p, base).toString())
+    links = ADDRESS_PAGE_GUESSES.slice(0, MAX_EXTRA_PAGES).map((p) =>
+      new URL(p, base).toString(),
+    )
   }
 
   const extraRaws = await Promise.all(links.map((u) => fetchPageRaw(u)))
 
-  const sections = [`# ${base.toString()}\n${htmlToText(homeRaw)}`]
+  const sections = [
+    `# ${base.toString()}\n${clampPageText(htmlToText(homeRaw))}`,
+  ]
   links.forEach((u, i) => {
-    const t = htmlToText(extraRaws[i] || "")
+    const t = clampPageText(htmlToText(extraRaws[i] || ""))
     if (t) sections.push(`# ${u}\n${t}`)
   })
 
@@ -499,6 +620,21 @@ export type ClientLookupResult = {
   notes: string
 }
 
+/**
+ * Operator-typed search parameters. The stored client row is only a starting
+ * point: whatever the user types in the lookup dialog overrides it for THIS
+ * search (nothing is written to the DB until they press save). A `webUrl` hint
+ * also switches the research on to the URL-pinned branch, which is the single
+ * most effective way to stop name-similarity matches in another country.
+ */
+export type ClientLookupHints = {
+  name?: string | null
+  email?: string | null
+  phone?: string | null
+  address?: string | null
+  webUrl?: string | null
+}
+
 const lookupExtractSchema = z.object({
   candidates: z
     .array(
@@ -516,7 +652,7 @@ const lookupExtractSchema = z.object({
         phone: z
           .string()
           .describe(
-            "Primary main-office phone in international format (e.g. '+43 1 234 5678'). Empty string if not found.",
+            "Primary main-office phone, in international format with the country code, exactly as the company publishes it. Do not guess the country code — take it from the source. Empty string if not found.",
           ),
         address: z
           .string()
@@ -569,9 +705,15 @@ const lookupExtractSchema = z.object({
  *
  * NO writes — caller invokes the existing PUT /api/clients to apply
  * whatever the user picks in the preview modal.
+ *
+ * `hints` are the operator's own search parameters (see {@link
+ * ClientLookupHints}): they override the stored row when the prompt is built,
+ * and are passed to the model as authoritative constraints. Omitted → the
+ * search runs off the stored record alone, as the batch enrichment does.
  */
 export async function lookupClientOnWeb(
   clientId: string,
+  hints?: ClientLookupHints,
 ): Promise<ClientLookupResult> {
   const { activeOrgId } = await requireOrgContext()
   const target = await assertClientInOrg(clientId, activeOrgId)
@@ -593,12 +735,32 @@ export async function lookupClientOnWeb(
       ),
     )
 
+  // Operator hints win over the stored row for this one search. `given` marks
+  // the fields the operator typed by hand — those go into the prompt a second
+  // time as hard constraints, because "the company we mean is the one in
+  // Moscow" is exactly the information that stops a .com namesake winning.
+  const hint = (v?: string | null) => (v ?? "").trim()
+  const given = {
+    name: hint(hints?.name),
+    email: hint(hints?.email),
+    phone: hint(hints?.phone),
+    address: hint(hints?.address),
+    webUrl: normalizeSiteUrl(hints?.webUrl),
+  }
+  const effective = {
+    name: given.name || target.name,
+    email: given.email || (target.email ?? "").trim(),
+    phone: given.phone || (target.phone ?? "").trim(),
+    address: given.address || (target.address ?? "").trim(),
+    webUrl: given.webUrl || normalizeSiteUrl(target.webUrl),
+  }
+
   const knownLines = [
-    `Name: ${target.name}`,
-    target.email ? `Email: ${target.email}` : null,
-    target.phone ? `Phone: ${target.phone}` : null,
-    target.address ? `Address: ${target.address}` : null,
-    target.webUrl ? `Website: ${target.webUrl}` : null,
+    `Name: ${effective.name}`,
+    effective.email ? `Email: ${effective.email}` : null,
+    effective.phone ? `Phone: ${effective.phone}` : null,
+    effective.address ? `Address: ${effective.address}` : null,
+    effective.webUrl ? `Website: ${effective.webUrl}` : null,
     contacts.length > 0
       ? `Known contacts: ${contacts
           .map((c) => {
@@ -611,32 +773,53 @@ export async function lookupClientOnWeb(
     .filter(Boolean)
     .join("\n")
 
+  const constraintLines = [
+    given.name ? `- Company name: "${given.name}" — this is the entity meant.` : null,
+    given.webUrl
+      ? `- Official website: ${given.webUrl} — the company behind THIS domain, no other.`
+      : null,
+    given.address
+      ? `- Office / location: ${given.address} — reject any candidate in another city or country.`
+      : null,
+    given.phone ? `- Known phone: ${given.phone}` : null,
+    given.email ? `- Known email: ${given.email}` : null,
+  ].filter(Boolean)
+  const constraints =
+    constraintLines.length > 0
+      ? `
+
+Operator-confirmed parameters. These come from the CRM user, who knows this client — they are authoritative. Any candidate that contradicts them is the wrong company:
+${constraintLines.join("\n")}`
+      : ""
+
   // A known website URL is the authoritative identity of the company: when
   // it's present we pin all research to that one site and never offer
   // name-similarity alternatives (the URL, not the name, is the key criterion).
-  const knownUrl = (target.webUrl ?? "").trim()
+  const knownUrl = effective.webUrl
   const hasKnownUrl = knownUrl.length > 0
 
   // ── Pass 1: grounded research ───────────────────────────────────────
   const researchPrompt = hasKnownUrl
     ? `I have the following CRM record for a company:
 
-${knownLines}
+${knownLines}${constraints}
 
 This record already has a confirmed official website: ${knownUrl}
 
 Research ONLY this exact organisation — the one that owns ${knownUrl}. Use web search to read that website (and pages directly under that same domain) to gather: official company name, primary contact email, main-office phone, headquarters address. The website URL is the authoritative identity of this company.
 
-Do NOT consider, search for, or mention any other company that merely has a similar name — only the organisation behind ${knownUrl} matters here.
+Do NOT consider, search for, or mention any other company that merely has a similar name — only the organisation behind ${knownUrl} matters here. Contact details published on ${knownUrl} itself outrank anything a news site, directory or aggregator says. Search in the language of that website as well as in English.
 
-Write 1–3 short paragraphs of research notes summarising what you found on that website. Do NOT fabricate facts — only state what your search results actually confirm.`
+Write 1–3 short paragraphs of research notes summarising what you found on that website. State for each detail where it came from. Do NOT fabricate facts — only state what your search results actually confirm.`
     : `I have the following CRM record for a company:
 
-${knownLines}
+${knownLines}${constraints}
 
 Use web search to research this company. Identify the most likely real-world organisation (or organisations, if the name is ambiguous). For each candidate, gather: official company name, primary contact email, main-office phone, headquarters address, official website URL.
 
-Write 2–4 short paragraphs of research notes summarising what you found. If multiple companies share this name, note them separately. Do NOT fabricate facts — only state what your search results actually confirm.`
+Search in the local language of the operator-confirmed location as well as in English — the company's own local-language site is a better source than an English directory.
+
+Write 2–4 short paragraphs of research notes summarising what you found. If multiple companies share this name, note them separately, and say which one fits the operator-confirmed parameters. Do NOT fabricate facts — only state what your search results actually confirm.`
 
   // When we know the company's own URL, fetch its actual page text in
   // parallel with the grounded research — grounding only sees snippets, so
@@ -653,6 +836,9 @@ Write 2–4 short paragraphs of research notes summarising what you found. If mu
     tools: { google_search: google.tools.googleSearch({}) },
     // Bound the search → fetch → answer loop so the model can't spiral.
     stopWhen: stepCountIs(5),
+    // Same input must give the same answer: two runs of this lookup used to
+    // return a different address and drop the phone entirely.
+    temperature: 0,
   })
 
   const siteText = await sitePromise
@@ -670,7 +856,7 @@ Write 2–4 short paragraphs of research notes summarising what you found. If mu
   // ── Pass 2: structured extraction ───────────────────────────────────
   const extractPrompt = hasKnownUrl
     ? `CRM record (current fields):
-${knownLines}
+${knownLines}${constraints}
 
 Research notes from web search (about ${knownUrl} only):
 ${research.text || "(no research output)"}
@@ -684,21 +870,24 @@ ${siteText}
 `
     : ""
 }
-The record's website URL (${knownUrl}) is the authoritative identity of this company. Return EXACTLY ONE candidate, describing the organisation behind ${knownUrl}. Set its webUrl to ${knownUrl}. Do NOT add alternative companies based on name similarity. Fill every field the research notes or website text confirm, and use empty strings for fields neither established. Set confidence to "high".`
+The record's website URL (${knownUrl}) is the authoritative identity of this company. Return EXACTLY ONE candidate, describing the organisation behind ${knownUrl}. Set its webUrl to ${knownUrl}. Do NOT add alternative companies based on name similarity. Fill every field the research notes or website text confirm, and use empty strings for fields neither established. Set confidence to "high".
+
+Field precedence, strongest first: (1) the raw text of the company's own website above, (2) the research notes, (3) nothing — leave the field empty. Never replace an operator-confirmed parameter with a value from a news site, directory or registry; a value from the company's own website may replace it, and if the two disagree, say so in "notes".`
     : `CRM record (current fields):
-${knownLines}
+${knownLines}${constraints}
 
 Research notes from web search:
 ${research.text || "(no research output)"}
 
-Based on the research notes, extract up to 3 candidate companies that could be the right match for this CRM record. Sort by confidence (best first). For each candidate, fill every field that the research notes confirm, and use empty strings for fields the research didn't establish. Use the candidates' likely match against the input record's address / contact email when rating confidence.`
+Based on the research notes, extract up to 3 candidate companies that could be the right match for this CRM record. Sort by confidence (best first). For each candidate, fill every field that the research notes confirm, and use empty strings for fields the research didn't establish. Rate confidence by how well the candidate fits the operator-confirmed parameters and the record's address / contact email. Drop any candidate that contradicts an operator-confirmed parameter — do not return it as a lower-confidence alternative.`
 
   const { output: extracted } = await generateText({
     model: LOOKUP_EXTRACT_MODEL,
     output: Output.object({ schema: lookupExtractSchema }),
     system:
-      "You convert research notes and raw company-website text into structured candidate records. Never invent fields — if neither the research notes nor the website text confirms a value, return an empty string for that field. When raw website text is provided it is primary-source evidence and outranks the research notes. Use empty arrays for the candidates list if no plausible match was found.",
+      "You convert research notes and raw company-website text into structured candidate records. Never invent fields — if neither the research notes nor the website text confirms a value, return an empty string for that field. When raw website text is provided it is primary-source evidence and outranks the research notes. Operator-confirmed parameters outrank third-party sources. Use empty arrays for the candidates list if no plausible match was found.",
     prompt: extractPrompt,
+    temperature: 0,
   })
 
   return {
