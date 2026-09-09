@@ -11,16 +11,19 @@ import {
 } from "@/components/ui/tooltip"
 import {
   ArrowRight,
-  Mail,
-  Phone,
   MapPin,
   Globe,
   Pencil,
   MessageSquare,
   Clock,
   Briefcase,
+  ListTodo,
 } from "lucide-react"
-import type { ClientRow, ClientRevenueSummary } from "@/app/api/clients/route"
+import type {
+  ClientRow,
+  ClientRevenueSummary,
+  ClientTaskSummary,
+} from "@/app/api/clients/route"
 import type { DealRow } from "@/app/api/deals/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
@@ -32,6 +35,13 @@ import {
   clientStaleDays,
   pluralizeOrders,
 } from "@/lib/client-mocks"
+import { COMPANY_KIND_LABELS } from "@/lib/client-custom-fields"
+
+// Тот же бейдж-язык, что и для статуса (насыщенные хью deal-board.ts).
+const COMPANY_KIND_COLOR: Record<string, string> = {
+  supplier: "bg-teal-500/15 text-teal-700 dark:text-teal-300",
+  partner: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+}
 
 // `initial` is the auto-discovered state — give it a distinct accent so
 // it stands out for review. `suspended` stays muted (archived). `deleted`
@@ -135,6 +145,7 @@ export function ClientCard({
   canBlock = false,
   revenue,
   activeDeal,
+  taskSummary,
 }: {
   client: ClientRow
   onChanged: () => void
@@ -142,6 +153,7 @@ export function ClientCard({
   canBlock?: boolean
   revenue?: ClientRevenueSummary
   activeDeal?: DealRow
+  taskSummary?: ClientTaskSummary
 }) {
   const preview = client.contacts.slice(0, 2)
   const moreCount = Math.max(0, client.contacts.length - preview.length)
@@ -163,15 +175,27 @@ export function ClientCard({
             </div>
           )}
           {/* Funnel-phase badge intentionally hidden for now — only the
-              non-active status badge is shown. */}
-          {client.status !== "active" && (
+              non-active status + company-kind badges are shown. */}
+          {(client.status !== "active" || client.customFields?.companyKind) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <Badge
-                variant="secondary"
-                className={STATUS_COLOR[client.status] ?? ""}
-              >
-                {STATUS_LABEL[client.status] ?? client.status}
-              </Badge>
+              {client.status !== "active" && (
+                <Badge
+                  variant="secondary"
+                  className={STATUS_COLOR[client.status] ?? ""}
+                >
+                  {STATUS_LABEL[client.status] ?? client.status}
+                </Badge>
+              )}
+              {client.customFields?.companyKind && (
+                <Badge
+                  variant="secondary"
+                  className={
+                    COMPANY_KIND_COLOR[client.customFields.companyKind] ?? ""
+                  }
+                >
+                  {COMPANY_KIND_LABELS[client.customFields.companyKind]}
+                </Badge>
+              )}
             </div>
           )}
         </div>
@@ -217,22 +241,22 @@ export function ClientCard({
           activeDeal={activeDeal}
         />
 
-        {(client.email || client.phone) && (
-          <div className="space-y-1 text-muted-foreground">
-            {client.email && (
-              <div className="flex items-center gap-2 truncate">
-                <Mail className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{client.email}</span>
-              </div>
-            )}
-            {client.phone && (
-              <div className="flex items-center gap-2 truncate">
-                <Phone className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{client.phone}</span>
-              </div>
+        {taskSummary && taskSummary.openCount > 0 && (
+          <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 text-xs">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <ListTodo className="h-3.5 w-3.5 shrink-0" />
+              {taskSummary.openCount}{" "}
+              {taskSummary.openCount === 1 ? "задача" : "задач"}
+            </span>
+            {taskSummary.overdueCount > 0 && (
+              <span className="font-medium text-[#A31018] dark:text-[#FF8F96]">
+                {taskSummary.overdueCount} просрочено
+              </span>
             )}
           </div>
         )}
+
+        {/* Email/телефон — только на /clients/[id], не на компактной карточке. */}
 
         {/* Адрес/сайт/комментарий — второстепенная справочная информация,
             свёрнута по умолчанию (это не то, ради чего открывают карточку

@@ -64,6 +64,8 @@ import DealEditDialog from "@/components/forms/form-deal-edit"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
 import { DealDetailDrawer } from "@/components/blocks/deal-detail-drawer"
 import { DealDecisionFeed } from "@/components/blocks/deal-decision-feed"
+import { GlobalSearch } from "@/components/blocks/global-search"
+import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { useBoardIntel } from "@/hooks/use-board-intel"
 import {
   DealOutcomeDialog,
@@ -235,6 +237,17 @@ export function DealsBoard({
   // drawerOpen, но openDealId сохраняем — чтобы deal оставался смонтированным
   // на время exit-анимации Sheet (иначе закрытие происходит без анимации).
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Deep-link из глобального поиска (/deals?openDeal=<id>): доска уже
+  // загружает ВСЕ сделки (includeCancelled+includeDeleted на уровне страницы),
+  // поэтому открыть найденную сделку — то же самое, что клик по карточке.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const dealId = params.get("openDeal")
+    if (!dealId) return
+    window.history.replaceState(null, "", window.location.pathname)
+    setOpenDealId(dealId)
+    setDrawerOpen(true)
+  }, [])
   // Гасим клик-после-перетаскивания: dnd-kit может породить синтетический click
   // после короткого drag — не открываем drawer в этом случае.
   const justDraggedRef = useRef(false)
@@ -709,43 +722,9 @@ export function DealsBoard({
                 · открытых: <b className="text-foreground">{openCount}</b>
               </span>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* «Найти в источниках» перенесена левее (UX №18, времянка).
-                  «Предложения агента» убрана отсюда → стала фильтром (UX №19). */}
-              <DiscoverDealsDialog
-                onDealsGenerated={router.refresh}
-                trigger={
-                  <Button size="sm" variant="secondary">
-                    <Sparkles className="h-4 w-4 mr-1" />
-                    Найти в источниках
-                  </Button>
-                }
-              />
-              <Button
-                size="sm"
-                variant={feedOpen ? "default" : "outline"}
-                onClick={() => setFeedOpen((v) => !v)}
-              >
-                <ListTree className="h-4 w-4 mr-1" />
-                Лента решений
-              </Button>
-              <DealEditDialog
-                // router.refresh() один сам по себе обновляет только серверный
-                // список сделок (карточка сделки появлялась сразу) — интел
-                // борда (tasksByDeal и т.п., useBoardIntel) — отдельный
-                // клиентский фетч, который router.refresh() не трогает.
-                // Из-за этого задача, созданная сразу вместе со сделкой
-                // (см. pendingTaskDeal в form-deal-edit.tsx — тот же onSuccess
-                // используется и для неё), не появлялась на карточке без
-                // ручного обновления страницы. `refresh` делает оба шага.
-                onSuccess={refresh}
-                trigger={
-                  <Button size="sm">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Новая сделка
-                  </Button>
-                }
-              />
+            <div className="flex items-center gap-2">
+              <AiChatTrigger />
+              <GlobalSearch />
             </div>
           </div>
 
@@ -796,6 +775,42 @@ export function DealsBoard({
               />
               Не состоялись
             </label>
+            {/* Перенесены сюда со строки заголовка, чтобы освободить её для
+                глобального поиска (справа от заголовка). */}
+            <DiscoverDealsDialog
+              onDealsGenerated={router.refresh}
+              trigger={
+                <Button size="sm" variant="secondary">
+                  <Sparkles className="h-4 w-4 mr-1" />
+                  Найти в источниках
+                </Button>
+              }
+            />
+            <Button
+              size="sm"
+              variant={feedOpen ? "default" : "outline"}
+              onClick={() => setFeedOpen((v) => !v)}
+            >
+              <ListTree className="h-4 w-4 mr-1" />
+              Лента решений
+            </Button>
+            <DealEditDialog
+              // router.refresh() один сам по себе обновляет только серверный
+              // список сделок (карточка сделки появлялась сразу) — интел
+              // борда (tasksByDeal и т.п., useBoardIntel) — отдельный
+              // клиентский фетч, который router.refresh() не трогает.
+              // Из-за этого задача, созданная сразу вместе со сделкой
+              // (см. pendingTaskDeal в form-deal-edit.tsx — тот же onSuccess
+              // используется и для неё), не появлялась на карточке без
+              // ручного обновления страницы. `refresh` делает оба шага.
+              onSuccess={refresh}
+              trigger={
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Новая сделка
+                </Button>
+              }
+            />
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>

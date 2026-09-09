@@ -36,13 +36,17 @@ import type { FunnelPhase, EntityStatus } from "@/db/schema"
 import {
   CLIENT_TYPE_LABELS,
   CLIENT_TYPE_VALUES,
+  COMPANY_KIND_LABELS,
+  COMPANY_KIND_VALUES,
   orgHasStructuredClientType,
   type ClientType,
+  type CompanyKind,
 } from "@/lib/client-custom-fields"
 
 // Sentinel for the "no type selected" option — shadcn SelectItem can't carry
 // an empty-string value.
 const TYPE_NONE = "__none__"
+const COMPANY_KIND_NONE = "__none__"
 
 const FUNNEL_PHASES: FunnelPhase[] = [
   "awareness",
@@ -108,6 +112,8 @@ type ClientFormData = {
   type: ClientType | typeof TYPE_NONE
   /** Stored under `customFields.discount`; whole % 0–100, "" means no discount. */
   discount: string
+  /** Stored under `customFields.companyKind`; `COMPANY_KIND_NONE` means unset. */
+  companyKind: CompanyKind | typeof COMPANY_KIND_NONE
   funnelPhase: FunnelPhase
   status: EntityStatus
   currency: string
@@ -177,6 +183,7 @@ export default function ClientEditDialog({
         client?.customFields?.discount != null
           ? String(client.customFields.discount)
           : "",
+      companyKind: client?.customFields?.companyKind ?? COMPANY_KIND_NONE,
       funnelPhase: client?.funnelPhase ?? "awareness",
       status: client?.status ?? "active",
       currency: client?.currency ?? "RUB",
@@ -216,13 +223,15 @@ export default function ClientEditDialog({
         // Fold the flat `type` select back into the extensible custom-fields
         // bag, preserving any other keys already on the client. The server
         // re-validates + forces `{}` for orgs without the structured type.
-        const { type, discount, ...rest } = data
+        const { type, discount, companyKind, ...rest } = data
         const discountValue = discount.trim() === "" ? undefined : Number(discount)
         const customFields = {
           ...(client?.customFields ?? {}),
           type: type === TYPE_NONE ? undefined : type,
           // Server re-validates to a whole 0–100 (or drops it).
           discount: discountValue,
+          companyKind:
+            companyKind === COMPANY_KIND_NONE ? undefined : companyKind,
         }
         const payload =
           mode === "create"
@@ -383,6 +392,34 @@ export default function ClientEditDialog({
                       placeholder="напр. 20"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="companyKind"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-400">Тип компании</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Не определено" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={COMPANY_KIND_NONE}>
+                        Не определено (по сделкам)
+                      </SelectItem>
+                      {COMPANY_KIND_VALUES.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {COMPANY_KIND_LABELS[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

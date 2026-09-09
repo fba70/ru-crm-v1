@@ -13,22 +13,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
 import { Loader, Sparkles, X } from "lucide-react"
 import type { CardRow } from "@/app/api/cards/route"
 import { DashboardCard } from "@/components/blocks/dashboard-card"
 import { ExploreSourcesDialog } from "@/components/blocks/explore-sources-dialog"
 import { MagicCardsButton } from "@/components/blocks/magic-cards-button"
+import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
 
-// One row on the lg grid (3 cols) — pagination engages at 4+ visible cards.
-const PAGE_SIZE = 3
+// Two rows on the lg grid (3 cols) per scroll batch — was one row (3) behind
+// click-through pagination; the team asked for roughly double, scroll-loaded
+// instead of paged, but deliberately NOT as dense as a 12-per-screen option
+// they considered and rejected.
+const PAGE_SIZE = 6
 const ALL = "__all__"
 
 function isoDateNDaysAgo(days: number): string {
@@ -72,73 +68,6 @@ const CATEGORY_LABEL: Record<(typeof CATEGORIES)[number], string> = {
 const PRIORITY_LABEL: Record<(typeof PRIORITIES)[number], string> = {
   normal: "Обычный",
   high: "Высокий",
-}
-
-function usePaged<T>(items: T[]) {
-  const [page, setPage] = useState(1)
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
-  const effectivePage = Math.min(page, totalPages)
-  const start = (effectivePage - 1) * PAGE_SIZE
-  const pageItems = items.slice(start, start + PAGE_SIZE)
-  return { page: effectivePage, setPage, totalPages, pageItems }
-}
-
-function PagerNav({
-  page,
-  totalPages,
-  setPage,
-}: {
-  page: number
-  totalPages: number
-  setPage: (p: number) => void
-}) {
-  if (totalPages <= 1) return null
-  return (
-    <Pagination>
-      <PaginationContent>
-        <PaginationItem>
-          <PaginationPrevious
-            onClick={(e) => {
-              e.preventDefault()
-              if (page > 1) setPage(page - 1)
-            }}
-            aria-disabled={page === 1}
-            className={
-              page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"
-            }
-          />
-        </PaginationItem>
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-          <PaginationItem key={p}>
-            <PaginationLink
-              isActive={p === page}
-              onClick={(e) => {
-                e.preventDefault()
-                setPage(p)
-              }}
-              className="cursor-pointer"
-            >
-              {p}
-            </PaginationLink>
-          </PaginationItem>
-        ))}
-        <PaginationItem>
-          <PaginationNext
-            onClick={(e) => {
-              e.preventDefault()
-              if (page < totalPages) setPage(page + 1)
-            }}
-            aria-disabled={page === totalPages}
-            className={
-              page === totalPages
-                ? "pointer-events-none opacity-50"
-                : "cursor-pointer"
-            }
-          />
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
-  )
 }
 
 export function CardsFeedSection() {
@@ -205,14 +134,24 @@ export function CardsFeedSection() {
     })
   }, [cards, search, priority, category, from, to, includeRejected])
 
-  const paged = usePaged(filtered)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  // Any filter change re-narrows the set — start the scroll batch over.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [search, priority, category, from, to, includeRejected])
+
+  const visible = filtered.slice(0, visibleCount)
+  const hasMore = visibleCount < filtered.length
+  const { sentinelRef } = useInfiniteScroll({
+    hasMore,
+    loading: false,
+    onLoadMore: () => setVisibleCount((n) => n + PAGE_SIZE),
+  })
 
   const grid = useMemo(
     () =>
-      paged.pageItems.map((c) => (
-        <DashboardCard key={c.id} card={c} onChanged={load} />
-      )),
-    [paged.pageItems, load],
+      visible.map((c) => <DashboardCard key={c.id} card={c} onChanged={load} />),
+    [visible, load],
   )
 
   // The default date range is the last day; any deviation counts as a filter.
@@ -373,7 +312,7 @@ export function CardsFeedSection() {
           </div>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-xs text-muted-foreground">
-              {filtered.length} из {cards.length} карточек
+              {visible.length} из {filtered.length} карточек
             </span>
             <Button
               variant="ghost"
@@ -400,13 +339,14 @@ export function CardsFeedSection() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {grid}
             </div>
-            <div className="flex justify-center">
-              <PagerNav
-                page={paged.page}
-                totalPages={paged.totalPages}
-                setPage={paged.setPage}
-              />
-            </div>
+            {hasMore && (
+              <div
+                ref={sentinelRef}
+                className="flex items-center justify-center py-6"
+              >
+                <Loader className="animate-spin h-5 w-5 text-muted-foreground" />
+              </div>
+            )}
           </>
         )}
       </CardContent>

@@ -5,13 +5,30 @@ import {
   client,
   contact,
   order,
+  deal,
   type FunnelPhase,
   type EntityStatus,
   type ClientLookupCandidateJson,
   user,
 } from "@/db/schema"
-import { and, eq, ne, desc, isNull, or, count, inArray, gte } from "drizzle-orm"
+import {
+  and,
+  eq,
+  ne,
+  desc,
+  isNull,
+  or,
+  count,
+  inArray,
+  gte,
+} from "drizzle-orm"
 import { computeOrderDiscount } from "@/lib/orders-format"
+import { listDealFunnelStages } from "@/server/deals"
+import {
+  listTaskSummaryByClient,
+  type ClientTaskSummary,
+} from "@/server/tasks"
+import { clientAtRisk } from "@/lib/client-mocks"
 import { generateText, Output, stepCountIs } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
@@ -22,6 +39,7 @@ import { request as httpsRequest } from "node:https"
 import { request as httpRequest } from "node:http"
 import {
   isClientType,
+  isCompanyKind,
   normalizeDiscountPercent,
   orgHasStructuredClientType,
   type ClientCustomFields,
@@ -194,6 +212,170 @@ export async function listClientRevenue12mo(): Promise<
   return result
 }
 
+export type ClientFeedTab =
+  | "customers"
+  | "potential"
+  | "supplier"
+  | "partner"
+  | "unclassified"
+
+// Companies page (redesign): 5 tabs, driven by a mix of deal state (Клиенты/
+// Потенциальные — auto) and a manual `customFields.companyKind` tag
+// (Поставщики/Партнёры, since deal state can't tell them apart — both may
+// have zero deals). A manual tag always wins over deal-derived classification.
+// «Не определено» catches companies with neither signal, so nothing silently
+// disappears from every tab.
+//
+// Sort ("criticality", a heuristic proxy — TODO(backend): a real priority
+// score, mirroring the same disclaimer already on `clientAtRisk` / the deals
+// board's mock `agentPriorityScore`): overdue tasks first, then stale
+// (no-contact) clients, then oldest-touched as the final tiebreak.
+//
+// This runs the tab/sort logic in JS over the org's full client set rather
+// than a single paginated SQL query — acceptable at demo/pilot scale, same
+// posture as `src/server/teardown.ts`'s org-wide resolution and the chat's
+// `searchEverything` tool.
+export async function listClientsFeed(params: {
+  tab: ClientFeedTab
+  status?: EntityStatus | "all"
+  limit?: number
+  offset?: number
+}): Promise<{
+  rows: ClientRow[]
+  total: number
+  taskSummary: Record<string, ClientTaskSummary>
+}> {
+  const { activeOrgId } = await requireOrgContext()
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 50)
+  const offset = Math.max(params.offset ?? 0, 0)
+
+  const stages = await listDealFunnelStages()
+  const closedStageIds = new Set(
+    stages.filter((s) => s.closureProbability >= 1).map((s) => s.id),
+  )
+  const openStageIds = new Set(
+    stages
+      .filter((s) => s.closureProbability > 0 && s.closureProbability < 1)
+      .map((s) => s.id),
+  )
+
+  const dealRows = await db
+    .select({ clientId: deal.clientId, funnelStageId: deal.funnelStageId })
+    .from(deal)
+    .where(and(eq(deal.organizationId, activeOrgId), eq(deal.status, "active")))
+
+  const hasClosed = new Set<string>()
+  const hasOpen = new Set<string>()
+  for (const d of dealRows) {
+    if (closedStageIds.has(d.funnelStageId)) hasClosed.add(d.clientId)
+    else if (openStageIds.has(d.funnelStageId)) hasOpen.add(d.clientId)
+  }
+
+  const statusConditions =
+    params.status && params.status !== "all"
+      ? [eq(client.status, params.status)]
+      : [ne(client.status, "deleted"), ne(client.status, "blocked")]
+
+  const rows = await db
+    .select({ client, userName: user.name })
+    .from(client)
+    .leftJoin(user, eq(client.userId, user.id))
+    .where(and(eq(client.organizationId, activeOrgId), ...statusConditions))
+
+  const taskSummary = await listTaskSummaryByClient()
+
+  const matching = rows.filter((r) => {
+    const kind = r.client.customFields?.companyKind
+    if (kind === "supplier") return params.tab === "supplier"
+    if (kind === "partner") return params.tab === "partner"
+    const closed = hasClosed.has(r.client.id)
+    const open = hasOpen.has(r.client.id)
+    switch (params.tab) {
+      case "customers":
+        return closed
+      case "potential":
+        return !closed && open
+      case "unclassified":
+        return !closed && !open
+      default:
+        return false
+    }
+  })
+
+  matching.sort((a, b) => {
+    const overdueA = taskSummary[a.client.id]?.overdueCount ?? 0
+    const overdueB = taskSummary[b.client.id]?.overdueCount ?? 0
+    if (overdueA !== overdueB) return overdueB - overdueA
+    const staleA = clientAtRisk(a.client.updatedAt.toISOString()) ? 1 : 0
+    const staleB = clientAtRisk(b.client.updatedAt.toISOString()) ? 1 : 0
+    if (staleA !== staleB) return staleB - staleA
+    return a.client.updatedAt.getTime() - b.client.updatedAt.getTime()
+  })
+
+  const total = matching.length
+  const page = matching.slice(offset, offset + limit)
+
+  const clientIds = page.map((r) => r.client.id)
+  const contacts = clientIds.length
+    ? await db
+        .select()
+        .from(contact)
+        .where(
+          and(
+            eq(contact.organizationId, activeOrgId),
+            ne(contact.status, "deleted"),
+            inArray(contact.clientId, clientIds),
+          ),
+        )
+    : []
+  const contactsByClient = new Map<string, ClientContactPreview[]>()
+  for (const c of contacts) {
+    if (!c.clientId) continue
+    const list = contactsByClient.get(c.clientId) ?? []
+    list.push({
+      id: c.id,
+      name: c.name,
+      nameNative: c.nameNative,
+      email: c.email,
+      phone: c.phone,
+      position: c.position,
+      status: c.status,
+    })
+    contactsByClient.set(c.clientId, list)
+  }
+
+  const pageTaskSummary: Record<string, ClientTaskSummary> = {}
+  for (const id of clientIds) {
+    if (taskSummary[id]) pageTaskSummary[id] = taskSummary[id]
+  }
+
+  return {
+    total,
+    taskSummary: pageTaskSummary,
+    rows: page.map((r) => ({
+      id: r.client.id,
+      name: r.client.name,
+      namePhys: r.client.namePhys,
+      comment: r.client.comment,
+      aliases: r.client.aliases,
+      phone: r.client.phone,
+      email: r.client.email,
+      address: r.client.address,
+      webUrl: r.client.webUrl,
+      customFields: r.client.customFields ?? {},
+      funnelPhase: r.client.funnelPhase,
+      status: r.client.status,
+      currency: r.client.currency,
+      userId: r.client.userId,
+      userName: r.userName,
+      organizationId: r.client.organizationId,
+      createdAt: r.client.createdAt.toISOString(),
+      updatedAt: r.client.updatedAt.toISOString(),
+      contacts: contactsByClient.get(r.client.id) ?? [],
+    })),
+  }
+}
+
 /** Trim, drop empties + dups; return null for an empty list. */
 function cleanAliases(raw: string[] | null | undefined): string[] | null {
   if (!Array.isArray(raw)) return null
@@ -226,6 +408,7 @@ function normalizeClientCustomFields(
   }
   const discount = normalizeDiscountPercent(raw?.discount)
   if (discount != null) out.discount = discount
+  if (isCompanyKind(raw?.companyKind)) out.companyKind = raw.companyKind
   return out
 }
 

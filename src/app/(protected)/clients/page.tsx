@@ -1,9 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -11,187 +10,146 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Ban, Loader, Plus, Sparkles, X } from "lucide-react"
-import type { ClientRow, ClientRevenueSummary } from "@/app/api/clients/route"
-import type { ContactRow } from "@/app/api/contacts/route"
+import type {
+  ClientRow,
+  ClientRevenueSummary,
+  ClientFeedTab,
+  ClientTaskSummary,
+} from "@/app/api/clients/route"
 import type { DealRow } from "@/app/api/deals/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
-import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ClientCard } from "@/components/blocks/client-card"
-import { ContactCard } from "@/components/blocks/contact-card"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
-import { entityMatchesFilter, FIELD_WEIGHT } from "@/lib/entity-search"
+import { GlobalSearch } from "@/components/blocks/global-search"
+import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
+import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
 
-const PAGE_SIZE = 6
-// Clients + Contacts share one merged tab with two stacked grids; 3 cards
-// per row, one row visible each, so both sections fit on one screen.
-const CLIENT_CONTACT_PAGE_SIZE = 3
 const ALL = "__all__"
+const PAGE_SIZE = 12
 
-// `deleted` is a soft-delete (test/garbage records, excluded from discovery).
-// It's selectable here so operators can view/restore them, but hidden under
-// the default "All statuses" view (see filteredClients / filteredContacts).
-const CLIENT_STATUSES = ["active", "initial", "suspended", "deleted"] as const
-const FUNNEL_PHASES = [
-  "awareness",
-  "interest",
-  "decision",
-  "action",
-  "retention",
+// `deleted`/`blocked` are hidden under the default "All statuses" view; pick
+// either explicitly to view/restore.
+const CLIENT_STATUSES = [
+  "active",
+  "initial",
+  "suspended",
+  "deleted",
+  "blocked",
 ] as const
 
-// UI display labels (DB enum values stay English).
 const STATUS_LABEL: Record<string, string> = {
   active: "Активный",
   initial: "Новый",
   suspended: "Приостановлен",
   deleted: "Удалён",
-}
-const PHASE_LABEL: Record<string, string> = {
-  awareness: "Осведомлённость",
-  interest: "Интерес",
-  decision: "Решение",
-  action: "Действие",
-  retention: "Удержание",
+  blocked: "Заблокирован",
 }
 
-function usePaged<T>(items: T[], pageSize: number = PAGE_SIZE) {
-  const [page, setPage] = useState(1)
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize))
-  const effectivePage = Math.min(page, totalPages)
-  const start = (effectivePage - 1) * pageSize
-  const pageItems = items.slice(start, start + pageSize)
-  return { page: effectivePage, setPage, totalPages, pageItems }
-}
-
-function PagerNav({
-  page,
-  totalPages,
-  setPage,
-}: {
-  page: number
-  totalPages: number
-  setPage: (p: number) => void
-}) {
-  if (totalPages <= 1) return null
-  return (
-    <Pagination>
-      <PaginationContent>
-        <PaginationItem>
-          <PaginationPrevious
-            onClick={(e) => {
-              e.preventDefault()
-              if (page > 1) setPage(page - 1)
-            }}
-            aria-disabled={page === 1}
-            className={
-              page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"
-            }
-          />
-        </PaginationItem>
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-          <PaginationItem key={p}>
-            <PaginationLink
-              isActive={p === page}
-              onClick={(e) => {
-                e.preventDefault()
-                setPage(p)
-              }}
-              className="cursor-pointer"
-            >
-              {p}
-            </PaginationLink>
-          </PaginationItem>
-        ))}
-        <PaginationItem>
-          <PaginationNext
-            onClick={(e) => {
-              e.preventDefault()
-              if (page < totalPages) setPage(page + 1)
-            }}
-            aria-disabled={page === totalPages}
-            className={
-              page === totalPages
-                ? "pointer-events-none opacity-50"
-                : "cursor-pointer"
-            }
-          />
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
-  )
-}
+const TABS: { value: ClientFeedTab; label: string }[] = [
+  { value: "customers", label: "Клиенты" },
+  { value: "potential", label: "Потенциальные" },
+  { value: "supplier", label: "Поставщики" },
+  { value: "partner", label: "Партнёры" },
+  { value: "unclassified", label: "Не определено" },
+]
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<ClientRow[]>([])
-  const [contacts, setContacts] = useState<ContactRow[]>([])
-  // Аккаунт-менеджмент: выручка за 12 мес. по компании + её активная сделка —
-  // оба батчево, один запрос на страницу, не по одному на карточку.
+  const [tab, setTab] = useState<ClientFeedTab>("customers")
+  const [statusFilter, setStatusFilter] = useState<string>(ALL)
+
+  const [rows, setRows] = useState<ClientRow[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [taskSummary, setTaskSummary] = useState<
+    Record<string, ClientTaskSummary>
+  >({})
+
   const [revenueByClient, setRevenueByClient] = useState<
     Record<string, ClientRevenueSummary>
   >({})
   const [activeDealByClient, setActiveDealByClient] = useState<
     Record<string, DealRow>
   >({})
-  const [loading, setLoading] = useState(true)
-  // Owner-only: drives the blocklist management button + per-entity/candidate
-  // Block actions. Best-effort gate (the server is the real one).
   const [canBlock, setCanBlock] = useState(false)
 
-  const [clientNameFilter, setClientNameFilter] = useState("")
-  const [clientEmailFilter, setClientEmailFilter] = useState("")
-  const [clientStatusFilter, setClientStatusFilter] = useState<string>(ALL)
-  const [clientPhaseFilter, setClientPhaseFilter] = useState<string>(ALL)
-  const [contactNameFilter, setContactNameFilter] = useState("")
-  const [contactEmailFilter, setContactEmailFilter] = useState("")
-  const [contactStatusFilter, setContactStatusFilter] = useState<string>(ALL)
+  const reqIdRef = useRef(0)
 
-  const loadClients = useCallback(async () => {
-    const res = await fetch("/api/clients")
-    const data = await res.json()
-    setClients(data.clients ?? [])
-    setRevenueByClient(data.revenue12mo ?? {})
-  }, [])
+  const loadPage = useCallback(
+    async (nextOffset: number) => {
+      setLoading(true)
+      const reqId = ++reqIdRef.current
+      try {
+        const params = new URLSearchParams({
+          tab,
+          limit: String(PAGE_SIZE),
+          offset: String(nextOffset),
+        })
+        if (statusFilter !== ALL) params.set("status", statusFilter)
+        const res = await fetch(`/api/clients?${params.toString()}`)
+        if (!res.ok || reqIdRef.current !== reqId) return
+        const data = await res.json()
+        if (reqIdRef.current !== reqId) return
+        const newRows: ClientRow[] = data.rows ?? []
+        setRows((prev) => (nextOffset === 0 ? newRows : [...prev, ...newRows]))
+        setTotal(data.total ?? 0)
+        setTaskSummary((prev) =>
+          nextOffset === 0
+            ? (data.taskSummary ?? {})
+            : { ...prev, ...(data.taskSummary ?? {}) },
+        )
+        setOffset(nextOffset + newRows.length)
+        setHasMore(nextOffset + newRows.length < (data.total ?? 0))
+      } finally {
+        if (reqIdRef.current === reqId) setLoading(false)
+      }
+    },
+    [tab, statusFilter],
+  )
 
-  const loadContacts = useCallback(async () => {
-    const res = await fetch("/api/contacts")
-    const data = await res.json()
-    setContacts(data.contacts ?? [])
-  }, [])
+  // Каждый таб/фильтр статуса — независимая лента: смена любого из них
+  // сбрасывает накопленные карточки и грузит с начала.
+  useEffect(() => {
+    setRows([])
+    setOffset(0)
+    setHasMore(true)
+    void loadPage(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, statusFilter])
 
-  // Активная сделка на компанию для карточки аккаунт-менеджмента — берём
-  // самую недавно тронутую активную сделку клиента (group-by на клиенте,
-  // без новой server-функции: listDeals() уже возвращает clientId на
-  // каждой активной сделке — тот же паттерн, что board.tasksByDeal на
-  // доске сделок).
-  const loadDeals = useCallback(async () => {
-    const res = await fetch("/api/deals")
-    const data = await res.json()
-    const deals: DealRow[] = data.deals ?? []
-    const byClient: Record<string, DealRow> = {}
-    for (const d of deals) {
-      const current = byClient[d.clientId]
-      if (!current || d.updatedAt > current.updatedAt) byClient[d.clientId] = d
+  const loadExtras = useCallback(async () => {
+    const [revRes, dealsRes] = await Promise.all([
+      fetch("/api/clients"),
+      fetch("/api/deals"),
+    ])
+    if (revRes.ok) {
+      const d = await revRes.json()
+      setRevenueByClient(d.revenue12mo ?? {})
     }
-    setActiveDealByClient(byClient)
+    if (dealsRes.ok) {
+      const d = await dealsRes.json()
+      const deals: DealRow[] = d.deals ?? []
+      const byClient: Record<string, DealRow> = {}
+      for (const deal of deals) {
+        const current = byClient[deal.clientId]
+        if (!current || deal.updatedAt > current.updatedAt) {
+          byClient[deal.clientId] = deal
+        }
+      }
+      setActiveDealByClient(byClient)
+    }
   }, [])
 
-  const refreshAll = useCallback(async () => {
-    await Promise.all([loadClients(), loadContacts(), loadDeals()])
-  }, [loadClients, loadContacts, loadDeals])
+  useEffect(() => {
+    void loadExtras()
+  }, [loadExtras])
 
-  // Resolve whether the current user can manage the blocklist (org owner).
   useEffect(() => {
     let cancelled = false
     fetch("/api/blocklist")
@@ -205,372 +163,145 @@ export default function ClientsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        await refreshAll()
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [refreshAll])
+  const refreshAll = useCallback(async () => {
+    setRows([])
+    setOffset(0)
+    setHasMore(true)
+    await Promise.all([loadPage(0), loadExtras()])
+  }, [loadPage, loadExtras])
 
-  const filteredClients = useMemo(() => {
-    const name = clientNameFilter.trim().toLowerCase()
-    const email = clientEmailFilter.trim().toLowerCase()
-    return clients.filter((c) => {
-      // "All statuses" shows active / initial / suspended but hides soft-
-      // deleted rows; pick "deleted" explicitly to view/restore them.
-      if (clientStatusFilter === ALL) {
-        if (c.status === "deleted") return false
-      } else if (c.status !== clientStatusFilter) {
-        return false
-      }
-      if (clientPhaseFilter !== ALL && c.funnelPhase !== clientPhaseFilter) {
-        return false
-      }
-      // Cross-script, punctuation-insensitive name matching (see
-      // src/lib/entity-search.ts): «АСТ» finds the stored «AST – …», and a
-      // dash/quote variant no longer scores zero. Filter mode = the same
-      // normalisation as the AI search but WITHOUT its fuzzy tail — a typo'ed
-      // row appearing in a filter box reads as a bug.
-      if (
-        name &&
-        !entityMatchesFilter(name, [
-          { value: c.name, weight: FIELD_WEIGHT.name },
-          { value: c.namePhys, weight: FIELD_WEIGHT.alias },
-          ...(c.aliases ?? []).map((a) => ({
-            value: a,
-            weight: FIELD_WEIGHT.alias,
-          })),
-        ])
-      ) {
-        return false
-      }
-      if (email && !(c.email ?? "").toLowerCase().includes(email)) return false
-      return true
-    })
-  }, [
-    clients,
-    clientNameFilter,
-    clientEmailFilter,
-    clientStatusFilter,
-    clientPhaseFilter,
-  ])
-
-  const filteredContacts = useMemo(() => {
-    const name = contactNameFilter.trim().toLowerCase()
-    const email = contactEmailFilter.trim().toLowerCase()
-    return contacts.filter((c) => {
-      // Same rule as clients: hide soft-deleted under "All statuses".
-      if (contactStatusFilter === ALL) {
-        if (c.status === "deleted") return false
-      } else if (c.status !== contactStatusFilter) {
-        return false
-      }
-      // Name filter matches the technical name OR the native-language name
-      // OR a stored alias, each through the shared normalisation — so either
-      // spelling, either script, and either word order finds the contact
-      // («Bogdanov Evgeniy» ≡ «Евгений Богданов»).
-      if (
-        name &&
-        !entityMatchesFilter(name, [
-          { value: c.name, weight: FIELD_WEIGHT.name },
-          { value: c.nameNative, weight: FIELD_WEIGHT.name },
-          ...(c.aliases ?? []).map((a) => ({
-            value: a,
-            weight: FIELD_WEIGHT.alias,
-          })),
-        ])
-      ) {
-        return false
-      }
-      if (email && !(c.email ?? "").toLowerCase().includes(email)) return false
-      return true
-    })
-  }, [contacts, contactNameFilter, contactEmailFilter, contactStatusFilter])
-
-  const clientPaged = usePaged(filteredClients, CLIENT_CONTACT_PAGE_SIZE)
-  const contactPaged = usePaged(filteredContacts, CLIENT_CONTACT_PAGE_SIZE)
-
-  const clientGrid = useMemo(
-    () =>
-      clientPaged.pageItems.map((c) => (
-        <ClientCard
-          key={c.id}
-          client={c}
-          onChanged={refreshAll}
-          canBlock={canBlock}
-          revenue={revenueByClient[c.id]}
-          activeDeal={activeDealByClient[c.id]}
-        />
-      )),
-    [clientPaged.pageItems, refreshAll, canBlock, revenueByClient, activeDealByClient],
-  )
-
-  const contactGrid = useMemo(
-    () =>
-      contactPaged.pageItems.map((c) => (
-        <ContactCard
-          key={c.id}
-          contact={c}
-          onChanged={refreshAll}
-          canBlock={canBlock}
-        />
-      )),
-    [contactPaged.pageItems, refreshAll, canBlock],
-  )
-
-  const hasClientFilters =
-    clientNameFilter.trim() !== "" ||
-    clientEmailFilter.trim() !== "" ||
-    clientStatusFilter !== ALL ||
-    clientPhaseFilter !== ALL
-  const hasContactFilters =
-    contactNameFilter.trim() !== "" ||
-    contactEmailFilter.trim() !== "" ||
-    contactStatusFilter !== ALL
-
-  const clearClientFilters = () => {
-    setClientNameFilter("")
-    setClientEmailFilter("")
-    setClientStatusFilter(ALL)
-    setClientPhaseFilter(ALL)
-  }
-  const clearContactFilters = () => {
-    setContactNameFilter("")
-    setContactEmailFilter("")
-    setContactStatusFilter(ALL)
-  }
+  const { sentinelRef } = useInfiniteScroll({
+    hasMore,
+    loading,
+    onLoadMore: () => void loadPage(offset),
+  })
 
   return (
-    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
-      <h1 className="text-xl font-medium">Компании & контакты</h1>
-
-      <div className="w-full space-y-4">
-        {/* Shared toolbar for both sections: создание — слева, остальное —
-            справа. Единственная primary-кнопка страницы — Magic. */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <ClientEditDialog
-            mode="create"
-            onSuccess={refreshAll}
-            trigger={
-              <Button size="sm" variant="outline">
-                <Plus className="h-4 w-4 mr-1" />
-                Новая компания
-              </Button>
-            }
-          />
-          <ContactEditDialog
-            mode="create"
-            onSuccess={refreshAll}
-            trigger={
-              <Button size="sm" variant="outline">
-                <Plus className="h-4 w-4 mr-1" />
-                Новый контакт
-              </Button>
-            }
-          />
-          <div className="ml-auto flex items-center gap-2 flex-wrap">
-            <DiscoverDialog
-              onApplied={refreshAll}
-              canBlock={canBlock}
-              trigger={
-                <Button size="sm" variant="outline">
-                  <Sparkles className="h-4 w-4 mr-1" />
-                  Найти в источниках
-                </Button>
-              }
-            />
-            <ClientEnrichControl
-              refreshKey={clients.length}
-              onChanged={refreshAll}
-            />
-            {canBlock && (
-              <ClientBlocklistDialog
-                onChanged={refreshAll}
-                trigger={
-                  <Button size="sm" variant="outline">
-                    <Ban className="h-4 w-4 mr-1" />
-                    Список блокировки
-                  </Button>
-                }
-              />
-            )}
-            <MagicDiscoverButton onApplied={refreshAll} />
+    <div className="flex flex-col h-[calc(100vh-1rem)]">
+      <div className="flex flex-col gap-4 p-4 pb-0 shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-xl font-medium">Компании</h1>
+          <div className="flex items-center gap-2">
+            <AiChatTrigger />
+            <GlobalSearch />
           </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Компании</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                placeholder="Фильтр по названию…"
-                value={clientNameFilter}
-                onChange={(e) => setClientNameFilter(e.target.value)}
-                className="flex-1 min-w-45"
-              />
-              <Input
-                placeholder="Фильтр по email…"
-                value={clientEmailFilter}
-                onChange={(e) => setClientEmailFilter(e.target.value)}
-                className="flex-1 min-w-45"
-              />
-              <Select
-                value={clientStatusFilter}
-                onValueChange={setClientStatusFilter}
-              >
-                {/* w-fit lets the trigger size to the longest label
-                    ("All statuses") so the dropdowns stay compact and
-                    the inputs absorb the remaining row width. */}
-                <SelectTrigger className="w-fit">
-                  <SelectValue placeholder="Статус" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>Все статусы</SelectItem>
-                  {CLIENT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {STATUS_LABEL[s] ?? s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={clientPhaseFilter}
-                onValueChange={setClientPhaseFilter}
-              >
-                <SelectTrigger className="w-fit">
-                  <SelectValue placeholder="Этап воронки" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>Все этапы воронки</SelectItem>
-                  {FUNNEL_PHASES.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {PHASE_LABEL[p] ?? p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-xs text-muted-foreground">
-                {filteredClients.length} из {clients.length} компаний
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearClientFilters}
-                disabled={!hasClientFilters}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Сбросить фильтры
+        <div className="flex items-center gap-2 flex-wrap">
+          <DiscoverDialog
+            onApplied={refreshAll}
+            canBlock={canBlock}
+            trigger={
+              <Button size="sm" variant="outline">
+                <Sparkles className="h-4 w-4 mr-1" />
+                Найти в источниках
               </Button>
-            </div>
+            }
+          />
+          <ClientEnrichControl refreshKey={total} onChanged={refreshAll} />
+          {canBlock && (
+            <ClientBlocklistDialog
+              onChanged={refreshAll}
+              trigger={
+                <Button size="sm" variant="outline">
+                  <Ban className="h-4 w-4 mr-1" />
+                  Список блокировки
+                </Button>
+              }
+            />
+          )}
+          <MagicDiscoverButton onApplied={refreshAll} />
+          <div className="ml-auto">
+            <ClientEditDialog
+              mode="create"
+              onSuccess={refreshAll}
+              trigger={
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Новая компания
+                </Button>
+              }
+            />
+          </div>
+        </div>
+      </div>
 
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader className="animate-spin h-6 w-6" />
-              </div>
-            ) : clients.length === 0 ? (
-              <EmptyState label="Пока нет компаний." />
-            ) : filteredClients.length === 0 ? (
-              <EmptyState label="Нет компаний по заданным фильтрам." />
-            ) : (
-              <>
-                <div className="grid grid-cols-3 gap-4">{clientGrid}</div>
-                <div className="flex justify-center">
-                  <PagerNav
-                    page={clientPaged.page}
-                    totalPages={clientPaged.totalPages}
-                    setPage={clientPaged.setPage}
-                  />
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Контакты</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                placeholder="Фильтр по имени…"
-                value={contactNameFilter}
-                onChange={(e) => setContactNameFilter(e.target.value)}
-                className="flex-1 min-w-45"
-              />
-              <Input
-                placeholder="Фильтр по email…"
-                value={contactEmailFilter}
-                onChange={(e) => setContactEmailFilter(e.target.value)}
-                className="flex-1 min-w-45"
-              />
-              <Select
-                value={contactStatusFilter}
-                onValueChange={setContactStatusFilter}
-              >
-                <SelectTrigger className="w-fit">
-                  <SelectValue placeholder="Статус" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>Все статусы</SelectItem>
-                  {CLIENT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {STATUS_LABEL[s] ?? s}
-                    </SelectItem>
+      <div className="flex-1 min-h-0 p-4 pt-4">
+        <Card className="h-full flex flex-col">
+          <CardHeader className="gap-3 shrink-0">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Tabs value={tab} onValueChange={(v) => setTab(v as ClientFeedTab)}>
+                <TabsList>
+                  {TABS.map((t) => (
+                    <TabsTrigger key={t.value} value={t.value}>
+                      {t.label}
+                    </TabsTrigger>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-xs text-muted-foreground">
-                {filteredContacts.length} из {contacts.length} контактов
+                </TabsList>
+              </Tabs>
+              <div className="flex items-center gap-2">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-fit">
+                    <SelectValue placeholder="Статус" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>Все статусы</SelectItem>
+                    {CLIENT_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STATUS_LABEL[s] ?? s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {statusFilter !== ALL && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setStatusFilter(ALL)}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Сбросить
+                  </Button>
+                )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearContactFilters}
-                disabled={!hasContactFilters}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Сбросить фильтры
-              </Button>
             </div>
-
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader className="animate-spin h-6 w-6" />
-              </div>
-            ) : contacts.length === 0 ? (
-              <EmptyState label="Пока нет контактов." />
-            ) : filteredContacts.length === 0 ? (
-              <EmptyState label="Нет контактов по заданным фильтрам." />
-            ) : (
-              <>
-                <div className="grid grid-cols-3 gap-4">{contactGrid}</div>
-                <div className="flex justify-center">
-                  <PagerNav
-                    page={contactPaged.page}
-                    totalPages={contactPaged.totalPages}
-                    setPage={contactPaged.setPage}
+            <div className="text-xs text-muted-foreground">
+              {rows.length} из {total} компаний
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-4">
+          {loading && rows.length === 0 ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader className="animate-spin h-6 w-6" />
+            </div>
+          ) : rows.length === 0 ? (
+            <EmptyState label="Нет компаний в этом разделе." />
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-4">
+                {rows.map((c) => (
+                  <ClientCard
+                    key={c.id}
+                    client={c}
+                    onChanged={refreshAll}
+                    canBlock={canBlock}
+                    revenue={revenueByClient[c.id]}
+                    activeDeal={activeDealByClient[c.id]}
+                    taskSummary={taskSummary[c.id]}
                   />
+                ))}
+              </div>
+              {hasMore && (
+                <div
+                  ref={sentinelRef}
+                  className="flex items-center justify-center py-6"
+                >
+                  {loading && <Loader className="animate-spin h-5 w-5" />}
                 </div>
-              </>
-            )}
-          </CardContent>
+              )}
+            </>
+          )}
+        </CardContent>
         </Card>
       </div>
     </div>

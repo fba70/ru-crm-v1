@@ -4,7 +4,6 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -32,6 +31,8 @@ import type { TaskStatus, TaskType, TaskPriority } from "@/db/schema"
 import TaskEditDialog from "@/components/forms/form-task-edit"
 import { TaskCard } from "@/components/blocks/task-card"
 import { TaskTimeline } from "@/components/blocks/task-timeline"
+import { GlobalSearch } from "@/components/blocks/global-search"
+import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 
 const PAGE_SIZE = 6
 
@@ -211,7 +212,6 @@ function TasksPageContent() {
     [tasks, openTaskId],
   )
 
-  const [nameFilter, setNameFilter] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>(ALL)
   const [priorityFilter, setPriorityFilter] = useState<string>(ALL)
   const [assigneeFilter, setAssigneeFilter] = useState<string>(ALL)
@@ -263,9 +263,7 @@ function TasksPageContent() {
   }, [])
 
   const filteredTasks = useMemo(() => {
-    const needle = nameFilter.trim().toLowerCase()
     return tasks.filter((t) => {
-      if (needle && !t.name.toLowerCase().includes(needle)) return false
       if (typeFilter !== ALL && t.type !== typeFilter) return false
       if (priorityFilter !== ALL && t.priority !== priorityFilter) return false
       if (assigneeFilter !== ALL && t.assigneeId !== assigneeFilter)
@@ -283,7 +281,6 @@ function TasksPageContent() {
     })
   }, [
     tasks,
-    nameFilter,
     typeFilter,
     priorityFilter,
     assigneeFilter,
@@ -304,7 +301,6 @@ function TasksPageContent() {
   }, [filteredTasks])
 
   const hasActiveFilters =
-    nameFilter.trim() !== "" ||
     typeFilter !== ALL ||
     priorityFilter !== ALL ||
     assigneeFilter !== ALL ||
@@ -313,7 +309,6 @@ function TasksPageContent() {
     dealFilter !== ALL
 
   const clearFilters = () => {
-    setNameFilter("")
     setTypeFilter(ALL)
     setPriorityFilter(ALL)
     setAssigneeFilter(ALL)
@@ -326,16 +321,10 @@ function TasksPageContent() {
     <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Задачи</h1>
-        <TaskEditDialog
-          mode="create"
-          onSuccess={refreshAll}
-          trigger={
-            <Button size="sm">
-              <Plus className="h-4 w-4 mr-1" />
-              Новая задача
-            </Button>
-          }
-        />
+        <div className="flex items-center gap-2">
+          <AiChatTrigger />
+          <GlobalSearch />
+        </div>
       </div>
 
       {/* Канбан без внешнего Card-контейнера — заголовок страницы достаточен. */}
@@ -344,12 +333,7 @@ function TasksPageContent() {
           {/* Все фильтры в один ряд на большом экране (7 колонок), адаптивно
               сжимаются к 2 колонкам на узком. grid-cols-N = minmax(0,1fr), так
               что ячейки ужимаются, а значения в селектах усекаются. */}
-          <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
-            <Input
-              placeholder="Поиск по названию…"
-              value={nameFilter}
-              onChange={(e) => setNameFilter(e.target.value)}
-            />
+          <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-2">
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Тип" />
@@ -453,23 +437,35 @@ function TasksPageContent() {
             </div>
           ) : (
             <Tabs defaultValue="all" className="w-full">
-              <TabsList>
-                {/* «Все» — первым: задачи независимо от статуса. */}
-                <TabsTrigger value="all">
-                  Все
-                  <span className="ml-1.5 text-xs text-muted-foreground">
-                    {filteredTasks.length}
-                  </span>
-                </TabsTrigger>
-                {STATUSES.map((s) => (
-                  <TabsTrigger key={s} value={s}>
-                    {STATUS_LABELS[s]}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <TabsList>
+                  {/* «Все» — первым: задачи независимо от статуса. */}
+                  <TabsTrigger value="all">
+                    Все
                     <span className="ml-1.5 text-xs text-muted-foreground">
-                      {byStatus[s].length}
+                      {filteredTasks.length}
                     </span>
                   </TabsTrigger>
-                ))}
-              </TabsList>
+                  {STATUSES.map((s) => (
+                    <TabsTrigger key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                      <span className="ml-1.5 text-xs text-muted-foreground">
+                        {byStatus[s].length}
+                      </span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <TaskEditDialog
+                  mode="create"
+                  onSuccess={refreshAll}
+                  trigger={
+                    <Button size="sm">
+                      <Plus className="h-4 w-4 mr-1" />
+                      Новая задача
+                    </Button>
+                  }
+                />
+              </div>
               <TabsContent value="all" className="mt-4">
                 <StatusBucket
                   tasks={filteredTasks}

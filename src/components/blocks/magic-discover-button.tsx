@@ -131,7 +131,12 @@ export function MagicDiscoverButton({
   }
 
   return (
-    <Button size="sm" onClick={handleClick} disabled={running}>
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={handleClick}
+      disabled={running}
+    >
       {running ? (
         <>
           <Loader className="h-4 w-4 mr-1 animate-spin" />

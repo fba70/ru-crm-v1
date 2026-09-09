@@ -74,6 +74,12 @@ type Props = {
   trigger: React.ReactNode
   onSuccess?: (createdId?: string) => void
   defaultClientId?: string
+  // Optional controlled open state — lets a parent open this dialog
+  // programmatically (e.g. the /contacts page's `?openContact=<id>` deep-link
+  // from the global search) without a click on `trigger`. Omit both for the
+  // usual uncontrolled click-to-open behaviour.
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 export function ContactEditForm({
@@ -351,8 +357,12 @@ export default function ContactEditDialog({
   trigger,
   onSuccess,
   defaultClientId,
+  open: controlledOpen,
+  onOpenChange: setControlledOpen,
 }: Props) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = setControlledOpen ?? setInternalOpen
 
   const title =
     mode === "create"

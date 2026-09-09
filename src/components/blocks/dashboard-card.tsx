@@ -81,13 +81,12 @@ const PRIORITY_COLOR: Record<CardPriority, string> = {
   high: "bg-amber-500/20 text-amber-700 dark:text-amber-300",
 }
 
-// Vertical gradient: silver for normal, gold for high. Fades into the
-// standard card surface so the card body remains readable.
-const PRIORITY_GRADIENT: Record<CardPriority, string> = {
-  normal:
-    "bg-linear-to-b from-slate-200 via-slate-100/60 to-card dark:from-slate-500/50 dark:via-slate-800/30 dark:to-card",
-  high: "bg-linear-to-b from-amber-100 via-amber-100/70 to-card dark:from-amber-600/40 dark:via-amber-900/30 dark:to-card",
-}
+// Flat surface, exactly the Deals kanban card's resting style
+// (deal-kanban-card.tsx's `normalSurface`) — no border/gradient accent at
+// all. Priority is communicated ONLY by the existing PRIORITY_COLOR badge
+// in the header, same as every other card in the product.
+const CARD_SURFACE =
+  "bg-card border-muted dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10"
 
 // A message field (Analysis / Recommendation) shown clamped to 3 lines on
 // the card, with the FULL text revealed in a hover-card on hover, keyboard
@@ -254,7 +253,7 @@ export function DashboardCard({
         // while staying tight enough that short cards don't leave a big
         // gap between the source ref and the action row.
         "flex flex-col h-120 overflow-hidden",
-        PRIORITY_GRADIENT[card.priority],
+        CARD_SURFACE,
       )}
     >
       <CardHeader className="pb-3 space-y-2">
