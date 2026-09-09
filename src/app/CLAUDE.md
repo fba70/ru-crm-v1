@@ -1140,4 +1140,4 @@ Seventh tab on `/analytics`. Ask a question in Russian, get a short written take
 
 Charts reuse `buildSeries` (synthetic CSS-safe series keys) and the validated palette; forms follow the same rules as the tabs (donut ≤6 slices, one hue for ranked bars, stacked for composition).
 
-**Not yet wired into the dashboard chat.** The same tool can be registered there behind an `enableAnalytics` toggle mirroring `enableSources`; it was staged second on purpose — the general agent must not reach for `searchEverything` when it should aggregate.
+**Not yet wired into the dashboard chat.** The same tool could be registered there alongside `searchEverything` + `google_search` (the dashboard chat is now one universal engine with no toggles — see `src/lib/CLAUDE.md` § "AI Chat"); it was staged second on purpose — the general agent must not reach for `searchEverything` when it should aggregate.

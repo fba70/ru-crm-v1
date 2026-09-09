@@ -54,6 +54,7 @@ import {
   moveDirection,
   type OwnerFilter,
 } from "@/lib/deal-board"
+import { entityMatchesFilter, FIELD_WEIGHT } from "@/lib/entity-search"
 import { DealKanbanCardOverlay } from "@/components/blocks/deal-kanban-card"
 import {
   DealMoveDialog,
@@ -111,9 +112,15 @@ function ClientMultiSelect({
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState("")
   const selected = new Set(values)
-  const query = q.trim().toLowerCase()
+  const query = q.trim()
+  // Shared cross-script normalisation (src/lib/entity-search.ts) so «АСТ»
+  // finds the stored «AST – …». Filter mode: no fuzzy tail in a picker.
   const visible = query
-    ? options.filter((c) => c.name.toLowerCase().includes(query))
+    ? options.filter((c) =>
+        entityMatchesFilter(query, [
+          { value: c.name, weight: FIELD_WEIGHT.name },
+        ]),
+      )
     : options
   return (
     <Popover

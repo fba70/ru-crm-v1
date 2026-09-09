@@ -31,6 +31,7 @@ import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
+import { entityMatchesFilter, FIELD_WEIGHT } from "@/lib/entity-search"
 
 const PAGE_SIZE = 6
 // Clients + Contacts share one merged tab with two stacked grids; 3 cards
@@ -233,7 +234,24 @@ export default function ClientsPage() {
       if (clientPhaseFilter !== ALL && c.funnelPhase !== clientPhaseFilter) {
         return false
       }
-      if (name && !c.name.toLowerCase().includes(name)) return false
+      // Cross-script, punctuation-insensitive name matching (see
+      // src/lib/entity-search.ts): «АСТ» finds the stored «AST – …», and a
+      // dash/quote variant no longer scores zero. Filter mode = the same
+      // normalisation as the AI search but WITHOUT its fuzzy tail — a typo'ed
+      // row appearing in a filter box reads as a bug.
+      if (
+        name &&
+        !entityMatchesFilter(name, [
+          { value: c.name, weight: FIELD_WEIGHT.name },
+          { value: c.namePhys, weight: FIELD_WEIGHT.alias },
+          ...(c.aliases ?? []).map((a) => ({
+            value: a,
+            weight: FIELD_WEIGHT.alias,
+          })),
+        ])
+      ) {
+        return false
+      }
       if (email && !(c.email ?? "").toLowerCase().includes(email)) return false
       return true
     })
@@ -255,12 +273,20 @@ export default function ClientsPage() {
       } else if (c.status !== contactStatusFilter) {
         return false
       }
-      // Name filter matches the technical name OR the native-language name,
-      // so searching either spelling finds the contact.
+      // Name filter matches the technical name OR the native-language name
+      // OR a stored alias, each through the shared normalisation — so either
+      // spelling, either script, and either word order finds the contact
+      // («Bogdanov Evgeniy» ≡ «Евгений Богданов»).
       if (
         name &&
-        !c.name.toLowerCase().includes(name) &&
-        !(c.nameNative ?? "").toLowerCase().includes(name)
+        !entityMatchesFilter(name, [
+          { value: c.name, weight: FIELD_WEIGHT.name },
+          { value: c.nameNative, weight: FIELD_WEIGHT.name },
+          ...(c.aliases ?? []).map((a) => ({
+            value: a,
+            weight: FIELD_WEIGHT.alias,
+          })),
+        ])
       ) {
         return false
       }

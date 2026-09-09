@@ -15,16 +15,16 @@ export type LlmModel = {
 
 export const MODELS: LlmModel[] = [
   {
+    key: "gemini-3.1-flash-lite",
+    label: "Gemini 3.1 Flash Lite",
+    provider: "google",
+    gatewayId: "google/gemini-3.1-flash-lite",
+  },
+  {
     key: "gpt-5-mini",
     label: "GPT-5 Mini",
     provider: "openai",
     gatewayId: "openai/gpt-5-mini",
-  },
-  {
-    key: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
-    provider: "google",
-    gatewayId: "google/gemini-2.5-flash",
   },
   {
     key: "claude-sonnet-4-6",
@@ -34,7 +34,11 @@ export const MODELS: LlmModel[] = [
   },
 ]
 
-export const DEFAULT_MODEL_KEY = "gemini-2.5-flash"
+export const DEFAULT_MODEL_KEY = "gemini-3.1-flash-lite"
+
+// Gateway id of the default model, for server modules that don't take a
+// user-picked key (web lookup, chat analysis, analytics assistant).
+export const DEFAULT_GATEWAY_ID = "google/gemini-3.1-flash-lite"
 
 export function getModel(key: string): LlmModel | undefined {
   return MODELS.find((m) => m.key === key)
@@ -45,3 +49,10 @@ export function getGatewayId(key: string): string {
   if (!m) throw new Error(`Unsupported model: ${key}`)
   return m.gatewayId
 }
+
+// Model behind `searchWeb` (src/server/web-search.ts). Web search is its own
+// grounded Gemini sub-call rather than a tool passed through to whichever
+// model the user picked, so EVERY model in the picker gets working web search
+// — and grounding stops depending on the chat model's mood. Must be a Gemini
+// model: `google_search` is Google's own grounding tool.
+export const WEB_SEARCH_MODEL = "google/gemini-3.1-flash-lite"

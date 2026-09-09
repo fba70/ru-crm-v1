@@ -16,14 +16,7 @@ import {
   Component,
   type ReactNode,
 } from "react"
-import {
-  CopyIcon,
-  CheckIcon,
-  DatabaseIcon,
-  GlobeIcon,
-  Save,
-  Trash2Icon,
-} from "lucide-react"
+import { CopyIcon, CheckIcon, Save, Trash2Icon } from "lucide-react"
 import { toast } from "sonner"
 import {
   useJsonRenderMessage,
@@ -103,7 +96,7 @@ import { cn } from "@/lib/utils"
 import Image from "next/image"
 import { BrandMark } from "./brand-mark"
 import { SearchResultsCard } from "@/components/blocks/search-results-card"
-import { MODELS } from "@/lib/llm-models"
+import { DEFAULT_MODEL_KEY, MODELS } from "@/lib/llm-models"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -154,24 +147,22 @@ function validateFiles(files: FileUIPart[]): FileUIPart[] {
 // ---------------------------------------------------------------------------
 
 export function AIChat({ className }: { className?: string }) {
-  const [selectedModel, setSelectedModel] = useState(MODELS[1].key)
-  // Веб-поиск по умолчанию выключен — включается вручную тумблером-глобусом.
-  const [enableSearch, setEnableSearch] = useState(false)
-  // Internal-sources tool group (search + content fetch + panel render).
-  // Mutually exclusive with `enableSearch` on Gemini — the built-in
-  // google_search tool can't share a call with custom function tools.
-  const [enableSources, setEnableSources] = useState(false)
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL_KEY)
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false)
 
+  // ONE universal search engine — no toggles. The route registers the
+  // internal-records tools plus (on a capable model) Google's web-search
+  // grounding on every request, and the model decides which to use. The old
+  // «источники» / «веб-поиск» buttons existed only because Gemini 2.5 Flash
+  // dropped custom function tools whenever google_search was present.
   const currentModel = MODELS.find((m) => m.key === selectedModel) ?? MODELS[0]
-  const searchAvailable = currentModel.provider === "google"
 
-  // Stable transport that reads the latest model/search values at request time
-  // via a ref — avoids recreating the transport on every state change.
-  const bodyRef = useRef({ model: selectedModel, enableSearch, enableSources })
+  // Stable transport that reads the latest model at request time via a ref —
+  // avoids recreating the transport on every state change.
+  const bodyRef = useRef({ model: selectedModel })
   useEffect(() => {
-    bodyRef.current = { model: selectedModel, enableSearch, enableSources }
-  }, [selectedModel, enableSearch, enableSources])
+    bodyRef.current = { model: selectedModel }
+  }, [selectedModel])
 
   // Ref is read inside the body() closure at request build time, not during render.
   /* eslint-disable react-hooks/refs */
@@ -216,24 +207,6 @@ export function AIChat({ className }: { className?: string }) {
     setMessages([])
   }, [setMessages])
 
-  const handleToggleSearch = useCallback(() => {
-    setEnableSearch((prev) => {
-      const next = !prev
-      // Mutual exclusion: turning Search on flips Sources off (Gemini
-      // can't run google_search with custom tools in the same call).
-      if (next) setEnableSources(false)
-      return next
-    })
-  }, [])
-
-  const handleToggleSources = useCallback(() => {
-    setEnableSources((prev) => {
-      const next = !prev
-      if (next) setEnableSearch(false)
-      return next
-    })
-  }, [])
-
   // ---- Render ----
 
   return (
@@ -255,47 +228,6 @@ export function AIChat({ className }: { className?: string }) {
           </p>
         </div>
         <div className="flex items-center gap-1">
-          {/* Internal sources toggle (provider-agnostic). Always visible. */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={enableSources ? "secondary" : "ghost"}
-                  size="icon-sm"
-                  onClick={handleToggleSources}
-                >
-                  <DatabaseIcon className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>
-                  {enableSources ? "Выключить" : "Включить"} поиск по внутренним
-                  источникам
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          {/* Web search toggle (Gemini only). */}
-          {searchAvailable && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={enableSearch ? "secondary" : "ghost"}
-                    size="icon-sm"
-                    onClick={handleToggleSearch}
-                  >
-                    <GlobeIcon className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{enableSearch ? "Выключить" : "Включить"} веб-поиск</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-
           {/* Model selector */}
           <ModelSelector
             open={modelSelectorOpen}
@@ -321,10 +253,6 @@ export function AIChat({ className }: { className?: string }) {
                       onSelect={() => {
                         setSelectedModel(model.key)
                         setModelSelectorOpen(false)
-                        // Веб-поиск выключен по умолчанию для всех моделей;
-                        // на Gemini он взаимоисключим с источниками, поэтому
-                        // включается только вручную.
-                        setEnableSearch(false)
                       }}
                     >
                       <ModelSelectorLogo

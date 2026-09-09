@@ -7,10 +7,9 @@ import {
   tool,
   UIMessage,
 } from "ai"
-import { google } from "@ai-sdk/google"
 import { z } from "zod"
 import { pipeJsonRender } from "@json-render/core"
-import { catalog } from "@/lib/catalog"
+import { buildSystemPrompt } from "@/lib/chat-prompt"
 import { getServerSession } from "@/lib/get-session"
 import {
   getSourceItemMarkdown,
@@ -21,33 +20,15 @@ import { listClientContent } from "@/server/client-content"
 import { listClients } from "@/server/clients"
 import { listContacts } from "@/server/contacts"
 import { listDeals } from "@/server/deals"
-import { getGatewayId, getModel } from "@/lib/llm-models"
+import { searchWeb } from "@/server/web-search"
+import { DEFAULT_MODEL_KEY, getGatewayId } from "@/lib/llm-models"
+import {
+  entitySearchScore,
+  FIELD_WEIGHT,
+  FUZZY_THRESHOLD,
+} from "@/lib/entity-search"
 
 export const maxDuration = 120
-
-const SYSTEM_PROMPT = `You are a helpful AI assistant for the Truffalo platform. You provide clear, accurate, and concise answers. You can help with general questions, analysis, writing, coding, and more.
-
-${catalog.prompt({ mode: "inline" })}
-
-## Additional display guidelines
-
-- For small results (key-value pairs, 1-3 metrics, tiny tables <5 rows), render inline.
-- For charts, large tables (>8 rows), complex JSON, or code files (>30 lines), use displayMode "panel".
-- Always explain what the data shows in conversational text, then render the visualization.
-- When producing charts, provide real/computed data — never use placeholder values.
-
-## Internal search tool (when enabled)
-
-When \`searchEverything\` is available, the user has opted in to searching their stored, parsed sources (emails, chats, drive files, dropped files) and CRM entities (clients, contacts, deals). This is a **single-turn** flow — do NOT ask the user to pick or disambiguate, and do NOT wait for a follow-up message.
-
-**Steps:**
-1. Call \`searchEverything\` ONCE with the user's query (a company/person/deal name, or any free-text topic). It returns matched \`clients\`, \`contacts\`, \`deals\` and \`sources\` plus \`counts\`. This is the whole result set — do not call it again for the same question.
-2. If you want to ground the summary in real content, call \`getSourceItemContent\` on the 1–3 most relevant source ids from the result to read their full parsed markdown.
-3. Write ONE concise summary that (a) names the subject of the search, (b) states what was found, referencing the counts naturally (e.g. "нашёл 1 клиента, 4 контакта и 13 источников"), and (c) gives a short, faithful synthesis grounded in the sources you read. If \`counts\` are all zero, say plainly that nothing was found — do not invent.
-
-**Rules:**
-- The user sees the matched clients / contacts / deals / sources rendered as cards directly below your summary — each with its own "open detail" button — plus a count header. **Do NOT** enumerate every entity or paste source bodies in your prose, and **do NOT** emit json-render specs; just write the summary. The cards handle browsing.
-- Never expose source/entity ids in the user-facing answer — they are internal.`
 
 // Model dictionary lives in src/lib/llm-models.ts so the chat picker, the
 // Explore-sources dialog, and this route share one source of truth.
@@ -77,6 +58,26 @@ function toSourceHit(row: SourceItemRow) {
   }
 }
 
+// The web half of the engine. `searchWeb` runs its own grounded Gemini
+// sub-call (see src/server/web-search.ts for why Google's `google_search`
+// can't just be passed through to the chat model) so it is provider-agnostic
+// and always registered — no session or org needed to read the public web.
+const webTools = {
+  searchWeb: tool({
+    description:
+      "Search the public internet and return grounded findings plus the source URLs consulted. Use it for anything the user's own records can't answer — what a company does, who its people are, market/news context, public contact details. Always use it before stating a fact about a named real-world company, person, product or event.",
+    inputSchema: z.object({
+      query: z
+        .string()
+        .min(1)
+        .describe(
+          "What to look up, as a self-contained search query (include the company/person name — this tool sees no chat history).",
+        ),
+    }),
+    execute: async ({ query }) => searchWeb(query),
+  }),
+} as const
+
 function buildSourceTools(organizationId: string | null) {
   if (!organizationId) return undefined
   return {
@@ -104,7 +105,6 @@ function buildSourceTools(organizationId: string | null) {
           .describe("Inclusive upper bound on source date (ISO 8601)."),
       }),
       execute: async ({ query, dateFrom, dateTo }) => {
-        const q = query.trim().toLowerCase()
         const from = dateFrom ? new Date(dateFrom) : undefined
         const to = dateTo ? new Date(dateTo) : undefined
 
@@ -120,33 +120,83 @@ function buildSourceTools(organizationId: string | null) {
           listDeals({ includeCancelled: true }),
         ])
 
+        // Matching goes through `entitySearchScore` — the same normalisation
+        // pipeline Search V2 applies to products (Cyrillic→Latin translit,
+        // accent-fold, punctuation-insensitive, token-OR, pg_trgm fuzzy gate
+        // at FUZZY_THRESHOLD). The old raw `name.toLowerCase().includes(q)`
+        // scored 0 whenever the model rephrased the name even slightly —
+        // «АСТ» never found the stored «AST», and an em-dash query never
+        // found an en-dash name. Results are RANKED so the best match leads.
+        //
         // Soft-deleted (`deleted` status) entities are test artifacts /
         // mistakes — hidden from every CRM list by default. They must never
         // surface in search, and a deleted client must not pull in its
         // contacts/deals either (so the deleted-id set is excluded before
         // matchedClientIds is built).
-        const matchedClients = allClients.filter(
-          (c) => c.status !== "deleted" && c.name.toLowerCase().includes(q),
+        const rank = <T>(rows: { row: T; score: number }[]) =>
+          rows
+            .filter((r) => r.score >= FUZZY_THRESHOLD)
+            .sort((a, b) => b.score - a.score)
+            .map((r) => r.row)
+
+        const matchedClients = rank(
+          allClients
+            .filter((c) => c.status !== "deleted")
+            .map((c) => ({
+              row: c,
+              score: entitySearchScore(query, [
+                { value: c.name, weight: FIELD_WEIGHT.name },
+                { value: c.namePhys, weight: FIELD_WEIGHT.alias },
+                ...(c.aliases ?? []).map((a) => ({
+                  value: a,
+                  weight: FIELD_WEIGHT.alias,
+                })),
+                { value: c.webUrl, weight: FIELD_WEIGHT.secondary },
+                { value: c.email, weight: FIELD_WEIGHT.secondary },
+              ]),
+            })),
         )
         const matchedClientIds = new Set(matchedClients.map((c) => c.id))
 
-        // Contacts: name/native-name match OR belonging to a matched client.
-        const matchedContacts = allContacts.filter(
-          (c) =>
-            c.status !== "deleted" &&
-            (c.name.toLowerCase().includes(q) ||
-              (c.nameNative?.toLowerCase().includes(q) ?? false) ||
-              (c.clientId !== null && matchedClientIds.has(c.clientId))),
+        // Contacts: own-name match (technical, native or alias, plus email —
+        // an operator often pastes an address) OR belonging to a matched
+        // client.
+        const matchedContacts = rank(
+          allContacts
+            .filter((c) => c.status !== "deleted")
+            .map((c) => ({
+              row: c,
+              score:
+                c.clientId !== null && matchedClientIds.has(c.clientId)
+                  ? 1
+                  : entitySearchScore(query, [
+                      { value: c.name, weight: FIELD_WEIGHT.name },
+                      { value: c.nameNative, weight: FIELD_WEIGHT.name },
+                      ...(c.aliases ?? []).map((a) => ({
+                        value: a,
+                        weight: FIELD_WEIGHT.alias,
+                      })),
+                      { value: c.email, weight: FIELD_WEIGHT.secondary },
+                    ]),
+            })),
         )
 
-        // Deals: name match OR belonging to a matched client. `listDeals`
-        // already drops `deleted`; the explicit guard keeps it correct if
-        // the include flags ever change.
-        const matchedDeals = allDeals.filter(
-          (d) =>
-            d.status !== "deleted" &&
-            (d.name.toLowerCase().includes(q) ||
-              matchedClientIds.has(d.clientId)),
+        // Deals: own name / description match OR belonging to a matched
+        // client. `listDeals` already drops `deleted`; the explicit guard
+        // keeps it correct if the include flags ever change.
+        const matchedDeals = rank(
+          allDeals
+            .filter((d) => d.status !== "deleted")
+            .map((d) => ({
+              row: d,
+              score: matchedClientIds.has(d.clientId)
+                ? 1
+                : entitySearchScore(query, [
+                    { value: d.name, weight: FIELD_WEIGHT.name },
+                    { value: d.clientName, weight: FIELD_WEIGHT.secondary },
+                    { value: d.description, weight: FIELD_WEIGHT.weak },
+                  ]),
+            })),
         )
 
         // Sources: union of each matched client's curated content + a
@@ -245,56 +295,35 @@ export async function POST(req: Request) {
   try {
     const {
       messages,
-      model: modelKey = "gpt-5-mini",
-      enableSearch = false,
-      enableSources = false,
+      model: modelKey = DEFAULT_MODEL_KEY,
     }: {
       messages: UIMessage[]
       model?: string
-      enableSearch?: boolean
-      enableSources?: boolean
     } = await req.json()
-
-    // Mutually exclusive on Gemini: the built-in google_search tool is
-    // known not to mix with custom function tools in the same call. The
-    // client UI also enforces this, but guard server-side too in case
-    // the request body comes from elsewhere (or stale state).
-    const provider = getModel(modelKey)?.provider
-    const sourcesActive = enableSources
-    const searchActive = enableSearch && !sourcesActive
-
-    console.log(
-      "[chat] model:",
-      modelKey,
-      "search:",
-      searchActive,
-      "sources:",
-      sourcesActive,
-    )
 
     const gatewayId = getGatewayId(modelKey)
 
-    // Source tools require an authenticated session AND an active
+    // ── One universal search engine ───────────────────────────────────
+    //
+    // There used to be two mutually exclusive toggles ("внутренние
+    // источники" / "веб-поиск"), because Google's built-in google_search
+    // tool and custom function tools don't coexist on Gemini. Web search is
+    // now an ordinary function tool of our own (`searchWeb`), so that
+    // conflict is gone: every request gets whichever tools the caller is
+    // actually entitled to, and the model picks.
+    //
+    // Internal tools require an authenticated session AND an active
     // organization — items are tenant-scoped, so without an active org
-    // there's nothing to search. Anonymous or org-less callers don't
-    // see the tools even if enableSources=true is forged.
-    const session = sourcesActive ? await getServerSession() : null
-    const sourceOrgId =
-      sourcesActive && session ? session.session.activeOrganizationId : null
+    // there's nothing to search. Anonymous or org-less callers get the
+    // web-only engine.
+    const session = await getServerSession()
+    const sourceOrgId = session?.session.activeOrganizationId ?? null
     const sourceTools = buildSourceTools(sourceOrgId)
 
-    // google_search is Gemini-only (it's Google's own grounding tool, not
-    // a user-defined function). Custom source tools are provider-agnostic —
-    // OpenAI, Google, and Anthropic all support tool calling natively, and
-    // the AI SDK + Vercel AI Gateway translate the Zod-schema tool defs to
-    // each provider's wire format.
-    const builtinSearchTool =
-      searchActive && provider === "google"
-        ? { google_search: google.tools.googleSearch({}) }
-        : undefined
-
+    // Web search needs neither a session nor an org, and every provider can
+    // call it (it's an ordinary function tool), so it's always on.
     const tools = {
-      ...(builtinSearchTool ?? {}),
+      ...webTools,
       ...(sourceTools ?? {}),
     }
     const hasTools = Object.keys(tools).length > 0
@@ -302,21 +331,23 @@ export async function POST(req: Request) {
     console.log(
       "[chat] gateway:",
       gatewayId,
-      "provider:",
-      provider,
+      "org:",
+      sourceOrgId ?? "-",
       "tools:",
       Object.keys(tools),
     )
 
     const result = streamText({
       model: gatewayId,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt({
+        internal: sourceTools !== undefined,
+        web: true,
+      }),
       messages: await convertToModelMessages(messages),
       ...(hasTools ? { tools } : {}),
-      // Bound the tool-call loop so the model can't spiral. The entity
-      // path is the longest chain: find → (disambiguate) → getEntityContent
-      // → getSourceItemContent ×N → answer, so allow more headroom than the
-      // old free-text-only flow.
+      // Bound the tool-call loop so the model can't spiral. A combined
+      // question is the longest chain: searchEverything →
+      // getSourceItemContent ×N → google_search → answer.
       stopWhen: stepCountIs(10),
     })
 

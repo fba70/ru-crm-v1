@@ -15,10 +15,10 @@ import type { GenerateDealsResult } from "@/app/api/deals/discover/route"
 //     periodCutoff("last_day"); see rolling24hCutoffIso below)
 //   • sources → all organization sources (sourceIds: null)
 //   • rule    → "Funnel Processing Rule" (resolved by name)
-//   • model   → Gemini 2.5 Flash (DEFAULT_MODEL_KEY)
+//   • model   → the default gateway model (DEFAULT_MODEL_KEY)
 //   • already-analyzed items are skipped (the default)
 const MAGIC_RULE_NAME = "Funnel Processing Rule"
-const MAGIC_MODEL_KEY = DEFAULT_MODEL_KEY // "gemini-2.5-flash"
+const MAGIC_MODEL_KEY = DEFAULT_MODEL_KEY
 
 // Rolling 24h cutoff, mirroring discovery's periodCutoff("last_day"). The
 // deals API takes a from/to date-time (not a `period`), so we send this cutoff

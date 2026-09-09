@@ -7,6 +7,7 @@ import { z } from "zod"
 import { db } from "@/db/drizzle"
 import { sourceItem } from "@/db/schema"
 import { getOrCreateAiChatSource } from "@/server/sources"
+import { DEFAULT_GATEWAY_ID } from "@/lib/llm-models"
 import {
   assembleMarkdown,
   buildFrontmatter,
@@ -143,7 +144,7 @@ const analysisSchema = z.object({
     .describe("Names of products mentioned in the conversation."),
 })
 
-const ANALYSIS_MODEL = "google/gemini-2.5-flash"
+const ANALYSIS_MODEL = DEFAULT_GATEWAY_ID
 
 async function extractAnalysis(transcript: string): Promise<MetadataAnalysis> {
   const truncated =

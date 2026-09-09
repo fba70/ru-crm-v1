@@ -16,6 +16,7 @@ import { generateText, Output, stepCountIs } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
 import { getServerSession } from "@/lib/get-session"
+import { DEFAULT_GATEWAY_ID } from "@/lib/llm-models"
 import { randomUUID } from "crypto"
 import { request as httpsRequest } from "node:https"
 import { request as httpRequest } from "node:http"
@@ -347,8 +348,11 @@ export async function updateClient(
 
 // ── Web lookup (Gemini + grounded google_search) ─────────────────────
 
-const LOOKUP_RESEARCH_MODEL = "google/gemini-2.5-flash"
-const LOOKUP_EXTRACT_MODEL = "google/gemini-2.5-flash"
+// External web search + extraction. Gemini 3.1 Flash Lite runs
+// `google_search` grounding alongside function tools and is cheaper than
+// 2.5 Flash; see src/lib/llm-models.ts.
+const LOOKUP_RESEARCH_MODEL = DEFAULT_GATEWAY_ID
+const LOOKUP_EXTRACT_MODEL = DEFAULT_GATEWAY_ID
 
 // ── Direct homepage fetch (precision booster for the extract pass) ────
 //

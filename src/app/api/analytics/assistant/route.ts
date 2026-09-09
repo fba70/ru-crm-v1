@@ -10,7 +10,7 @@ import {
   buildAnalyticsSystemPrompt,
   buildAnalyticsTools,
 } from "@/server/analytics-assistant"
-import { getGatewayId } from "@/lib/llm-models"
+import { DEFAULT_MODEL_KEY, getGatewayId } from "@/lib/llm-models"
 
 export const maxDuration = 60
 
@@ -20,7 +20,7 @@ export const maxDuration = 60
 // The org id is bound into the tool from the SESSION — it is never a model
 // input, so no prompt injection can widen the scope to another tenant.
 
-const DEFAULT_MODEL = "gemini-2.5-flash"
+const DEFAULT_MODEL = DEFAULT_MODEL_KEY
 
 export async function POST(req: Request) {
   try {
