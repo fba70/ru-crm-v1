@@ -1,7 +1,7 @@
 "use server"
 
 import { db } from "@/db/drizzle"
-import { client, contact, deal, dealFunnelStage, order } from "@/db/schema"
+import { card, client, contact, deal, dealFunnelStage, order } from "@/db/schema"
 import {
   and,
   desc,
@@ -85,12 +85,22 @@ export type OrderSearchHit = {
   status: string
 }
 
+export type CardSearchHit = {
+  kind: "card"
+  id: string
+  category: string
+  priority: string
+  analysis: string
+  createdAt: string
+}
+
 export type GlobalSearchResult = {
   query: string
   clients: ClientSearchHit[]
   contacts: ContactSearchHit[]
   deals: DealSearchHit[]
   orders: OrderSearchHit[]
+  cards: CardSearchHit[]
 }
 
 const EMPTY_RESULT = (query: string): GlobalSearchResult => ({
@@ -99,6 +109,7 @@ const EMPTY_RESULT = (query: string): GlobalSearchResult => ({
   contacts: [],
   deals: [],
   orders: [],
+  cards: [],
 })
 
 export async function searchAcrossEntities(
@@ -155,8 +166,11 @@ export async function searchAcrossEntities(
     normArray(contact.aliases),
   ]
   const dealFields = [norm(deal.name), norm(deal.description)]
+  // `card.message` is jsonb `{ analysis, recommendation }` — cast to text
+  // before normalising, same idiom as source-items.ts's metadata search.
+  const cardMessageNorm: SQL = sql`lower(immutable_unaccent(translit_cyr_lat(coalesce(${card.message}::text, ''))))`
 
-  const [clientRows, contactRows, dealRows, orderRows] = await Promise.all([
+  const [clientRows, contactRows, dealRows, orderRows, cardRows] = await Promise.all([
     db
       .select({
         id: client.id,
@@ -244,6 +258,25 @@ export async function searchAcrossEntities(
       )
       .orderBy(desc(order.orderDate))
       .limit(HITS_PER_ENTITY),
+
+    // Truffalo Cards — the dashboard's own "Поиск в сообщениях" input was
+    // removed in favor of this (see cards-feed-section.tsx). Matched via the
+    // same normalised/fuzzy `cardMessageNorm` expression as every other
+    // entity above, not a raw ILIKE.
+    db
+      .select({
+        id: card.id,
+        category: card.category,
+        priority: card.priority,
+        message: card.message,
+        createdAt: card.createdAt,
+      })
+      .from(card)
+      .where(
+        and(eq(card.organizationId, activeOrgId), matches(cardMessageNorm)),
+      )
+      .orderBy(desc(relevance([cardMessageNorm])), desc(card.createdAt))
+      .limit(HITS_PER_ENTITY),
   ])
 
   return {
@@ -261,5 +294,16 @@ export async function searchAcrossEntities(
       clientName: r.clientName,
       status: r.status,
     })),
+    cards: cardRows.map((r) => {
+      const message = r.message as { analysis?: string } | null
+      return {
+        kind: "card" as const,
+        id: r.id,
+        category: r.category,
+        priority: r.priority,
+        analysis: message?.analysis ?? "",
+        createdAt: r.createdAt.toISOString(),
+      }
+    }),
   }
 }

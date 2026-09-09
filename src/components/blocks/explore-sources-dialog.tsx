@@ -263,7 +263,7 @@ export function ExploreSourcesDialog({
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Исследовать источники</DialogTitle>
+          <DialogTitle>Найти в источниках</DialogTitle>
           <DialogDescription>
             Запустите выбранное правило по элементам источников за указанный
             период. Не более {previewCap} элементов за один запуск — при

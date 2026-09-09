@@ -160,8 +160,12 @@ export function DealKanbanCard({
   // чёрным блоком среди светлых карточек.
   const isGraphite =
     deal.status === "deleted" || deal.status === "cancelled" || isLost
+  // border-border (not border-muted): unlike Companies/Dashboard, these
+  // cards sit directly on the atmospheric page background (no bg-card
+  // wrapper around the columns) — border-muted (oklch 0.955) is nearly
+  // indistinguishable from that background (oklch 0.98) in light theme.
   const normalSurface =
-    "bg-card border-muted hover:border-[#669BBC]/40 hover:bg-accent/20 dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10 dark:shadow-none dark:hover:border-[#669BBC]/25 dark:hover:bg-[#FDF0D5]/[0.06]"
+    "bg-[#FDF0D5]/[0.05] border-border shadow-sm hover:shadow-lg hover:bg-[#FDF0D5]/[0.09] dark:bg-[#FDF0D5]/[0.045] dark:hover:bg-[#FDF0D5]/[0.08]"
   const surfaceClass = isGraphite ? `${normalSurface} opacity-55` : normalSurface
 
   return (
@@ -173,7 +177,7 @@ export function DealKanbanCard({
       data-deal-id={deal.id}
       {...attributes}
       {...listeners}
-      className={`p-3 space-y-1 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-[3px] ${surfaceClass} ${
+      className={`p-3 space-y-1 transition-[box-shadow,background-color] duration-200 ${surfaceClass} ${
         isActive ? "cursor-grab active:cursor-grabbing" : "cursor-default"
       } ${isDragging ? "opacity-40" : ""}`}
       aria-label={`Открыть сделку: ${deal.clientName ?? deal.name}`}
@@ -431,7 +435,7 @@ export function DealKanbanCard({
 // Превью карточки под курсором при перетаскивании (DragOverlay).
 export function DealKanbanCardOverlay({ deal }: { deal: DealRow }) {
   return (
-    <Card className="w-64 p-3 space-y-2 bg-card border-muted shadow-xl rotate-2 cursor-grabbing">
+    <Card className="w-64 p-3 space-y-2 bg-card border-border shadow-xl rotate-2 cursor-grabbing">
       <DealTitle deal={deal} />
       <DealMetaLine deal={deal} />
     </Card>

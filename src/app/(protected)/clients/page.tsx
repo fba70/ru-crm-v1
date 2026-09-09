@@ -16,11 +16,12 @@ import type {
   ClientRow,
   ClientRevenueSummary,
   ClientFeedTab,
-  ClientTaskSummary,
 } from "@/app/api/clients/route"
 import type { DealRow } from "@/app/api/deals/route"
+import type { TaskRow } from "@/app/api/tasks/route"
 import ClientEditDialog from "@/components/forms/form-client-edit"
 import { ClientCard } from "@/components/blocks/client-card"
+import { ClientDetailDrawer } from "@/components/blocks/client-detail-drawer"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
@@ -67,9 +68,6 @@ export default function ClientsPage() {
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [loading, setLoading] = useState(true)
-  const [taskSummary, setTaskSummary] = useState<
-    Record<string, ClientTaskSummary>
-  >({})
 
   const [revenueByClient, setRevenueByClient] = useState<
     Record<string, ClientRevenueSummary>
@@ -77,7 +75,17 @@ export default function ClientsPage() {
   const [activeDealByClient, setActiveDealByClient] = useState<
     Record<string, DealRow>
   >({})
+  const [tasksByClient, setTasksByClient] = useState<
+    Record<string, TaskRow[]>
+  >({})
+  const [tasksLoaded, setTasksLoaded] = useState(false)
   const [canBlock, setCanBlock] = useState(false)
+
+  // Дровер с подробностями компании (по образцу /deals) — открывается по
+  // «Подробнее» на карточке вместо перехода на /clients/[id]. Сам объект
+  // выводим из живого `rows`, чтобы дровер не устарел после refreshAll.
+  const [openClientId, setOpenClientId] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const reqIdRef = useRef(0)
 
@@ -99,11 +107,6 @@ export default function ClientsPage() {
         const newRows: ClientRow[] = data.rows ?? []
         setRows((prev) => (nextOffset === 0 ? newRows : [...prev, ...newRows]))
         setTotal(data.total ?? 0)
-        setTaskSummary((prev) =>
-          nextOffset === 0
-            ? (data.taskSummary ?? {})
-            : { ...prev, ...(data.taskSummary ?? {}) },
-        )
         setOffset(nextOffset + newRows.length)
         setHasMore(nextOffset + newRows.length < (data.total ?? 0))
       } finally {
@@ -124,9 +127,10 @@ export default function ClientsPage() {
   }, [tab, statusFilter])
 
   const loadExtras = useCallback(async () => {
-    const [revRes, dealsRes] = await Promise.all([
+    const [revRes, dealsRes, tasksRes] = await Promise.all([
       fetch("/api/clients"),
       fetch("/api/deals"),
+      fetch("/api/tasks"),
     ])
     if (revRes.ok) {
       const d = await revRes.json()
@@ -143,6 +147,20 @@ export default function ClientsPage() {
         }
       }
       setActiveDealByClient(byClient)
+    }
+    if (tasksRes.ok) {
+      const d = await tasksRes.json()
+      const tasks: TaskRow[] = d.tasks ?? []
+      const byClient: Record<string, TaskRow[]> = {}
+      for (const t of tasks) {
+        if (!t.clientId) continue
+        ;(byClient[t.clientId] ??= []).push(t)
+      }
+      for (const list of Object.values(byClient)) {
+        list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      }
+      setTasksByClient(byClient)
+      setTasksLoaded(true)
     }
   }, [])
 
@@ -164,7 +182,10 @@ export default function ClientsPage() {
   }, [])
 
   const refreshAll = useCallback(async () => {
-    setRows([])
+    // Не обнуляем `rows` заранее — loadPage(0) сам заменит их, когда придут
+    // свежие данные. Иначе открытый ClientDetailDrawer (client берётся из
+    // rows.find(...)) на миг терял бы объект и захлопывался сам собой при
+    // каждом «Сохранить» внутри него.
     setOffset(0)
     setHasMore(true)
     await Promise.all([loadPage(0), loadExtras()])
@@ -287,7 +308,12 @@ export default function ClientsPage() {
                     canBlock={canBlock}
                     revenue={revenueByClient[c.id]}
                     activeDeal={activeDealByClient[c.id]}
-                    taskSummary={taskSummary[c.id]}
+                    tasks={tasksByClient[c.id] ?? []}
+                    tasksLoaded={tasksLoaded}
+                    onOpenDetail={(id) => {
+                      setOpenClientId(id)
+                      setDrawerOpen(true)
+                    }}
                   />
                 ))}
               </div>
@@ -304,6 +330,13 @@ export default function ClientsPage() {
         </CardContent>
         </Card>
       </div>
+
+      <ClientDetailDrawer
+        client={rows.find((r) => r.id === openClientId) ?? null}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        onChanged={refreshAll}
+      />
     </div>
   )
 }

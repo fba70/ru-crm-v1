@@ -7,6 +7,7 @@ export type {
   ContactSearchHit,
   DealSearchHit,
   OrderSearchHit,
+  CardSearchHit,
 } from "@/server/search"
 
 function errorResponse(error: unknown) {

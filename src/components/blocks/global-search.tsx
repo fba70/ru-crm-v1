@@ -18,7 +18,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Building2, Handshake, Package, Search, User } from "lucide-react"
+import {
+  Building2,
+  Handshake,
+  LayoutGrid,
+  Package,
+  Search,
+  User,
+} from "lucide-react"
 import type { GlobalSearchResult } from "@/app/api/search/route"
 import { ORDER_STATUS_LABEL, formatOrderDate } from "@/lib/orders-format"
 
@@ -28,6 +35,7 @@ const EMPTY_RESULT: GlobalSearchResult = {
   contacts: [],
   deals: [],
   orders: [],
+  cards: [],
 }
 
 export function GlobalSearch() {
@@ -77,7 +85,8 @@ export function GlobalSearch() {
     result.clients.length > 0 ||
     result.contacts.length > 0 ||
     result.deals.length > 0 ||
-    result.orders.length > 0
+    result.orders.length > 0 ||
+    result.cards.length > 0
 
   return (
     <>
@@ -204,6 +213,28 @@ export function GlobalSearch() {
                       {ORDER_STATUS_LABEL[
                         o.status as keyof typeof ORDER_STATUS_LABEL
                       ] ?? o.status}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+
+          {result.cards.length > 0 && (
+            <CommandGroup heading="Карточки">
+              {result.cards.map((c) => (
+                <CommandItem
+                  key={c.id}
+                  value={`card-${c.id}`}
+                  onSelect={() => go(`/cards/${c.id}`)}
+                >
+                  <LayoutGrid />
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate">
+                      {c.analysis || "Без описания"}
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {new Date(c.createdAt).toLocaleDateString("ru-RU")}
                     </span>
                   </div>
                 </CommandItem>

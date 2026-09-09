@@ -1,6 +1,7 @@
 "use client"
 
-import Link from "next/link"
+import { useState } from "react"
+import { cn } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,19 +14,15 @@ import {
   ArrowRight,
   MapPin,
   Globe,
-  Pencil,
   MessageSquare,
   Clock,
   Briefcase,
-  ListTodo,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
-import type {
-  ClientRow,
-  ClientRevenueSummary,
-  ClientTaskSummary,
-} from "@/app/api/clients/route"
+import type { ClientRow, ClientRevenueSummary } from "@/app/api/clients/route"
 import type { DealRow } from "@/app/api/deals/route"
-import ClientEditDialog from "@/components/forms/form-client-edit"
+import type { TaskRow } from "@/app/api/tasks/route"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
 import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 import { formatAmount, formatCompactNumber, CURRENCY_SYMBOL } from "@/lib/deal-board"
@@ -36,6 +33,8 @@ import {
   pluralizeOrders,
 } from "@/lib/client-mocks"
 import { COMPANY_KIND_LABELS } from "@/lib/client-custom-fields"
+
+const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
 
 // Тот же бейдж-язык, что и для статуса (насыщенные хью deal-board.ts).
 const COMPANY_KIND_COLOR: Record<string, string> = {
@@ -145,7 +144,9 @@ export function ClientCard({
   canBlock = false,
   revenue,
   activeDeal,
-  taskSummary,
+  tasks = [],
+  tasksLoaded = true,
+  onOpenDetail,
 }: {
   client: ClientRow
   onChanged: () => void
@@ -153,18 +154,37 @@ export function ClientCard({
   canBlock?: boolean
   revenue?: ClientRevenueSummary
   activeDeal?: DealRow
-  taskSummary?: ClientTaskSummary
+  // Задачи компании (любой статус, createdAt desc) — плашка листает их по
+  // одной, тот же виджет, что и на карточках сделок (deal-kanban-card.tsx).
+  tasks?: TaskRow[]
+  // Пока родитель ещё грузит задачи, не показываем «Задач нет» — иначе на
+  // миг мелькнёт ложное «пусто» до прихода реальных данных.
+  tasksLoaded?: boolean
+  onOpenDetail: (clientId: string) => void
 }) {
   const preview = client.contacts.slice(0, 2)
   const moreCount = Math.max(0, client.contacts.length - preview.length)
 
+  const [taskIdx, setTaskIdx] = useState(0)
+  const taskCount = tasks.length
+  const safeTaskIdx = taskCount ? Math.min(taskIdx, taskCount - 1) : 0
+  const currentTask = tasks[safeTaskIdx] ?? null
+
   return (
     <Card
-      className={`flex flex-col ${
-        client.status === "deleted" || client.status === "blocked"
-          ? "opacity-60"
-          : ""
-      }`}
+      className={cn(
+        // Слегка светлее дефолтного data-slot="card" (тёплая примесь того же
+        // кремового акцента, что и на карточках сделок в канбане, чтобы
+        // карточка не сливалась с атмосферным фоном страницы), + при
+        // наведении подсвечивается тенью/рамкой/подложкой (тот же язык, что
+        // deal-kanban-card.tsx). БЕЗ сдвига вверх (-translate-y) — в отличие
+        // от карточки сделки, эта карточка сидит в скролл-контейнере
+        // (CardContent overflow-y-auto), и сдвиг верхнего ряда обрезался
+        // верхней границей секции при скролле в начало.
+        "flex flex-col bg-[#FDF0D5]/[0.05] border-muted shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-[#FDF0D5]/[0.09] dark:bg-[#FDF0D5]/[0.045] dark:hover:bg-[#FDF0D5]/[0.08]",
+        (client.status === "deleted" || client.status === "blocked") &&
+          "opacity-60",
+      )}
     >
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -214,16 +234,6 @@ export function ClientCard({
               </Button>
             }
           />
-          <ClientEditDialog
-            mode="edit"
-            client={client}
-            onSuccess={onChanged}
-            trigger={
-              <Button variant="ghost" size="icon" aria-label="Редактировать компанию">
-                <Pencil className="h-4 w-4" />
-              </Button>
-            }
-          />
           {canBlock && client.status !== "blocked" && (
             <BlacklistEntityButton
               entityType="client"
@@ -241,19 +251,65 @@ export function ClientCard({
           activeDeal={activeDeal}
         />
 
-        {taskSummary && taskSummary.openCount > 0 && (
-          <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 text-xs">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <ListTodo className="h-3.5 w-3.5 shrink-0" />
-              {taskSummary.openCount}{" "}
-              {taskSummary.openCount === 1 ? "задача" : "задач"}
-            </span>
-            {taskSummary.overdueCount > 0 && (
-              <span className="font-medium text-[#A31018] dark:text-[#FF8F96]">
-                {taskSummary.overdueCount} просрочено
-              </span>
-            )}
+        {/* Задачи — тот же виджет, что на карточках сделок: заголовок снаружи
+            плашки («Задача»/«Задачи N» + шевроны для листания), внутри —
+            имя + исполнитель текущей задачи. */}
+        {currentTask ? (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {taskCount > 1 ? `Задачи ${taskCount}` : "Задача"}
+              </div>
+              {taskCount > 1 && (
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4"
+                    aria-label="Предыдущая задача"
+                    disabled={safeTaskIdx === 0}
+                    onPointerDown={stop}
+                    onClick={(e) => {
+                      stop(e)
+                      setTaskIdx((i) => Math.max(0, i - 1))
+                    }}
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4"
+                    aria-label="Следующая задача"
+                    disabled={safeTaskIdx >= taskCount - 1}
+                    onPointerDown={stop}
+                    onClick={(e) => {
+                      stop(e)
+                      setTaskIdx((i) => Math.min(taskCount - 1, i + 1))
+                    }}
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="rounded-md border border-border bg-muted p-2 space-y-1">
+              <div className="truncate text-xs text-foreground">
+                {currentTask.name}
+              </div>
+              {currentTask.assigneeName && (
+                <div className="truncate text-[11px] text-muted-foreground">
+                  Исполнитель: {currentTask.assigneeName}
+                </div>
+              )}
+            </div>
           </div>
+        ) : (
+          tasksLoaded && (
+            <div className="text-xs font-medium text-amber-600 dark:text-amber-400">
+              Задач нет
+            </div>
+          )
         )}
 
         {/* Email/телефон — только на /clients/[id], не на компактной карточке. */}
@@ -324,11 +380,14 @@ export function ClientCard({
           <span className="text-xs text-muted-foreground truncate">
             {client.userName ? `Кто создал: ${client.userName}` : ""}
           </span>
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link href={`/clients/${client.id}`}>
-              Подробнее
-              <ArrowRight className="h-3.5 w-3.5 ml-1" />
-            </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => onOpenDetail(client.id)}
+          >
+            Подробнее
+            <ArrowRight className="h-3.5 w-3.5 ml-1" />
           </Button>
         </div>
       </CardContent>

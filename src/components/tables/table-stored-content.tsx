@@ -336,7 +336,7 @@ export function TableStoredContent({
             Источник
           </label>
           <Select value={sourceId} onValueChange={setSourceId}>
-            <SelectTrigger className="h-8 w-full justify-between text-sm">
+            <SelectTrigger size="sm" className="w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -355,7 +355,7 @@ export function TableStoredContent({
             Тип файла
           </label>
           <Select value={mime} onValueChange={setMime}>
-            <SelectTrigger className="h-8 w-full justify-between text-sm">
+            <SelectTrigger size="sm" className="w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -374,7 +374,7 @@ export function TableStoredContent({
             Статус разбора
           </label>
           <Select value={parseStatus} onValueChange={setParseStatus}>
-            <SelectTrigger className="h-8 w-full justify-between text-sm">
+            <SelectTrigger size="sm" className="w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -393,7 +393,7 @@ export function TableStoredContent({
             Статус загрузки
           </label>
           <Select value={uploadStatus} onValueChange={setUploadStatus}>
-            <SelectTrigger className="h-8 w-full justify-between text-sm">
+            <SelectTrigger size="sm" className="w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

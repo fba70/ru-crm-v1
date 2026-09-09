@@ -181,7 +181,7 @@ export function TaskCard({
             onValueChange={(v) => handleStatusChange(v as TaskStatus)}
             disabled={isPending}
           >
-            <SelectTrigger className="w-full h-8 text-xs">
+            <SelectTrigger size="sm" className="w-full text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

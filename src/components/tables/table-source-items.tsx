@@ -453,7 +453,7 @@ export function TableSourceItems({
             value={view}
             onValueChange={(v) => setView(v as SourceItemView)}
           >
-            <SelectTrigger className="h-8 w-full justify-between text-sm">
+            <SelectTrigger size="sm" className="w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -470,7 +470,7 @@ export function TableSourceItems({
             Источник
           </label>
           <Select value={sourceFilter} onValueChange={setSourceFilter}>
-            <SelectTrigger className="h-8 w-full justify-between text-sm">
+            <SelectTrigger size="sm" className="w-full justify-between text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

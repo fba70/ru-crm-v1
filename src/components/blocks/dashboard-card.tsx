@@ -25,6 +25,7 @@ import {
   Check,
   Contact,
   FileText,
+  Link2,
   ShoppingCart,
   Users,
   X,
@@ -81,12 +82,12 @@ const PRIORITY_COLOR: Record<CardPriority, string> = {
   high: "bg-amber-500/20 text-amber-700 dark:text-amber-300",
 }
 
-// Flat surface, exactly the Deals kanban card's resting style
-// (deal-kanban-card.tsx's `normalSurface`) — no border/gradient accent at
-// all. Priority is communicated ONLY by the existing PRIORITY_COLOR badge
-// in the header, same as every other card in the product.
+// Same surface + hover treatment as the Companies card (client-card.tsx) —
+// unified look/feel across the app's card grids. No -translate-y on hover
+// here either (client-card.tsx dropped it: inside an overflow-y-auto scroll
+// container the lift clipped the top row against the section's edge).
 const CARD_SURFACE =
-  "bg-card border-muted dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10"
+  "bg-[#FDF0D5]/[0.05] border-muted shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-[#FDF0D5]/[0.09] dark:bg-[#FDF0D5]/[0.045] dark:hover:bg-[#FDF0D5]/[0.08]"
 
 // A message field (Analysis / Recommendation) shown clamped to 3 lines on
 // the card, with the FULL text revealed in a hover-card on hover, keyboard
@@ -251,7 +252,7 @@ export function DashboardCard({
         // analysis (3 lines) + recommendation (3 lines) + refs + pinned
         // action row without forcing line-clamp across the card boundary,
         // while staying tight enough that short cards don't leave a big
-        // gap between the source ref and the action row.
+        // gap above the footer group.
         "flex flex-col h-120 overflow-hidden",
         CARD_SURFACE,
       )}
@@ -261,11 +262,6 @@ export function DashboardCard({
           <CardTitle className="text-base min-w-0 flex-1 truncate">
             {CATEGORY_LABEL[card.category]}
           </CardTitle>
-          <Link href={`/cards/${card.id}`} className="shrink-0">
-            <Button variant="outline" size="sm">
-              Подробнее
-            </Button>
-          </Link>
         </div>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex flex-wrap gap-1.5 min-w-0">
@@ -329,6 +325,7 @@ export function DashboardCard({
         {(card.clients.length > 0 ||
           card.contacts.length > 0 ||
           card.users.length > 0 ||
+          card.ruleName ||
           card.sourceItemTitle) && (
           <div className="space-y-1.5 text-xs text-muted-foreground pt-1 border-t border-border/40">
             {card.clients.length > 0 && (
@@ -367,6 +364,12 @@ export function DashboardCard({
                 </div>
               </div>
             )}
+            {card.ruleName && (
+              <div className="flex items-center gap-2 truncate">
+                <Link2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Правило: {card.ruleName}</span>
+              </div>
+            )}
             {card.sourceItemTitle && (
               <div className="flex items-center gap-2 truncate">
                 <FileText className="h-3.5 w-3.5 shrink-0" />
@@ -376,10 +379,15 @@ export function DashboardCard({
           </div>
         )}
 
-        {(card.category === "new_order" || !resolved) && (
-          <div className="flex flex-col gap-2 pt-2 mt-auto">
+        {/* Единая нижняя группа (одна mt-auto на весь блок, а не на каждый
+            элемент по отдельности) — иначе несколько mt-auto-соседей делят
+            свободное место пополам и между ними появляется незапланированный
+            зазор вместо того, чтобы плотно прилипать к низу карточки. */}
+        <div className="mt-auto flex flex-col gap-2 pt-2">
+          {(card.category === "new_order" || !resolved) && (
+          <div className="flex flex-col gap-2">
             {card.category === "new_order" && (
-              <Button asChild size="sm">
+              <Button asChild size="sm" variant="outline">
                 {/* Hands the card off to /products, where the New Order dialog
                     opens prefilled with the linked client + the verbatim
                     client message (message.orderRequest). */}
@@ -399,7 +407,16 @@ export function DashboardCard({
               initialValues={taskInitialValues}
               onSuccess={handleAccept}
               trigger={
-                <Button size="sm" className="flex-1" disabled={isPending}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  // bg-secondary (dark: oklch 0.33) sits almost on top of the
+                  // card background (oklch 0.29) in dark theme — bumped to
+                  // the lighter --accent token in dark mode only so the
+                  // button stays readable without turning it red/primary.
+                  className="flex-1 dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent/80"
+                  disabled={isPending}
+                >
                   <Check className="h-4 w-4 mr-1" />
                   Принять
                 </Button>
@@ -452,7 +469,9 @@ export function DashboardCard({
             </div>
             )}
           </div>
-        )}
+          )}
+
+        </div>
       </CardContent>
     </Card>
   )
