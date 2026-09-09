@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/popover"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { GlobalSearch } from "@/components/blocks/global-search"
+import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { ProductDetailDialog } from "@/components/blocks/product-detail-dialog"
 import { OrdersTable } from "@/components/blocks/orders-table"
 import {
@@ -600,6 +602,18 @@ export default function ProductsPage() {
     })()
   }, [])
 
+  // Deep-link from the global search (/products?openOrder=<id>): open that
+  // order in the builder exactly like clicking "Open" on the Orders table
+  // row, then strip the param.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const orderId = params.get("openOrder")
+    if (!orderId) return
+    window.history.replaceState(null, "", window.location.pathname)
+    editOrder(orderId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Pre-narrow the catalog for one intent item. Discovery items apply their
   // structured filters; the item's bilingual `searchTerms` rank the catalog
   // (sent as the `terms` param in `load`) for both modes. We ALSO seed the
@@ -880,7 +894,13 @@ export default function ProductsPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
-      <h1 className="text-xl font-medium">Заказы & продукты</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-xl font-medium">Заказы & продукты</h1>
+        <div className="flex items-center gap-2">
+          <AiChatTrigger />
+          <GlobalSearch />
+        </div>
+      </div>
 
       <div className="w-full">
         <Tabs value={tab} onValueChange={setTab} className="w-full">

@@ -62,23 +62,30 @@ export function SourcesPageShell({
   // admin-only (per the user's call: hide it from owners).
   const showStored = isAdmin || isOrgOwner
   const showStats = isAdmin
+  // A plain member sees only "Источники организации" — a tab bar with a
+  // single tab is chrome with nothing to switch between, so hide it and let
+  // that tab's content stand alone. Admin/owner still see the real tab set.
+  const tabCount = 1 + Number(showStored) + Number(showStats) + Number(isOrgOwner)
+  const showTabs = tabCount > 1
 
   return (
     <Tabs defaultValue="org" className="space-y-6">
-      <TabsList>
-        <TabsTrigger value="org">Источники организации</TabsTrigger>
-        {showStored && (
-          <TabsTrigger value="stored">Сохранённые материалы</TabsTrigger>
-        )}
-        {showStats && (
-          <TabsTrigger value="stats">Статистика обработки</TabsTrigger>
-        )}
-        {isOrgOwner && (
-          <TabsTrigger value="manage">
-            Управление источниками организации
-          </TabsTrigger>
-        )}
-      </TabsList>
+      {showTabs && (
+        <TabsList>
+          <TabsTrigger value="org">Источники организации</TabsTrigger>
+          {showStored && (
+            <TabsTrigger value="stored">Сохранённые материалы</TabsTrigger>
+          )}
+          {showStats && (
+            <TabsTrigger value="stats">Статистика обработки</TabsTrigger>
+          )}
+          {isOrgOwner && (
+            <TabsTrigger value="manage">
+              Управление источниками организации
+            </TabsTrigger>
+          )}
+        </TabsList>
+      )}
 
       <TabsContent value="org" className="space-y-6">
         {hasActiveOrg ? (

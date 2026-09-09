@@ -12,7 +12,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "@/db/schema"
-import { aliasedTable, and, eq, desc, inArray } from "drizzle-orm"
+import { aliasedTable, and, eq, desc, inArray, isNotNull } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
 
@@ -386,4 +386,47 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   const { activeOrgId } = await requireOrgContext()
   await assertTaskInOrg(taskId, activeOrgId)
   await db.update(task).set({ status }).where(eq(task.id, taskId))
+}
+
+export type ClientTaskSummary = {
+  openCount: number
+  overdueCount: number
+  nextDueDate: string | null
+}
+
+// One-shot batched aggregate used by the "Компании" feed (criticality sort +
+// the client card's "N задач · M просрочено" plate) instead of a query per
+// card. `done`/`closed` tasks don't count as open work.
+export async function listTaskSummaryByClient(): Promise<
+  Record<string, ClientTaskSummary>
+> {
+  const { activeOrgId } = await requireOrgContext()
+  const rows = await db
+    .select({
+      clientId: task.clientId,
+      status: task.status,
+      dueDate: task.dueDate,
+    })
+    .from(task)
+    .where(and(eq(task.organizationId, activeOrgId), isNotNull(task.clientId)))
+
+  const now = Date.now()
+  const summary: Record<string, ClientTaskSummary> = {}
+  for (const row of rows) {
+    if (!row.clientId || row.status === "done" || row.status === "closed") {
+      continue
+    }
+    const entry = (summary[row.clientId] ??= {
+      openCount: 0,
+      overdueCount: 0,
+      nextDueDate: null,
+    })
+    entry.openCount += 1
+    const dueMs = row.dueDate.getTime()
+    if (dueMs < now) entry.overdueCount += 1
+    if (!entry.nextDueDate || dueMs < new Date(entry.nextDueDate).getTime()) {
+      entry.nextDueDate = row.dueDate.toISOString()
+    }
+  }
+  return summary
 }

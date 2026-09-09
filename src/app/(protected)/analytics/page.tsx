@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, RefreshCw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { GlobalSearch } from "@/components/blocks/global-search"
+import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { TabOverview } from "@/components/blocks/analytics/tab-overview"
 import { TabTime } from "@/components/blocks/analytics/tab-time"
 import { TabSellers } from "@/components/blocks/analytics/tab-sellers"
@@ -159,33 +161,9 @@ export default function AnalyticsPage() {
               : "Загрузка периода…"}
           </p>
         </div>
-
         <div className="flex items-center gap-2">
-          <Select
-            value={preset}
-            onValueChange={(v) => setPreset(v as PresetKey)}
-            disabled={!hasOrders}
-          >
-            <SelectTrigger size="sm" className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(PRESET_LABEL) as PresetKey[]).map((k) => (
-                <SelectItem key={k} value={k}>
-                  {PRESET_LABEL[k]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void load()}
-            disabled={loading || !range}
-            aria-label="Обновить"
-          >
-            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
-          </Button>
+          <AiChatTrigger />
+          <GlobalSearch />
         </div>
       </div>
 
@@ -212,18 +190,47 @@ export default function AnalyticsPage() {
         <AnalyticsSkeleton />
       ) : data ? (
         <Tabs defaultValue="overview" className="gap-4">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="overview">Обзор</TabsTrigger>
-            <TabsTrigger value="time">Время</TabsTrigger>
-            <TabsTrigger value="sellers">Продавцы</TabsTrigger>
-            <TabsTrigger value="clients">Клиенты</TabsTrigger>
-            <TabsTrigger value="orders">Заказы</TabsTrigger>
-            <TabsTrigger value="products">Товары</TabsTrigger>
-            <TabsTrigger value="assistant">
-              <Sparkles className="size-3.5" />
-              ИИ ассистент
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <TabsList className="flex-wrap">
+              <TabsTrigger value="overview">Обзор</TabsTrigger>
+              <TabsTrigger value="time">Время</TabsTrigger>
+              <TabsTrigger value="sellers">Продавцы</TabsTrigger>
+              <TabsTrigger value="clients">Клиенты</TabsTrigger>
+              <TabsTrigger value="orders">Заказы</TabsTrigger>
+              <TabsTrigger value="products">Товары</TabsTrigger>
+              <TabsTrigger value="assistant">
+                <Sparkles className="size-3.5" />
+                ИИ ассистент
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex items-center gap-2">
+              <Select
+                value={preset}
+                onValueChange={(v) => setPreset(v as PresetKey)}
+                disabled={!hasOrders}
+              >
+                <SelectTrigger size="sm" className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(PRESET_LABEL) as PresetKey[]).map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {PRESET_LABEL[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void load()}
+                disabled={loading || !range}
+                aria-label="Обновить"
+              >
+                <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
+              </Button>
+            </div>
+          </div>
 
           {/* Charts measure their container, so each panel stays mounted only
               while selected — a hidden panel has zero width and would render a

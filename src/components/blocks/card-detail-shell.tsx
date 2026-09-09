@@ -74,11 +74,11 @@ const PRIORITY_COLOR: Record<CardPriority, string> = {
   high: "bg-amber-500/20 text-amber-700 dark:text-amber-300",
 }
 
-const PRIORITY_GRADIENT: Record<CardPriority, string> = {
-  normal:
-    "bg-linear-to-b from-slate-200 via-slate-100/60 to-card dark:from-slate-500/50 dark:via-slate-800/30 dark:to-card",
-  high: "bg-linear-to-b from-amber-100 via-amber-100/70 to-card dark:from-amber-600/40 dark:via-amber-900/30 dark:to-card",
-}
+// Flat surface, matching dashboard-card.tsx / the Deals kanban card — see
+// its comment for why the old full-card gradient wash was replaced. Priority
+// lives only in the PRIORITY_COLOR badge below.
+const CARD_SURFACE =
+  "bg-card border-muted dark:bg-[#FDF0D5]/[0.045] dark:border-[#FDF0D5]/10"
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -179,7 +179,7 @@ export function CardDetailShell({ card }: { card: CardRow }) {
         </div>
       </div>
 
-      <Card className={cn("dark:border-gray-600", PRIORITY_GRADIENT[card.priority])}>
+      <Card className={cn("dark:border-gray-600", CARD_SURFACE)}>
         <CardHeader>
           <CardTitle className="text-2xl">
             {CATEGORY_LABEL[card.category]}

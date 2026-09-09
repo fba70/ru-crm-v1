@@ -31,6 +31,30 @@ export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
   internet_shop: "Internet shop",
 }
 
+/**
+ * Manual company-relationship tag — distinguishes a company with no deal
+ * history (a supplier we buy from vs. a partner we collaborate with) since
+ * deal state alone can't tell them apart. Available to ALL orgs (unlike
+ * `type`). See the "Компании" page's tabs (`src/server/clients.ts` →
+ * `listClientsFeed`).
+ */
+export const COMPANY_KIND_VALUES = ["supplier", "partner"] as const
+
+export type CompanyKind = (typeof COMPANY_KIND_VALUES)[number]
+
+export const COMPANY_KIND_LABELS: Record<CompanyKind, string> = {
+  supplier: "Поставщик",
+  partner: "Партнёр",
+}
+
+/** Narrowing guard for an arbitrary value against `CompanyKind`. */
+export function isCompanyKind(value: unknown): value is CompanyKind {
+  return (
+    typeof value === "string" &&
+    (COMPANY_KIND_VALUES as readonly string[]).includes(value)
+  )
+}
+
 /** Extensible per-client custom-fields bag stored as jsonb. */
 export type ClientCustomFields = {
   type?: ClientType
@@ -41,6 +65,8 @@ export type ClientCustomFields = {
    * `type`).
    */
   discount?: number
+  /** See `CompanyKind` above. Unset = auto-classified from deal state instead. */
+  companyKind?: CompanyKind
 } & Record<string, unknown>
 
 /** Upper bound for the client discount percentage. */

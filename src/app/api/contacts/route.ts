@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
   listContacts,
+  listContactsPaged,
   getContact,
   createContact,
   updateContact,
   listClientOptions,
 } from "@/server/contacts"
+import type { EntityStatus } from "@/db/schema"
 
 export { type ContactRow, type ClientOption } from "@/server/contacts"
 
@@ -32,6 +34,24 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Contact not found" }, { status: 404 })
       }
       return NextResponse.json({ contact })
+    }
+    // Standalone «Контакты» page: server-paginated, alphabetical listing.
+    const hasFeedParams = ["q", "status", "clientId", "limit", "offset"].some(
+      (k) => searchParams.has(k),
+    )
+    if (hasFeedParams) {
+      const result = await listContactsPaged({
+        q: searchParams.get("q") ?? undefined,
+        status: (searchParams.get("status") as EntityStatus | "all" | null) ?? undefined,
+        clientId: searchParams.get("clientId") ?? undefined,
+        limit: searchParams.get("limit")
+          ? Number(searchParams.get("limit"))
+          : undefined,
+        offset: searchParams.get("offset")
+          ? Number(searchParams.get("offset"))
+          : undefined,
+      })
+      return NextResponse.json(result)
     }
     const contacts = await listContacts()
     return NextResponse.json({ contacts })

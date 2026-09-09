@@ -9,6 +9,7 @@ import {
   PencilRuler,
   Database,
   Users,
+  Contact,
   ListChecks,
   Package,
   SquareKanban,
@@ -49,6 +50,11 @@ export const items = [
     title: "Компании",
     url: "/clients",
     icon: Users,
+  },
+  {
+    title: "Контакты",
+    url: "/contacts",
+    icon: Contact,
   },
   {
     title: "Сделки",
