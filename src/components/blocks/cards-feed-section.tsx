@@ -139,6 +139,8 @@ export function CardsFeedSection({
   // The default date range is the last day; any deviation counts as a filter.
   const isDefaultDateRange =
     from === isoDateNDaysAgo(1) && to === todayIso()
+  const isWeekRange = from === isoDateNDaysAgo(7) && to === todayIso()
+  const isAllTimeRange = from === "" && to === ""
 
   const hasFilters =
     priority !== ALL ||
@@ -194,9 +196,10 @@ export function CardsFeedSection({
           <div className="flex items-center gap-1">
             <Button
               type="button"
-              variant="outline"
+              variant={isDefaultDateRange ? "default" : "outline"}
               size="sm"
               className="h-8"
+              aria-pressed={isDefaultDateRange}
               onClick={() => {
                 setFrom(isoDateNDaysAgo(1))
                 setTo(todayIso())
@@ -206,9 +209,10 @@ export function CardsFeedSection({
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant={isWeekRange ? "default" : "outline"}
               size="sm"
               className="h-8"
+              aria-pressed={isWeekRange}
               onClick={() => {
                 setFrom(isoDateNDaysAgo(7))
                 setTo(todayIso())
@@ -218,9 +222,10 @@ export function CardsFeedSection({
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant={isAllTimeRange ? "default" : "outline"}
               size="sm"
               className="h-8"
+              aria-pressed={isAllTimeRange}
               onClick={() => {
                 setFrom("")
                 setTo("")
@@ -246,15 +251,12 @@ export function CardsFeedSection({
             <span className="text-xs text-muted-foreground">
               {visible.length} из {filtered.length} карточек
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearFilters}
-              disabled={!hasFilters}
-            >
-              <X className="h-4 w-4 mr-1" />
-              Сбросить фильтры
-            </Button>
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="h-4 w-4 mr-1" />
+                Сбросить фильтры
+              </Button>
+            )}
           </div>
         </div>
       </CardHeader>

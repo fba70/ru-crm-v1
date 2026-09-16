@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -90,42 +90,69 @@ const CARD_SURFACE =
   "bg-[#FDF0D5]/[0.05] border-muted shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-[#FDF0D5]/[0.09] dark:bg-[#FDF0D5]/[0.045] dark:hover:bg-[#FDF0D5]/[0.08]"
 
 // A message field (Analysis / Recommendation) shown clamped to 3 lines on
-// the card, with the FULL text revealed in a hover-card on hover, keyboard
-// focus, or click — so long messages are readable without opening the card
-// details page. The content is portaled, so it escapes the card's fixed
-// height + overflow-hidden.
+// the card. The FULL text is only revealed via hover-card/click when it's
+// actually clipped by the clamp — a short message that already fits in 3
+// lines got the exact same hover popup showing the exact same text, which
+// just read as a pointless duplicate tooltip. Truncation is detected by
+// comparing the clamped element's scrollHeight (full content) against its
+// clientHeight (clamped box) — the standard line-clamp overflow check.
 function MessageField({ label, text }: { label: string; text: string }) {
   const [open, setOpen] = useState(false)
+  const [truncated, setTruncated] = useState(false)
+  const ref = useRef<HTMLParagraphElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setTruncated(el.scrollHeight - el.clientHeight > 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text])
+
+  const paragraph = (
+    <p
+      ref={ref}
+      tabIndex={truncated ? 0 : undefined}
+      onClick={truncated ? () => setOpen((o) => !o) : undefined}
+      className={cn(
+        "leading-relaxed line-clamp-3 whitespace-pre-wrap rounded -mx-1 px-1 transition-colors outline-hidden",
+        truncated && "cursor-pointer hover:bg-muted/40 focus:bg-muted/40",
+      )}
+    >
+      {text}
+    </p>
+  )
+
   return (
     <div>
       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
         {label}
       </div>
-      <HoverCard
-        open={open}
-        onOpenChange={setOpen}
-        openDelay={150}
-        closeDelay={100}
-      >
-        <HoverCardTrigger asChild>
-          <p
-            tabIndex={0}
-            onClick={() => setOpen((o) => !o)}
-            className="leading-relaxed line-clamp-3 whitespace-pre-wrap cursor-pointer rounded -mx-1 px-1 transition-colors hover:bg-muted/40 focus:bg-muted/40 outline-hidden"
-          >
-            {text}
-          </p>
-        </HoverCardTrigger>
-        <HoverCardContent
-          align="start"
-          className="w-96 max-h-80 overflow-y-auto"
+      {truncated ? (
+        <HoverCard
+          open={open}
+          onOpenChange={setOpen}
+          openDelay={150}
+          closeDelay={100}
         >
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-            {label}
-          </div>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
-        </HoverCardContent>
-      </HoverCard>
+          <HoverCardTrigger asChild>{paragraph}</HoverCardTrigger>
+          <HoverCardContent
+            align="start"
+            className="w-96 max-h-80 overflow-y-auto"
+          >
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+              {label}
+            </div>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+              {text}
+            </p>
+          </HoverCardContent>
+        </HoverCard>
+      ) : (
+        paragraph
+      )}
     </div>
   )
 }
