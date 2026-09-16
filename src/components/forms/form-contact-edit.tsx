@@ -28,6 +28,7 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { toast } from "sonner"
+import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 import type { ContactRow, ClientOption } from "@/app/api/contacts/route"
 import type { EntityStatus } from "@/db/schema"
 
@@ -80,6 +81,10 @@ type Props = {
   // usual uncontrolled click-to-open behaviour.
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  // When true (owner) and editing, shows the "add to blocklist" action in
+  // the footer — lives here (with editing) rather than as a standalone icon
+  // on the contact card, see refs/blocklist.md.
+  canBlock?: boolean
 }
 
 export function ContactEditForm({
@@ -88,12 +93,14 @@ export function ContactEditForm({
   defaultClientId,
   onSuccess,
   onCancel,
+  canBlock = false,
 }: {
   mode: "create" | "edit"
   contact?: ContactRow
   defaultClientId?: string
   onSuccess?: (createdId?: string) => void
   onCancel?: () => void
+  canBlock?: boolean
 }) {
   const [isPending, startTransition] = useTransition()
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
@@ -334,17 +341,30 @@ export function ContactEditForm({
           />
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onCancel?.()}
-          >
-            Отмена
-          </Button>
-          <LoadingButton type="submit" loading={isPending}>
-            {mode === "create" ? "Создать" : "Сохранить"}
-          </LoadingButton>
+        <div className="flex items-center justify-between gap-2 pt-2">
+          {mode === "edit" && contact && canBlock && contact.status !== "blocked" ? (
+            <BlacklistEntityButton
+              entityType="contact"
+              id={contact.id}
+              name={contact.nameNative || contact.name}
+              label="Добавить в список блокировки"
+              onBlocked={() => onSuccess?.()}
+            />
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onCancel?.()}
+            >
+              Отмена
+            </Button>
+            <LoadingButton type="submit" loading={isPending}>
+              {mode === "create" ? "Создать" : "Сохранить"}
+            </LoadingButton>
+          </div>
         </div>
       </form>
     </Form>
@@ -359,6 +379,7 @@ export default function ContactEditDialog({
   defaultClientId,
   open: controlledOpen,
   onOpenChange: setControlledOpen,
+  canBlock = false,
 }: Props) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen ?? internalOpen
@@ -380,6 +401,7 @@ export default function ContactEditDialog({
           mode={mode}
           contact={contact}
           defaultClientId={defaultClientId}
+          canBlock={canBlock}
           onSuccess={(id) => {
             onSuccess?.(id)
             setOpen(false)

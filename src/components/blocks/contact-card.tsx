@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Mail, Phone, Briefcase, Building2, Pencil } from "lucide-react"
 import type { ContactRow } from "@/app/api/contacts/route"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
-import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 
 // `initial` is the auto-discovered state — accent for review attention.
 // `suspended` stays muted (archived). `deleted` is the soft-delete (excluded
@@ -37,7 +36,9 @@ export function ContactCard({
 }: {
   contact: ContactRow
   onChanged: () => void
-  // When true (owner), show the "add to blocklist" action.
+  // Forwarded to the edit dialog (owner-only "add to blocklist" action —
+  // lives inside editing now, not as a standalone icon on the card, see
+  // refs/blocklist.md).
   canBlock?: boolean
 }) {
   return (
@@ -79,20 +80,13 @@ export function ContactCard({
             mode="edit"
             contact={contact}
             onSuccess={onChanged}
+            canBlock={canBlock}
             trigger={
               <Button variant="ghost" size="icon" aria-label="Редактировать контакт">
                 <Pencil className="h-4 w-4" />
               </Button>
             }
           />
-          {canBlock && contact.status !== "blocked" && (
-            <BlacklistEntityButton
-              entityType="contact"
-              id={contact.id}
-              name={contact.nameNative || contact.name}
-              onBlocked={onChanged}
-            />
-          )}
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col space-y-1 text-sm text-muted-foreground">

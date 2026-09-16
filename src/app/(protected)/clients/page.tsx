@@ -305,7 +305,6 @@ export default function ClientsPage() {
                     key={c.id}
                     client={c}
                     onChanged={refreshAll}
-                    canBlock={canBlock}
                     revenue={revenueByClient[c.id]}
                     activeDeal={activeDealByClient[c.id]}
                     tasks={tasksByClient[c.id] ?? []}
@@ -336,6 +335,7 @@ export default function ClientsPage() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         onChanged={refreshAll}
+        canBlock={canBlock}
       />
     </div>
   )

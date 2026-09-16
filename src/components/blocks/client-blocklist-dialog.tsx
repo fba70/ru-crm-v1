@@ -258,16 +258,25 @@ export function ClientBlocklistDialog({
 
 // Reusable per-entity block action — a Ban-icon button + confirm. Blocks the
 // row's company/domain (client) or email/person (contact) and hides the row.
+// Icon-only by default; pass `label` to render a text button instead — used
+// where this action lives inside an edit surface (drawer / edit dialog)
+// rather than as a standalone icon on the list card (see refs/blocklist.md:
+// the icon-only placement next to other row actions read as "the" primary
+// action and got clicked by accident, so it moved into editing instead).
 export function BlacklistEntityButton({
   entityType,
   id,
   name,
   onBlocked,
+  label,
+  className,
 }: {
   entityType: "client" | "contact"
   id: string
   name: string
   onBlocked: () => void
+  label?: string
+  className?: string
 }) {
   const [busy, setBusy] = useState(false)
 
@@ -296,14 +305,30 @@ export function BlacklistEntityButton({
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Добавить в список блокировки"
-          title="Добавить в список блокировки"
-        >
-          <Ban className="h-4 w-4" />
-        </Button>
+        {label ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={
+              className ??
+              "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            }
+          >
+            <Ban className="h-3.5 w-3.5 mr-1.5" />
+            {label}
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Добавить в список блокировки"
+            title="Добавить в список блокировки"
+            className={className}
+          >
+            <Ban className="h-4 w-4" />
+          </Button>
+        )}
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>

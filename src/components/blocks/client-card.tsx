@@ -24,7 +24,6 @@ import type { ClientRow, ClientRevenueSummary } from "@/app/api/clients/route"
 import type { DealRow } from "@/app/api/deals/route"
 import type { TaskRow } from "@/app/api/tasks/route"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
-import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 import { formatAmount, formatCompactNumber, CURRENCY_SYMBOL } from "@/lib/deal-board"
 import { dealStageLabel } from "@/lib/deal-funnel"
 import {
@@ -141,7 +140,6 @@ export function AccountSummary({
 export function ClientCard({
   client,
   onChanged,
-  canBlock = false,
   revenue,
   activeDeal,
   tasks = [],
@@ -150,8 +148,6 @@ export function ClientCard({
 }: {
   client: ClientRow
   onChanged: () => void
-  // When true (owner), show the "add to blocklist" action.
-  canBlock?: boolean
   revenue?: ClientRevenueSummary
   activeDeal?: DealRow
   // Задачи компании (любой статус, createdAt desc) — плашка листает их по
@@ -234,14 +230,6 @@ export function ClientCard({
               </Button>
             }
           />
-          {canBlock && client.status !== "blocked" && (
-            <BlacklistEntityButton
-              entityType="client"
-              id={client.id}
-              name={client.name}
-              onBlocked={onChanged}
-            />
-          )}
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col space-y-3 text-sm">

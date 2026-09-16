@@ -56,6 +56,7 @@ import {
 import TaskEditDialog from "@/components/forms/form-task-edit"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
+import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 import { ClientContentTable } from "@/components/blocks/client-content-table"
 import type { TaskStatus, EntityStatus, FunnelPhase } from "@/db/schema"
 import type { ClientRow } from "@/app/api/clients/route"
@@ -226,11 +227,16 @@ export function ClientDetailDrawer({
   open,
   onOpenChange,
   onChanged,
+  canBlock = false,
 }: {
   client: ClientRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onChanged: () => void
+  // When true (owner), shows the "add to blocklist" action in the form
+  // footer — lives here (with editing), not as a standalone icon on the
+  // list card, see refs/blocklist.md.
+  canBlock?: boolean
 }) {
   const { data: session } = authClient.useSession()
   const currentUserId = session?.user.id
@@ -744,7 +750,21 @@ export function ClientDetailDrawer({
                 />
               </div>
 
-              <div className="flex items-center justify-end">
+              <div className="flex items-center justify-between gap-2">
+                {canBlock && client.status !== "blocked" ? (
+                  <BlacklistEntityButton
+                    entityType="client"
+                    id={client.id}
+                    name={client.name}
+                    label="Добавить в список блокировки"
+                    onBlocked={() => {
+                      onChanged()
+                      onOpenChange(false)
+                    }}
+                  />
+                ) : (
+                  <span />
+                )}
                 <Button
                   type="submit"
                   disabled={isPending || !editForm.formState.isDirty}
