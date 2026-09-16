@@ -3,8 +3,8 @@
   "version": "0.2.0",
   "private": false,
   "scripts": {
-    "dev": "NODE_OPTIONS=--max-old-space-size=8192 next dev",
-    "build": "NODE_OPTIONS=--max-old-space-size=8192 next build",
+    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev",
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next build",
     "start": "next start",
     "lint": "eslint"
   },
@@ -108,6 +108,7 @@
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.2",
