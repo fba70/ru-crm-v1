@@ -26,6 +26,9 @@
 
 # misc
 .DS_Store
+# AppleDouble files (macOS writes these alongside a file when copied to a
+# filesystem that can't hold its extended metadata — no content of their own)
+._*
 *.pem
 
 # debug
