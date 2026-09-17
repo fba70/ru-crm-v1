@@ -164,8 +164,19 @@ export function DealKanbanCard({
   // cards sit directly on the atmospheric page background (no bg-card
   // wrapper around the columns) — border-muted (oklch 0.955) is nearly
   // indistinguishable from that background (oklch 0.98) in light theme.
+  // Light theme uses a solid `bg-card` (pure white, oklch 1) instead of the
+  // translucent cream tint Companies/Dashboard use — those sit ON TOP of an
+  // already-white `bg-card` wrapper, so a tint reads as a card; here, with
+  // no such wrapper, a tint over the atmospheric background just looked
+  // washed-out rather than like a real card. Stays white on hover too
+  // (hover:bg-card, not hover:bg-muted) — only the shadow signals hover in
+  // light theme. Dark theme also uses solid `bg-card` (oklch 0.2938 — same
+  // token the toolbar/column-header panels already sit on) instead of the
+  // cream tint, for the same "real card" reasoning; `dark:hover:bg-secondary`
+  // (oklch 0.3314) is the next step up in the palette, a modest "slightly
+  // lighter" rather than the bigger jump `accent` would be.
   const normalSurface =
-    "bg-[#FDF0D5]/[0.05] border-border shadow-sm hover:shadow-lg hover:bg-[#FDF0D5]/[0.09] dark:bg-[#FDF0D5]/[0.045] dark:hover:bg-[#FDF0D5]/[0.08]"
+    "bg-card border-border shadow-sm hover:shadow-lg hover:bg-card dark:hover:bg-secondary"
   const surfaceClass = isGraphite ? `${normalSurface} opacity-55` : normalSurface
 
   return (

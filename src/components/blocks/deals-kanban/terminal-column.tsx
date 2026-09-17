@@ -155,7 +155,10 @@ export function TerminalColumn({
     <div className="min-w-44 flex-1 min-h-0 flex flex-col gap-2">
       {/* @container — слово «сделок» ниже скрывается по ширине ИМЕННО этой
           шапки (не вьюпорта), см. column.tsx. */}
-      <div className={`@container shrink-0 rounded-lg border p-2.5 ${DIAMOND_HEADER}`}>
+      {/* mx-1 matches the cards zone below's internal px-1 (added for the
+          hover-shadow clip fix) so the header's edges line up with the
+          cards' edges instead of the header reading wider. */}
+      <div className={`@container shrink-0 rounded-lg border p-2.5 mx-1 ${DIAMOND_HEADER}`}>
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             {/* Заголовок как у обычных колонок: название + процент закрытия.
@@ -275,7 +278,10 @@ export function TerminalColumn({
         return (
           <div
             ref={setNodeRef}
-            className={`flex flex-col gap-2 min-h-24 flex-1 overflow-y-auto scrollbar-none rounded-lg transition-colors ${
+            // px-1: see the same comment in column.tsx — overflow-y-auto
+            // alone also clips overflow-x (CSS overflow spec quirk), which
+            // hard-clipped a card's hover shadow at the column's edge.
+            className={`flex flex-col gap-2 min-h-24 flex-1 overflow-y-auto scrollbar-none rounded-lg px-1 transition-colors ${
               isOver ? "outline outline-2 outline-dashed outline-primary" : ""
             }`}
           >

@@ -16,6 +16,7 @@ import {
   type Announcements,
   type CollisionDetection,
 } from "@dnd-kit/core"
+import { snapCenterToCursor } from "@dnd-kit/modifiers"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -857,7 +858,12 @@ export function DealsBoard({
             // заголовок фиксирован, overflow-y на зоне карточек). Контейнер
             // даёт только горизонтальный скролл; колонки растянуты по высоте
             // (без items-start), чтобы зона скролла была во весь экран.
-            className="flex-1 min-h-0 flex gap-2 overflow-x-auto scrollbar-none px-4 pb-4"
+            // gap-0 (не gap-2): column.tsx/terminal-column.tsx уже вставляют
+            // px-1/mx-1 (4px) с каждой стороны колонки (запас под тень
+            // карточки при overflow-y-auto), так что соседние колонки САМИ
+            // дают 4+4=8px между карточками без доп. gap — ровно как
+            // вертикальный gap-2 между карточками внутри одной колонки.
+            className="flex-1 min-h-0 flex gap-0 overflow-x-auto scrollbar-none px-4 pb-4"
           >
             {store.columns.map((column) => {
               return store.collapsed[column.stage.id] ? (
@@ -919,7 +925,15 @@ export function DealsBoard({
             )}
           </div>
 
-          <DragOverlay>
+          {/* snapCenterToCursor: <DealKanbanCardOverlay> is a compact preview
+              (title + amount only) while the real dragged card can be much
+              taller (tasks, badges, insight chips) — dnd-kit's default
+              DragOverlay positioning preserves the exact pointer offset from
+              the ORIGINAL (tall) card's top-left, so grabbing near the
+              bottom of a tall card made the small overlay render far above
+              the cursor. Centering the overlay on the cursor instead makes
+              its position independent of where on the card you grabbed. */}
+          <DragOverlay modifiers={[snapCenterToCursor]}>
             {activeDeal ? <DealKanbanCardOverlay deal={activeDeal} /> : null}
           </DragOverlay>
         </DndContext>

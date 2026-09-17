@@ -82,7 +82,10 @@ export function Column({
       {/* @container — слово «сделок» ниже скрывается по ширине ИМЕННО этой
           шапки (не вьюпорта): при 8 колонках на 1440px и при 4 на широком
           экране один и тот же вьюпорт даёт разную ширину колонки. */}
-      <div className={`@container shrink-0 rounded-lg border p-2.5 ${colorClass}`}>
+      {/* mx-1 matches the cards zone below's internal px-1 (added for the
+          hover-shadow clip fix) so the header's edges line up with the
+          cards' edges instead of the header reading wider. */}
+      <div className={`@container shrink-0 rounded-lg border p-2.5 mx-1 ${colorClass}`}>
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex items-baseline gap-2 text-sm font-medium">
@@ -199,7 +202,12 @@ export function Column({
       </div>
       <div
         ref={setNodeRef}
-        className={`flex flex-col gap-2 min-h-24 flex-1 overflow-y-auto scrollbar-none rounded-lg transition-colors ${
+        // px-1: setting only overflow-y clips overflow-x too (a CSS overflow
+        // spec quirk — "visible" on one axis while the other isn't visible
+        // computes to "auto"), so a card's hover shadow got a hard-clipped
+        // edge right at the column's own bounds. The padding gives the
+        // shadow's blur room to fade out before it hits that clip line.
+        className={`flex flex-col gap-2 min-h-24 flex-1 overflow-y-auto scrollbar-none rounded-lg px-1 transition-colors ${
           isOver ? "outline outline-2 outline-dashed outline-primary" : ""
         }`}
       >
