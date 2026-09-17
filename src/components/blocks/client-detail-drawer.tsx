@@ -3,18 +3,14 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { useRouter } from "next/navigation"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
+import { FollowCursorTooltip } from "@/components/blocks/follow-cursor-tooltip"
 import {
   Select,
   SelectContent,
@@ -251,6 +247,9 @@ export function ClientDetailDrawer({
   const [editingContact, setEditingContact] = useState<ContactRow | null>(null)
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  // Drives the FollowCursorTooltip's `disabled` on the name field — the tip
+  // is suppressed while the field is actually focused/being edited.
+  const [nameFieldFocused, setNameFieldFocused] = useState(false)
 
   const clientId = client?.id
   const showTypeField = orgHasStructuredClientType(client?.organizationId)
@@ -398,6 +397,10 @@ export function ClientDetailDrawer({
       <SheetContent
         className="w-full flex flex-col gap-0 p-0"
         style={{ width: `${width}px`, maxWidth: "none" }}
+        // Иначе Radix при открытии автофокусит первое поле формы — им
+        // оказывается название (первый инпут в дровере), и оно подсвечивается
+        // рамкой фокуса сразу при открытии, что выглядит как случайный клик.
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         {/* Ресайзер: тонкая полоса на левом краю, драг двигает край панели. */}
         <div
@@ -407,19 +410,27 @@ export function ClientDetailDrawer({
           aria-label="Изменить ширину панели"
           className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize touch-none hover:bg-[#669BBC]/40"
         />
-        <SheetHeader className="p-4 pb-3 border-b space-y-3">
-          {/* Карточка подробностей = форма редактирования, по образцу
-              deal-detail-drawer.tsx: все поля сразу редактируемые,
-              «Сохранить» пишет через PUT /api/clients. Карандаш с карточки
-              списка убран — клик по карточке и открывает этот же дровер. */}
-          <Form {...editForm}>
-            <form
-              onSubmit={editForm.handleSubmit((data) => onSave(data))}
-              className="space-y-3"
-            >
+        {/* Карточка подробностей = форма редактирования, по образцу
+            deal-detail-drawer.tsx: все поля сразу редактируемые, «Сохранить»
+            пишет через PUT /api/clients. Карандаш с карточки списка убран —
+            клик по карточке и открывает этот же дровер.
+            Дровер делится на фиксированную шапку (название + кнопки —
+            поиск в интернете, системный крестик закрытия) и единую
+            скроллящуюся область (все остальные поля формы + вкладки ниже) —
+            один общий скролл вместо отдельного на каждой вкладке. */}
+        <Form {...editForm}>
+          <form
+            onSubmit={editForm.handleSubmit((data) => onSave(data))}
+            className="flex flex-1 min-h-0 flex-col"
+          >
+            <div className="p-4 pb-3 border-b shrink-0">
               <SheetTitle className="sr-only">{client.name}</SheetTitle>
               <div className="flex items-start gap-2 pr-8">
-                <div className="min-w-0 flex-1">
+                <FollowCursorTooltip
+                  text="Клик для редактирования"
+                  disabled={nameFieldFocused}
+                  className="min-w-0 flex-1"
+                >
                   <FormField
                     control={editForm.control}
                     name="name"
@@ -429,6 +440,11 @@ export function ClientDetailDrawer({
                         <FormControl>
                           <Input
                             {...field}
+                            onFocus={() => setNameFieldFocused(true)}
+                            onBlur={() => {
+                              field.onBlur()
+                              setNameFieldFocused(false)
+                            }}
                             className="text-base font-semibold border-none px-0 shadow-none focus-visible:ring-0 dark:bg-transparent selection:bg-muted-foreground/30 selection:text-inherit"
                             placeholder="Название компании"
                           />
@@ -437,7 +453,7 @@ export function ClientDetailDrawer({
                       </FormItem>
                     )}
                   />
-                </div>
+                </FollowCursorTooltip>
                 <ClientLookupDialog
                   client={client}
                   onSaved={onChanged}
@@ -454,7 +470,10 @@ export function ClientDetailDrawer({
                   }
                 />
               </div>
+            </div>
 
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+            <div className="space-y-3 pt-3">
               {client.userName && (
                 <div className="text-sm text-muted-foreground">
                   Создал: {client.userName}
@@ -773,12 +792,9 @@ export function ClientDetailDrawer({
                   Сохранить
                 </Button>
               </div>
-            </form>
-          </Form>
-        </SheetHeader>
+            </div>
 
-        <div className="flex flex-1 min-h-0 flex-col px-4">
-          <Tabs defaultValue="tasks" className="flex-1 min-h-0 flex flex-col">
+          <Tabs defaultValue="tasks" className="mt-1">
             <TabsList
               variant="line"
               className="mt-3 w-full justify-between border-b"
@@ -804,10 +820,7 @@ export function ClientDetailDrawer({
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent
-              value="tasks"
-              className="flex-1 min-h-0 overflow-y-auto py-4 space-y-2 text-sm"
-            >
+            <TabsContent value="tasks" className="py-4 space-y-2 text-sm">
               <TaskEditDialog
                 mode="create"
                 initialValues={{ clientId: client.id }}
@@ -907,10 +920,7 @@ export function ClientDetailDrawer({
               )}
             </TabsContent>
 
-            <TabsContent
-              value="contacts"
-              className="flex-1 min-h-0 overflow-y-auto py-4 space-y-2 text-sm"
-            >
+            <TabsContent value="contacts" className="py-4 space-y-2 text-sm">
               <ContactEditDialog
                 mode="create"
                 defaultClientId={client.id}
@@ -956,14 +966,13 @@ export function ClientDetailDrawer({
               )}
             </TabsContent>
 
-            <TabsContent
-              value="content"
-              className="flex-1 min-h-0 overflow-y-auto py-4 text-sm"
-            >
+            <TabsContent value="content" className="py-4 text-sm">
               <ClientContentTable clientId={client.id} sources={sources} />
             </TabsContent>
           </Tabs>
-        </div>
+            </div>
+          </form>
+        </Form>
       </SheetContent>
 
       {editingContact && (

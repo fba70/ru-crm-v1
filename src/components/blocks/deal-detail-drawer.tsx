@@ -9,18 +9,14 @@ import {
 } from "react"
 import { useForm } from "react-hook-form"
 import { useRouter } from "next/navigation"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
+import { FollowCursorTooltip } from "@/components/blocks/follow-cursor-tooltip"
 import {
   Select,
   SelectContent,
@@ -192,6 +188,9 @@ export function DealDetailDrawer({
   // Попытка закрыть дровер (крестик/Esc/клик вовне) при несохранённой правке —
   // вместо тихого закрытия спрашиваем, что делать с изменениями.
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false)
+  // Drives the FollowCursorTooltip's `disabled` on the name field — the tip
+  // is suppressed while the field is actually focused/being edited.
+  const [nameFieldFocused, setNameFieldFocused] = useState(false)
 
   const dealId = deal?.id
   // Загрузка задач сделки, вынесена для повторного вызова после создания
@@ -407,24 +406,38 @@ export function DealDetailDrawer({
 
   return (
     <Sheet open={open} onOpenChange={handleSheetOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl flex flex-col gap-0 p-0">
-        <SheetHeader className="p-4 pb-3 border-b space-y-3">
-          {/* Карточка подробностей слита с формой редактирования — все поля
-              сразу в режиме правки, «Сохранить» пишет через PUT /api/deals.
-              Отдельной модалки-редактора для СУЩЕСТВУЮЩИХ сделок больше нет
-              (карандаш на карточке и клик по карточке одинаково открывают
-              этот дровер). funnelStageId сюда не входит — см. Select ниже. */}
-          <Form {...editForm}>
-            <form
-              onSubmit={editForm.handleSubmit((data) => onSaveDeal(data))}
-              className="space-y-3"
-            >
-              {/* Визуальный заголовок — само поле «Название», редактируемое.
-                  sr-only SheetTitle остаётся для доступности (Radix Dialog
-                  требует заголовок). pr-8, чтобы не залезать под крестик
-                  закрытия. */}
+      <SheetContent
+        className="w-full sm:max-w-xl flex flex-col gap-0 p-0"
+        // Иначе Radix при открытии автофокусит первое поле формы — им
+        // оказывается название (первый инпут в дровере), и оно подсвечивается
+        // рамкой фокуса сразу при открытии, что выглядит как случайный клик.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {/* Карточка подробностей слита с формой редактирования — все поля
+            сразу в режиме правки, «Сохранить» пишет через PUT /api/deals.
+            Отдельной модалки-редактора для СУЩЕСТВУЮЩИХ сделок больше нет
+            (карандаш на карточке и клик по карточке одинаково открывают этот
+            дровер). funnelStageId сюда не входит — см. Select ниже.
+            Дровер делится на фиксированную шапку (только название + системный
+            крестик закрытия) и единую скроллящуюся область (всё
+            остальное — поля формы, Состояние сделки, Этап, вкладки) — один
+            общий скролл вместо отдельного на каждой вкладке. */}
+        <Form {...editForm}>
+          <form
+            onSubmit={editForm.handleSubmit((data) => onSaveDeal(data))}
+            className="flex flex-1 min-h-0 flex-col"
+          >
+            {/* Визуальный заголовок — само поле «Название», редактируемое.
+                sr-only SheetTitle остаётся для доступности (Radix Dialog
+                требует заголовок). pr-8, чтобы не залезать под крестик
+                закрытия. */}
+            <div className="p-4 pb-3 border-b shrink-0">
               <SheetTitle className="sr-only">{deal.name}</SheetTitle>
-              <div className="pr-8">
+              <FollowCursorTooltip
+                text="Клик для редактирования"
+                disabled={nameFieldFocused}
+                className="pr-8"
+              >
                 <FormField
                   control={editForm.control}
                   name="name"
@@ -434,6 +447,11 @@ export function DealDetailDrawer({
                       <FormControl>
                         <Input
                           {...field}
+                          onFocus={() => setNameFieldFocused(true)}
+                          onBlur={() => {
+                            field.onBlur()
+                            setNameFieldFocused(false)
+                          }}
                           className="text-base font-semibold border-none px-0 shadow-none focus-visible:ring-0 dark:bg-transparent selection:bg-muted-foreground/30 selection:text-inherit"
                           placeholder="Название сделки"
                         />
@@ -442,8 +460,15 @@ export function DealDetailDrawer({
                     </FormItem>
                   )}
                 />
-              </div>
+              </FollowCursorTooltip>
+            </div>
 
+            {/* Единый горизонтальный отступ (px-4) для всего тела дровера —
+                вместо mx-4 на каждом отдельном блоке (карточки, табы), чтобы
+                ширина строки табов считалась от одного источника и не могла
+                разъехаться с остальным контентом. */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
+            <div className="space-y-3 pt-3">
               {(deal.userName || !!deal.contacts?.length) && (
                 <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
                   {deal.userName ? <span>Автор: {deal.userName}</span> : <span />}
@@ -587,15 +612,8 @@ export function DealDetailDrawer({
                   Сохранить
                 </Button>
               </div>
-            </form>
-          </Form>
-        </SheetHeader>
+            </div>
 
-        {/* Единый горизонтальный отступ (px-4) для всего тела дровера —
-            вместо mx-4 на каждом отдельном блоке (карточки, табы), чтобы
-            ширина строки табов считалась от одного источника и не могла
-            разъехаться с остальным контентом. */}
-        <div className="flex flex-1 min-h-0 flex-col px-4">
           {/* Состояние сделки (UX №13): суть происходящего и что важно сейчас —
               чтобы быстро вспомнить контекст без чтения всей истории. Пока
               собирается из reasoning/changes (МОК summary); реальный текст
@@ -664,7 +682,7 @@ export function DealDetailDrawer({
           </div>
         )}
 
-        <Tabs defaultValue="tasks" className="flex-1 min-h-0 flex flex-col">
+        <Tabs defaultValue="tasks">
           <TabsList
             variant="line"
             className="mt-3 w-full justify-between border-b"
@@ -688,10 +706,7 @@ export function DealDetailDrawer({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent
-            value="chronology"
-            className="flex-1 min-h-0 overflow-y-auto py-4 space-y-2 text-sm"
-          >
+          <TabsContent value="chronology" className="py-4 space-y-2 text-sm">
             {(() => {
               // Полная история — из deal_activity (журнал, пишется на каждое
               // создание/перевод, НИКОГДА не перезаписывается — в отличие от
@@ -754,17 +769,11 @@ export function DealDetailDrawer({
             })()}
           </TabsContent>
 
-          <TabsContent
-            value="contacts"
-            className="flex-1 min-h-0 overflow-y-auto py-4 text-sm"
-          >
+          <TabsContent value="contacts" className="py-4 text-sm">
             <DealContactsRoles dealId={deal.id} clientId={deal.clientId} />
           </TabsContent>
 
-          <TabsContent
-            value="tasks"
-            className="flex-1 min-h-0 overflow-y-auto py-4 space-y-2 text-sm"
-          >
+          <TabsContent value="tasks" className="py-4 space-y-2 text-sm">
             {/* Две кнопки: создать новую (dealId+клиент предзаполнены) и
                 связать существующую задачу клиента с этой сделкой. */}
             <div className="grid grid-cols-2 gap-2">
@@ -881,10 +890,7 @@ export function DealDetailDrawer({
               flex+overflow-y-auto над ним не клипал контент вкладки «Задачи»
               и она просвечивала сквозь блок снизу. Перенесено в обычный таб,
               чтобы не зависеть от независимого от скролла позиционирования. */}
-          <TabsContent
-            value="origin"
-            className="flex-1 min-h-0 overflow-y-auto py-4 text-sm"
-          >
+          <TabsContent value="origin" className="py-4 text-sm">
             {(() => {
               const origin = dealOriginMock(deal.id)
               return (
@@ -896,7 +902,9 @@ export function DealDetailDrawer({
             })()}
           </TabsContent>
         </Tabs>
-        </div>
+            </div>
+          </form>
+        </Form>
       </SheetContent>
 
       {/* Диалог «Связать с задачей» (UX): задачи текущего клиента, ещё не
