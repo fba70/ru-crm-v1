@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/pagination"
 import { AlertTriangle, Loader, Plus, Rows4, PlayingCardsFan } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AnchorTooltip, useAnchorTooltip } from "@/components/blocks/anchor-tooltip"
 import type { ContactRow, ClientOption } from "@/app/api/contacts/route"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ContactDetailDrawer } from "@/components/blocks/contact-detail-drawer"
@@ -61,6 +62,8 @@ export default function ContactsPage() {
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
   const [editingContact, setEditingContact] = useState<ContactRow | null>(null)
   const [view, setView] = useState<ContactView>("table")
+  const cardsViewTip = useAnchorTooltip()
+  const tableViewTip = useAnchorTooltip()
   const [canBlock, setCanBlock] = useState(false)
   // Отличаем «реально пусто» от «запрос не выполнился» (сеть/БД) — иначе
   // сбой рендерится как «контактов нет», что читается как потеря данных.
@@ -194,14 +197,16 @@ export default function ContactsPage() {
         <div className="ml-auto">
           <Tabs value={view} onValueChange={(v) => setView(v as ContactView)}>
             <TabsList>
-              <TabsTrigger value="cards" aria-label="Вид карточками" title="в виде карточек">
+              <TabsTrigger value="cards" aria-label="Вид карточками" {...cardsViewTip.bind}>
                 <PlayingCardsFan className="h-4 w-4" />
               </TabsTrigger>
-              <TabsTrigger value="table" aria-label="Вид таблицей" title="списком">
+              <TabsTrigger value="table" aria-label="Вид таблицей" {...tableViewTip.bind}>
                 <Rows4 className="h-4 w-4" />
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          <AnchorTooltip text="в виде карточек" open={cardsViewTip.open} virtualRef={cardsViewTip.virtualRef} />
+          <AnchorTooltip text="списком" open={tableViewTip.open} virtualRef={tableViewTip.virtualRef} />
         </div>
       </div>
 

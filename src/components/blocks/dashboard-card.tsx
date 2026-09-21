@@ -99,7 +99,18 @@ const CARD_SURFACE =
 // just read as a pointless duplicate tooltip. Truncation is detected by
 // comparing the clamped element's scrollHeight (full content) against its
 // clientHeight (clamped box) — the standard line-clamp overflow check.
-function MessageField({ label, text }: { label: string; text: string }) {
+function MessageField({
+  label,
+  text,
+  highlight = false,
+}: {
+  label: string
+  text: string
+  // Рекомендация — единственное поле карточки, которое требует действия от
+  // оператора, поэтому визуально выделяется цветным блоком (в отличие от
+  // «Анализ», который просто контекст).
+  highlight?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [truncated, setTruncated] = useState(false)
   const ref = useRef<HTMLParagraphElement>(null)
@@ -129,8 +140,20 @@ function MessageField({ label, text }: { label: string; text: string }) {
   )
 
   return (
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+    <div
+      className={cn(
+        highlight &&
+          "rounded-md border border-blue-500/25 bg-blue-500/10 p-2 dark:border-blue-400/25 dark:bg-blue-400/10",
+      )}
+    >
+      <div
+        className={cn(
+          "text-xs font-semibold uppercase tracking-wide mb-0.5",
+          highlight
+            ? "text-blue-700 dark:text-blue-300"
+            : "text-muted-foreground",
+        )}
+      >
         {label}
       </div>
       {truncated ? (
@@ -334,7 +357,7 @@ export function DashboardCard({
         <div className="space-y-2 min-h-0">
           {analysis && <MessageField label="Анализ" text={analysis} />}
           {recommendation && (
-            <MessageField label="Рекомендация" text={recommendation} />
+            <MessageField label="Рекомендация" text={recommendation} highlight />
           )}
           {!analysis && !recommendation && (
             <p className="text-muted-foreground italic">Нет содержимого.</p>
@@ -357,15 +380,20 @@ export function DashboardCard({
           card.users.length > 0 ||
           card.ruleName ||
           card.sourceItemTitle) && (
-          <div className="space-y-1.5 text-xs text-muted-foreground pt-1 border-t border-border/40">
+          <div className="space-y-1.5 text-xs text-muted-foreground">
             {card.clients.length > 0 && (
-              <div className="flex items-start gap-2">
-                <Building2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <div className="flex flex-wrap gap-1">
-                  {/* Кликабельно — переход на карточку компании (звонок
-                      18.09: «у меня контакт, но нелекабельный»). asChild +
-                      Link, не onClick-навигация — обычная ссылка, средней
-                      кнопкой можно открыть в новой вкладке. */}
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
+                  <Building2 className="h-3.5 w-3.5 shrink-0" />
+                  Компания
+                </div>
+                {/* Кликабельно — переход на карточку компании (звонок
+                    18.09: «у меня контакт, но нелекабельный»). asChild +
+                    Link, не onClick-навигация — обычная ссылка, средней
+                    кнопкой можно открыть в новой вкладке. pl-[22px] =
+                    ширина иконки (14px) + gap-2 (8px) над ней, чтобы чипы
+                    начинались вровень с текстом заголовка, а не с иконки. */}
+                <div className="flex flex-wrap gap-1 pl-[22px]">
                   {card.clients.map((c) => (
                     <Badge key={c.id} variant="outline" className="font-normal" asChild>
                       <Link href={`/clients?openClient=${c.id}`}>{c.name}</Link>
@@ -375,9 +403,13 @@ export function DashboardCard({
               </div>
             )}
             {card.contacts.length > 0 && (
-              <div className="flex items-start gap-2">
-                <Contact className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <div className="flex flex-wrap gap-1">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
+                  <Contact className="h-3.5 w-3.5 shrink-0" />
+                  Внешние контакты
+                </div>
+                {/* Кликабельно — есть карточка контакта, куда вести. */}
+                <div className="flex flex-wrap gap-1 pl-[22px]">
                   {card.contacts.map((c) => (
                     <Badge key={c.id} variant="outline" className="font-normal" asChild>
                       <Link href={`/contacts?openContact=${c.id}`}>{c.name}</Link>
@@ -387,27 +419,32 @@ export function DashboardCard({
               </div>
             )}
             {card.users.length > 0 && (
-              <div className="flex items-start gap-2">
-                <Users className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <div className="flex flex-wrap gap-1">
-                  {card.users.map((u) => (
-                    <Badge key={u.id} variant="outline" className="font-normal">
-                      {u.name}
-                    </Badge>
-                  ))}
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  Задействованные сотрудники
                 </div>
+                {/* Просто текстом, не чипами — некликабельно, в приложении
+                    нет страницы профиля сотрудника, чтобы вести туда. */}
+                <p className="pl-[22px]">{card.users.map((u) => u.name).join(", ")}</p>
               </div>
             )}
             {card.ruleName && (
-              <div className="flex items-center gap-2 truncate">
-                <Link2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Правило: {card.ruleName}</span>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
+                  <Link2 className="h-3.5 w-3.5 shrink-0" />
+                  Правило
+                </div>
+                <p className="pl-[22px] truncate">{card.ruleName}</p>
               </div>
             )}
             {card.sourceItemTitle && (
-              <div className="flex items-center gap-2 truncate">
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Источник: {card.sourceItemTitle}</span>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  Источник
+                </div>
+                <p className="pl-[22px] truncate">{card.sourceItemTitle}</p>
               </div>
             )}
           </div>

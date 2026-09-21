@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AnchorTooltip, useAnchorTooltip } from "@/components/blocks/anchor-tooltip"
 import {
   Table,
   TableBody,
@@ -112,6 +113,8 @@ export default function ClientsPage() {
   const [openClientId, setOpenClientId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [view, setView] = useState<ClientView>("cards")
+  const cardsViewTip = useAnchorTooltip()
+  const tableViewTip = useAnchorTooltip()
 
   const reqIdRef = useRef(0)
 
@@ -364,14 +367,16 @@ export default function ClientsPage() {
             <MagicDiscoverButton onApplied={refreshAll} />
             <Tabs value={view} onValueChange={(v) => setView(v as ClientView)}>
               <TabsList>
-                <TabsTrigger value="cards" aria-label="Вид карточками" title="в виде карточек">
+                <TabsTrigger value="cards" aria-label="Вид карточками" {...cardsViewTip.bind}>
                   <PlayingCardsFan className="h-4 w-4" />
                 </TabsTrigger>
-                <TabsTrigger value="table" aria-label="Вид таблицей" title="списком">
+                <TabsTrigger value="table" aria-label="Вид таблицей" {...tableViewTip.bind}>
                   <Rows4 className="h-4 w-4" />
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            <AnchorTooltip text="в виде карточек" open={cardsViewTip.open} virtualRef={cardsViewTip.virtualRef} />
+            <AnchorTooltip text="списком" open={tableViewTip.open} virtualRef={tableViewTip.virtualRef} />
           </div>
         </div>
       </div>
