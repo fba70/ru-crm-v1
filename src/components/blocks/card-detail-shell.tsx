@@ -65,7 +65,7 @@ const CATEGORY_COLOR: Record<CardCategory, string> = {
   data_intelligence: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-300",
   momentum: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
   log_only: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  new_order: "bg-lime-500/15 text-lime-700 dark:text-lime-300",
+  new_order: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   support: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
 }
 

@@ -1,6 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -73,7 +80,7 @@ const CATEGORY_COLOR: Record<CardCategory, string> = {
   data_intelligence: "bg-[#294A6B]/15 text-[#294A6B] dark:text-[#8FB4D9]",
   momentum: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
   log_only: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  new_order: "bg-[#1F7A4D]/15 text-[#1F7A4D] dark:text-[#5BD69A]",
+  new_order: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   support: "bg-[#669BBC]/20 text-[#2F5D77] dark:text-[#9FC4DC]",
 }
 
@@ -103,6 +110,7 @@ function MessageField({
   label,
   text,
   highlight = false,
+  action,
 }: {
   label: string
   text: string
@@ -110,6 +118,9 @@ function MessageField({
   // оператора, поэтому визуально выделяется цветным блоком (в отличие от
   // «Анализ», который просто контекст).
   highlight?: boolean
+  // «Создать заказ» на new_order-карточках живёт прямо в блоке рекомендации
+  // (прижато вправо), а не отдельной кнопкой внизу карточки.
+  action?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [truncated, setTruncated] = useState(false)
@@ -156,29 +167,36 @@ function MessageField({
       >
         {label}
       </div>
-      {truncated ? (
-        <HoverCard
-          open={open}
-          onOpenChange={setOpen}
-          openDelay={150}
-          closeDelay={100}
-        >
-          <HoverCardTrigger asChild>{paragraph}</HoverCardTrigger>
-          <HoverCardContent
-            align="start"
-            className="w-96 max-h-80 overflow-y-auto"
-          >
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-              {label}
-            </div>
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">
-              {text}
-            </p>
-          </HoverCardContent>
-        </HoverCard>
-      ) : (
-        paragraph
-      )}
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          {truncated ? (
+            <HoverCard
+              open={open}
+              onOpenChange={setOpen}
+              openDelay={150}
+              closeDelay={100}
+            >
+              <HoverCardTrigger asChild>{paragraph}</HoverCardTrigger>
+              <HoverCardContent
+                align="start"
+                className="w-96 max-h-80 overflow-y-auto"
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                  {label}
+                </div>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {text}
+                </p>
+              </HoverCardContent>
+            </HoverCard>
+          ) : (
+            paragraph
+          )}
+        </div>
+        {/* Та же строка, что текст рекомендации — не новая строка снизу,
+            чтобы кнопка не увеличивала высоту цветного блока. */}
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
     </div>
   )
 }
@@ -357,7 +375,24 @@ export function DashboardCard({
         <div className="space-y-2 min-h-0">
           {analysis && <MessageField label="Анализ" text={analysis} />}
           {recommendation && (
-            <MessageField label="Рекомендация" text={recommendation} highlight />
+            <MessageField
+              label="Рекомендация"
+              text={recommendation}
+              highlight
+              action={
+                card.category === "new_order" ? (
+                  <Button asChild size="sm" variant="outline">
+                    {/* Hands the card off to /products, where the New Order
+                        dialog opens prefilled with the linked client + the
+                        verbatim client message (message.orderRequest). */}
+                    <Link href={`/products?orderFromCard=${card.id}`}>
+                      <ShoppingCart className="h-4 w-4 mr-1" />
+                      Создать заказ
+                    </Link>
+                  </Button>
+                ) : undefined
+              }
+            />
           )}
           {!analysis && !recommendation && (
             <p className="text-muted-foreground italic">Нет содержимого.</p>
@@ -455,19 +490,6 @@ export function DashboardCard({
             свободное место пополам и между ними появляется незапланированный
             зазор вместо того, чтобы плотно прилипать к низу карточки. */}
         <div className="mt-auto flex flex-col gap-2 pt-2">
-          {(card.category === "new_order" || !resolved) && (
-          <div className="flex flex-col gap-2">
-            {card.category === "new_order" && (
-              <Button asChild size="sm" variant="outline">
-                {/* Hands the card off to /products, where the New Order dialog
-                    opens prefilled with the linked client + the verbatim
-                    client message (message.orderRequest). */}
-                <Link href={`/products?orderFromCard=${card.id}`}>
-                  <ShoppingCart className="h-4 w-4 mr-1" />
-                  Создать заказ
-                </Link>
-              </Button>
-            )}
             {!resolved && (
             <div className="flex gap-2">
             {/* "Принять" opens the New Task dialog prefilled from this card.
@@ -481,11 +503,14 @@ export function DashboardCard({
                 <Button
                   size="sm"
                   variant="secondary"
-                  // bg-secondary (dark: oklch 0.33) sits almost on top of the
-                  // card background (oklch 0.29) in dark theme — bumped to
-                  // the lighter --accent token in dark mode only so the
-                  // button stays readable without turning it red/primary.
-                  className="flex-1 dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent/80"
+                  // Пастельный emerald — тот же тон и та же «мягкая» подложка
+                  // (не сплошная заливка), что у бейджа «Принята», который
+                  // сменяет эту кнопку после успешного принятия (визуальная
+                  // преемственность); нет отдельного «success»-токена в
+                  // палитре (--chart-1..5 — только синие + лосось, зелёного
+                  // там вообще нет), поэтому взят тот же паттерн, что уже
+                  // используется для этого состояния в остальном приложении.
+                  className="flex-1 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:bg-emerald-400/15 dark:text-emerald-300 dark:hover:bg-emerald-400/25"
                   disabled={isPending}
                 >
                   <Check className="h-4 w-4 mr-1" />
@@ -539,8 +564,6 @@ export function DashboardCard({
             </Dialog>
             </div>
             )}
-          </div>
-          )}
 
         </div>
       </CardContent>
