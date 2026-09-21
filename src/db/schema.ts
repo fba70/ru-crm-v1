@@ -952,6 +952,29 @@ export const cardContact = pgTable(
   ],
 )
 
+// One row per (org, user) — the watermark for the notification bell
+// (src/server/notifications.ts). The feed itself is DERIVED (created_at
+// across client/contact/deal/card, newest first), not a duplicated event
+// log — this table only remembers "seen up to when" per viewer, same spirit
+// as teardown.ts's re-aggregation over existing data instead of a parallel
+// ledger. No row yet = never opened the bell; the server falls back to a
+// 24h lookback for that case rather than dumping the org's whole history.
+export const notificationReadState = pgTable(
+  "notification_read_state",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.organizationId, table.userId] }),
+  ],
+)
+
 // ── Product catalog ──────────────────────────────────────────────────
 //
 // Org-scoped catalog of sellable items (wine/spirits catalog for the

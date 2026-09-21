@@ -137,7 +137,7 @@ export function GlobalSearch() {
                 <CommandItem
                   key={c.id}
                   value={`client-${c.id}`}
-                  onSelect={() => go(`/clients/${c.id}`)}
+                  onSelect={() => go(`/clients?openClient=${c.id}`)}
                 >
                   <Building2 />
                   <div className="flex flex-col">

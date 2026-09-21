@@ -729,17 +729,25 @@ export function DealsBoard({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap rounded-lg border bg-card shadow-sm p-3">
-            {/* Сегментед-контрол Все/Мои (single-select, на базе Tabs). */}
-            <Tabs
-              value={filter}
-              onValueChange={(v) => setFilter(v as OwnerFilter)}
-            >
-              <TabsList>
-                <TabsTrigger value="all">Все</TabsTrigger>
-                <TabsTrigger value="mine">Мои</TabsTrigger>
-              </TabsList>
-            </Tabs>
+          <div className="flex items-center gap-3 flex-wrap rounded-xl border bg-card p-3">
+            {/* «Новая сделка» — первой, слева. */}
+            <DealEditDialog
+              // router.refresh() один сам по себе обновляет только серверный
+              // список сделок (карточка сделки появлялась сразу) — интел
+              // борда (tasksByDeal и т.п., useBoardIntel) — отдельный
+              // клиентский фетч, который router.refresh() не трогает.
+              // Из-за этого задача, созданная сразу вместе со сделкой
+              // (см. pendingTaskDeal в form-deal-edit.tsx — тот же onSuccess
+              // используется и для неё), не появлялась на карточке без
+              // ручного обновления страницы. `refresh` делает оба шага.
+              onSuccess={refresh}
+              trigger={
+                <Button size="sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Новая сделка
+                </Button>
+              }
+            />
             {/* Мультиселект-комбобокс клиентов (UX №17) — единственный фильтр
                 вместо поиска по названию + селекта: клик открывает список всех
                 клиентов, выбор чекбоксами, фильтрация вводом. */}
@@ -795,30 +803,24 @@ export function DealsBoard({
               <ListTree className="h-4 w-4 mr-1" />
               Лента решений
             </Button>
-            <DealEditDialog
-              // router.refresh() один сам по себе обновляет только серверный
-              // список сделок (карточка сделки появлялась сразу) — интел
-              // борда (tasksByDeal и т.п., useBoardIntel) — отдельный
-              // клиентский фетч, который router.refresh() не трогает.
-              // Из-за этого задача, созданная сразу вместе со сделкой
-              // (см. pendingTaskDeal в form-deal-edit.tsx — тот же onSuccess
-              // используется и для неё), не появлялась на карточке без
-              // ручного обновления страницы. `refresh` делает оба шага.
-              onSuccess={refresh}
-              trigger={
-                <Button size="sm">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Новая сделка
-                </Button>
-              }
-            />
+            {/* Сегментед-контрол Все/Мои — справа, перед кнопкой
+                сворачивания колонок (ml-auto здесь, а не на самой кнопке). */}
+            <Tabs
+              value={filter}
+              onValueChange={(v) => setFilter(v as OwnerFilter)}
+              className="ml-auto"
+            >
+              <TabsList>
+                <TabsTrigger value="all">Все</TabsTrigger>
+                <TabsTrigger value="mine">Мои</TabsTrigger>
+              </TabsList>
+            </Tabs>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     size="icon-sm"
                     variant="outline"
-                    className="ml-auto"
                     aria-label={
                       allCollapsed
                         ? "Развернуть все колонки"

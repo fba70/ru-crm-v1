@@ -3,7 +3,6 @@
 import { useTransition } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -17,12 +16,11 @@ import {
   Building2,
   Contact as ContactIcon,
   Handshake,
-  Pencil,
 } from "lucide-react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import type { TaskRow } from "@/app/api/tasks/route"
 import type { TaskType, TaskPriority, TaskStatus } from "@/db/schema"
-import TaskEditDialog from "@/components/forms/form-task-edit"
 
 const TYPE_LABELS: Record<TaskType, string> = {
   meet: "Встреча",
@@ -65,6 +63,8 @@ const PRIORITY_COLOR: Record<TaskPriority, string> = {
   high: "bg-red-500/15 text-red-600 dark:text-red-300",
 }
 
+const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+
 function formatDate(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString("ru-RU", {
@@ -74,12 +74,18 @@ function formatDate(iso: string): string {
   })
 }
 
+// Клик по всей карточке открывает <TaskDetailDrawer> — как <ClientCard>, той
+// же поверхностью (единый язык карточек по разделам). Отдельной кнопки
+// редактирования больше нет; статус меняется прямо на карточке через Select,
+// которая гасит всплытие клика, чтобы не открывать дровер по ошибке.
 export function TaskCard({
   task,
   onChanged,
+  onOpenDetail,
 }: {
   task: TaskRow
   onChanged: () => void
+  onOpenDetail: (taskId: string) => void
 }) {
   const [isPending, startTransition] = useTransition()
 
@@ -110,8 +116,14 @@ export function TaskCard({
   }
 
   return (
-    <Card className="flex flex-col bg-muted/50 dark:bg-muted/30 border-muted dark:border-gray-600">
-      <CardHeader className="flex flex-row items-start justify-between gap-2">
+    <Card
+      onClick={() => onOpenDetail(task.id)}
+      className={cn(
+        // Тот же белый фон, что у карточек сделок — единый язык карточек.
+        "flex flex-col cursor-pointer bg-card border-border shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-card dark:hover:bg-secondary",
+      )}
+    >
+      <CardHeader>
         <div className="min-w-0 flex-1">
           <CardTitle className="truncate">{task.name}</CardTitle>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -126,16 +138,6 @@ export function TaskCard({
             </Badge>
           </div>
         </div>
-        <TaskEditDialog
-          mode="edit"
-          task={task}
-          onSuccess={onChanged}
-          trigger={
-            <Button variant="ghost" size="icon" aria-label="Редактировать задачу">
-              <Pencil className="h-4 w-4" />
-            </Button>
-          }
-        />
       </CardHeader>
       <CardContent className="flex-1 space-y-3 text-sm">
         {task.description && (
@@ -175,7 +177,7 @@ export function TaskCard({
           )}
         </div>
 
-        <div className="pt-1">
+        <div className="pt-1" onClick={stop} onPointerDown={stop}>
           <Select
             value={task.status}
             onValueChange={(v) => handleStatusChange(v as TaskStatus)}

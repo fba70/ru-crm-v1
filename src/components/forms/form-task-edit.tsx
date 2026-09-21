@@ -116,18 +116,22 @@ type Props = {
   onOpenChange?: (open: boolean) => void
 }
 
-export default function TaskEditDialog({
+// Форма задачи — вынесена отдельно от диалога (по образцу ContactEditForm в
+// form-contact-edit.tsx), чтобы <TaskDetailDrawer> могла переиспользовать её
+// целиком внутри выезжающей панели, а не дублировать разметку полей.
+export function TaskEditForm({
   mode,
   task,
-  trigger,
   onSuccess,
+  onCancel,
   initialValues,
-  open: controlledOpen,
-  onOpenChange: setControlledOpen,
-}: Props) {
-  const [internalOpen, setInternalOpen] = useState(false)
-  const open = controlledOpen ?? internalOpen
-  const setOpen = setControlledOpen ?? setInternalOpen
+}: {
+  mode: "create" | "edit"
+  task?: TaskRow
+  onSuccess?: () => void
+  onCancel?: () => void
+  initialValues?: Partial<TaskFormData>
+}) {
   const [isPending, startTransition] = useTransition()
   const [members, setMembers] = useState<OrgMemberOption[]>([])
   const [clientOptions, setClientOptions] = useState<TaskClientOption[]>([])
@@ -160,7 +164,6 @@ export default function TaskEditDialog({
   const watchedClientId = form.watch("clientId")
 
   useEffect(() => {
-    if (!open) return
     form.reset(buildDefaults())
 
     let cancelled = false
@@ -196,10 +199,10 @@ export default function TaskEditDialog({
     return () => {
       cancelled = true
     }
-  }, [open, task, form, mode, buildDefaults])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task, mode, buildDefaults])
 
   useEffect(() => {
-    if (!open) return
     let cancelled = false
     const qs =
       watchedClientId && watchedClientId !== NO_CLIENT
@@ -221,7 +224,7 @@ export default function TaskEditDialog({
     return () => {
       cancelled = true
     }
-  }, [open, watchedClientId, form])
+  }, [watchedClientId, form])
 
   const onSubmit = (data: TaskFormData) => {
     startTransition(async () => {
@@ -245,12 +248,284 @@ export default function TaskEditDialog({
         }
         toast.success(mode === "create" ? "Задача создана" : "Задача обновлена")
         onSuccess?.()
-        setOpen(false)
       } catch {
         toast.error("Не удалось сохранить задачу")
       }
     })
   }
+
+  return (
+    <Form {...form}>
+      {/* min-w-0: родитель может быть grid-item (DialogContent) — без него
+          форма не сжимается и переполняет контейнер длинными значениями. */}
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 min-w-0">
+        <FormField
+          control={form.control}
+          name="name"
+          rules={{ required: "Укажите название" }}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-gray-400">Название</FormLabel>
+              <FormControl>
+                <Input {...field} placeholder="Название задачи" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-gray-400">Описание</FormLabel>
+              <FormControl>
+                <Textarea {...field} rows={3} placeholder="Необязательные детали…" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Привязки — «к чему относится задача»: клиент → контакт → сделка. */}
+        <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+          <FormField
+            control={form.control}
+            name="clientId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-gray-400">Клиент</FormLabel>
+                <Select
+                  value={field.value}
+                  onValueChange={(v) => {
+                    field.onChange(v)
+                    form.setValue("contactId", NO_CONTACT)
+                  }}
+                >
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Без клиента" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value={NO_CLIENT}>Без клиента</SelectItem>
+                    {clientOptions.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="contactId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-gray-400">Контакт</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Без контакта" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value={NO_CONTACT}>Без контакта</SelectItem>
+                    {contactOptions.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="dealId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-gray-400">Сделка</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Без сделки" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value={NO_DEAL}>Без сделки</SelectItem>
+                  {dealOptions.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.clientName ? `${d.clientName} — ${d.name}` : d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Классификация: тип и приоритет. */}
+        <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+          <FormField
+            control={form.control}
+            name="type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-gray-400">Тип</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {TYPE_LABELS[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="priority"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-gray-400">Приоритет</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PRIORITY_LABELS[p]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        {/* Исполнение: статус, исполнитель, срок. */}
+        <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
+          <FormField
+            control={form.control}
+            name="status"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-gray-400">Статус</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="dueDate"
+            rules={{ required: "Укажите срок" }}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-gray-400">Срок</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="assigneeId"
+          rules={{ required: "Укажите исполнителя" }}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-gray-400">Исполнитель</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Выберите исполнителя" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {members.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onCancel?.()}>
+            Отмена
+          </Button>
+          {/* Кнопка неактивна, пока не введено название — вместо
+              звёздочки-обязательности; при попытке отправить пустое
+              react-hook-form подсветит поле ошибкой (FormMessage). */}
+          <LoadingButton
+            type="submit"
+            loading={isPending}
+            disabled={!form.watch("name")?.trim()}
+          >
+            {mode === "create" ? "Создать" : "Сохранить"}
+          </LoadingButton>
+        </DialogFooter>
+      </form>
+    </Form>
+  )
+}
+
+export default function TaskEditDialog({
+  mode,
+  task,
+  trigger,
+  onSuccess,
+  initialValues,
+  open: controlledOpen,
+  onOpenChange: setControlledOpen,
+}: Props) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = setControlledOpen ?? setInternalOpen
 
   const title =
     mode === "create"
@@ -264,273 +539,18 @@ export default function TaskEditDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <Form {...form}>
-          {/* min-w-0: <form> — grid-item DialogContent (base = grid); без него
-              форма не сжимается и переполняет диалог длинными значениями. */}
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-4 min-w-0"
-          >
-            <FormField
-              control={form.control}
-              name="name"
-              rules={{ required: "Укажите название" }}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-400">Название</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder="Название задачи" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-400">Описание</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      rows={3}
-                      placeholder="Необязательные детали…"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Привязки — «к чему относится задача»: клиент → контакт → сделка. */}
-            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-              <FormField
-                control={form.control}
-                name="clientId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Клиент</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={(v) => {
-                        field.onChange(v)
-                        form.setValue("contactId", NO_CONTACT)
-                      }}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Без клиента" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value={NO_CLIENT}>Без клиента</SelectItem>
-                        {clientOptions.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="contactId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Контакт</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Без контакта" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value={NO_CONTACT}>Без контакта</SelectItem>
-                        {contactOptions.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="dealId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-400">Сделка</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Без сделки" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={NO_DEAL}>Без сделки</SelectItem>
-                      {dealOptions.map((d) => (
-                        <SelectItem key={d.id} value={d.id}>
-                          {d.clientName ? `${d.clientName} — ${d.name}` : d.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Классификация: тип и приоритет. */}
-            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-              <FormField
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Тип</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {TYPE_LABELS[t]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Приоритет</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {PRIORITIES.map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {PRIORITY_LABELS[p]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Исполнение: статус, исполнитель, срок. */}
-            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Статус</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {STATUSES.map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {STATUS_LABELS[s]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="dueDate"
-                rules={{ required: "Укажите срок" }}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-400">Срок</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="assigneeId"
-              rules={{ required: "Укажите исполнителя" }}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-gray-400">Исполнитель</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Выберите исполнителя" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {members.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setOpen(false)}
-              >
-                Отмена
-              </Button>
-              {/* Кнопка неактивна, пока не введено название — вместо
-                  звёздочки-обязательности; при попытке отправить пустое
-                  react-hook-form подсветит поле ошибкой (FormMessage). */}
-              <LoadingButton
-                type="submit"
-                loading={isPending}
-                disabled={!form.watch("name")?.trim()}
-              >
-                {mode === "create" ? "Создать" : "Сохранить"}
-              </LoadingButton>
-            </DialogFooter>
-          </form>
-        </Form>
+        {open && (
+          <TaskEditForm
+            mode={mode}
+            task={task}
+            initialValues={initialValues}
+            onSuccess={() => {
+              onSuccess?.()
+              setOpen(false)
+            }}
+            onCancel={() => setOpen(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

@@ -11,7 +11,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import {
   Pagination,
   PaginationContent,
@@ -20,7 +29,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-import { Loader, Plus, X } from "lucide-react"
+import { AlertTriangle, Loader, Plus, Rows4, PlayingCardsFan, X } from "lucide-react"
 import type {
   TaskRow,
   OrgMemberOption,
@@ -30,11 +39,14 @@ import type {
 import type { TaskStatus, TaskType, TaskPriority } from "@/db/schema"
 import TaskEditDialog from "@/components/forms/form-task-edit"
 import { TaskCard } from "@/components/blocks/task-card"
+import { TaskDetailDrawer } from "@/components/blocks/task-detail-drawer"
 import { TaskTimeline } from "@/components/blocks/task-timeline"
 import { GlobalSearch } from "@/components/blocks/global-search"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 
 const PAGE_SIZE = 6
+
+type TaskView = "cards" | "table"
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "closed"]
 
@@ -144,10 +156,12 @@ function PagerNav({
 function StatusBucket({
   tasks,
   onChanged,
+  onOpenDetail,
   emptyLabel,
 }: {
   tasks: TaskRow[]
   onChanged: () => void
+  onOpenDetail: (taskId: string) => void
   emptyLabel: string
 }) {
   const paged = usePaged(tasks)
@@ -155,9 +169,14 @@ function StatusBucket({
   const grid = useMemo(
     () =>
       paged.pageItems.map((t) => (
-        <TaskCard key={t.id} task={t} onChanged={onChanged} />
+        <TaskCard
+          key={t.id}
+          task={t}
+          onChanged={onChanged}
+          onOpenDetail={onOpenDetail}
+        />
       )),
-    [paged.pageItems, onChanged],
+    [paged.pageItems, onChanged, onOpenDetail],
   )
 
   if (tasks.length === 0) {
@@ -166,7 +185,7 @@ function StatusBucket({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{grid}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">{grid}</div>
       <div className="flex justify-center">
         <PagerNav
           page={paged.page}
@@ -175,6 +194,60 @@ function StatusBucket({
         />
       </div>
     </div>
+  )
+}
+
+// Табличный вид — тот же набор задач, что и StatusBucket выше (тот же
+// набор пропсов), просто строками вместо карточек.
+function TaskTable({
+  tasks,
+  onOpenDetail,
+  emptyLabel,
+}: {
+  tasks: TaskRow[]
+  onOpenDetail: (taskId: string) => void
+  emptyLabel: string
+}) {
+  if (tasks.length === 0) {
+    return <EmptyState label={emptyLabel} />
+  }
+  return (
+    <Card className="py-0">
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Название</TableHead>
+              <TableHead>Тип</TableHead>
+              <TableHead>Приоритет</TableHead>
+              <TableHead>Срок</TableHead>
+              <TableHead>Исполнитель</TableHead>
+              <TableHead>Статус</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tasks.map((t) => (
+              <TableRow
+                key={t.id}
+                className="cursor-pointer"
+                onClick={() => onOpenDetail(t.id)}
+              >
+                <TableCell className="font-medium">{t.name}</TableCell>
+                <TableCell>{TYPE_LABELS[t.type]}</TableCell>
+                <TableCell>{PRIORITY_LABELS[t.priority]}</TableCell>
+                <TableCell>
+                  {new Date(t.dueDate).toLocaleDateString("ru-RU")}
+                </TableCell>
+                <TableCell>{t.assigneeName ?? "—"}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{STATUS_LABELS[t.status]}</Badge>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -212,6 +285,12 @@ function TasksPageContent() {
     [tasks, openTaskId],
   )
 
+  const [view, setView] = useState<TaskView>("cards")
+  // Отличаем «реально пусто» от «запрос не выполнился» (сеть/БД) — иначе
+  // сбой рендерится как «задач нет», что читается как потеря данных.
+  const [loadError, setLoadError] = useState(false)
+
+  const [statusFilter, setStatusFilter] = useState<string>(ALL)
   const [typeFilter, setTypeFilter] = useState<string>(ALL)
   const [priorityFilter, setPriorityFilter] = useState<string>(ALL)
   const [assigneeFilter, setAssigneeFilter] = useState<string>(ALL)
@@ -220,9 +299,18 @@ function TasksPageContent() {
   const [dealFilter, setDealFilter] = useState<string>(ALL)
 
   const refreshAll = useCallback(async () => {
-    const res = await fetch("/api/tasks")
-    const data = await res.json()
-    setTasks(data.tasks ?? [])
+    try {
+      const res = await fetch("/api/tasks")
+      if (!res.ok) {
+        setLoadError(true)
+        return
+      }
+      const data = await res.json()
+      setLoadError(false)
+      setTasks(data.tasks ?? [])
+    } catch {
+      setLoadError(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -230,13 +318,17 @@ function TasksPageContent() {
     async function load() {
       try {
         const [tasksRes, mRes, cRes, ctRes, dRes] = await Promise.all([
-          fetch("/api/tasks").then((r) => r.json()),
+          fetch("/api/tasks").then((r) => {
+            if (!r.ok) throw new Error("Failed to load tasks")
+            return r.json()
+          }),
           fetch("/api/tasks?members=1").then((r) => r.json()),
           fetch("/api/tasks?clientOptions=1").then((r) => r.json()),
           fetch("/api/tasks?contactOptions=1").then((r) => r.json()),
           fetch("/api/deals").then((r) => r.json()),
         ])
         if (cancelled) return
+        setLoadError(false)
         setTasks(tasksRes.tasks ?? [])
         setMembers(mRes.members ?? [])
         setClientOptions(cRes.options ?? [])
@@ -252,6 +344,8 @@ function TasksPageContent() {
             .filter((d) => d.status === "active")
             .map((d) => ({ id: d.id, name: d.name, clientName: d.clientName })),
         )
+      } catch {
+        if (!cancelled) setLoadError(true)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -264,6 +358,7 @@ function TasksPageContent() {
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
+      if (statusFilter !== ALL && t.status !== statusFilter) return false
       if (typeFilter !== ALL && t.type !== typeFilter) return false
       if (priorityFilter !== ALL && t.priority !== priorityFilter) return false
       if (assigneeFilter !== ALL && t.assigneeId !== assigneeFilter)
@@ -281,6 +376,7 @@ function TasksPageContent() {
     })
   }, [
     tasks,
+    statusFilter,
     typeFilter,
     priorityFilter,
     assigneeFilter,
@@ -289,18 +385,8 @@ function TasksPageContent() {
     dealFilter,
   ])
 
-  const byStatus = useMemo(() => {
-    const map: Record<TaskStatus, TaskRow[]> = {
-      todo: [],
-      in_progress: [],
-      done: [],
-      closed: [],
-    }
-    for (const t of filteredTasks) map[t.status].push(t)
-    return map
-  }, [filteredTasks])
-
   const hasActiveFilters =
+    statusFilter !== ALL ||
     typeFilter !== ALL ||
     priorityFilter !== ALL ||
     assigneeFilter !== ALL ||
@@ -309,6 +395,7 @@ function TasksPageContent() {
     dealFilter !== ALL
 
   const clearFilters = () => {
+    setStatusFilter(ALL)
     setTypeFilter(ALL)
     setPriorityFilter(ALL)
     setAssigneeFilter(ALL)
@@ -330,12 +417,37 @@ function TasksPageContent() {
       {/* Канбан без внешнего Card-контейнера — заголовок страницы достаточен. */}
       <div className="w-full">
 
-          {/* Все фильтры в один ряд на большом экране (7 колонок), адаптивно
-              сжимаются к 2 колонкам на узком. grid-cols-N = minmax(0,1fr), так
-              что ячейки ужимаются, а значения в селектах усекаются. */}
-          <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-2">
+          {/* «Новая задача» — слева; фильтры (включая статус) в один ряд —
+              оптимизирует место по вертикали, тот же паттерн, что на
+              Компаниях/Контактах. Селекты в grid (адаптивно сжимаются на
+              узком), переключатель вида прижат вправо. */}
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3">
+            <TaskEditDialog
+              mode="create"
+              onSuccess={refreshAll}
+              trigger={
+                <Button size="sm" className="shrink-0">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Новая задача
+                </Button>
+              }
+            />
+            <div className="grid flex-1 min-w-0 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger size="sm" className="w-full">
+                <SelectValue placeholder="Статус" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Все статусы</SelectItem>
+                {STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger size="sm" className="w-full">
                 <SelectValue placeholder="Тип" />
               </SelectTrigger>
               <SelectContent>
@@ -348,7 +460,7 @@ function TasksPageContent() {
               </SelectContent>
             </Select>
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger size="sm" className="w-full">
                 <SelectValue placeholder="Приоритет" />
               </SelectTrigger>
               <SelectContent>
@@ -361,7 +473,7 @@ function TasksPageContent() {
               </SelectContent>
             </Select>
             <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger size="sm" className="w-full">
                 <SelectValue placeholder="Исполнитель" />
               </SelectTrigger>
               <SelectContent>
@@ -374,7 +486,7 @@ function TasksPageContent() {
               </SelectContent>
             </Select>
             <Select value={clientFilter} onValueChange={setClientFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger size="sm" className="w-full">
                 <SelectValue placeholder="Клиент" />
               </SelectTrigger>
               <SelectContent>
@@ -387,7 +499,7 @@ function TasksPageContent() {
               </SelectContent>
             </Select>
             <Select value={contactFilter} onValueChange={setContactFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger size="sm" className="w-full">
                 <SelectValue placeholder="Контакт" />
               </SelectTrigger>
               <SelectContent>
@@ -402,7 +514,7 @@ function TasksPageContent() {
             {/* Фильтр по сделке: «Все сделки» (по умолчанию) / «Без сделки» /
                 конкретная сделка (task.dealId). */}
             <Select value={dealFilter} onValueChange={setDealFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger size="sm" className="w-full">
                 <SelectValue placeholder="Сделка" />
               </SelectTrigger>
               <SelectContent>
@@ -415,6 +527,17 @@ function TasksPageContent() {
                 ))}
               </SelectContent>
             </Select>
+            </div>
+            <Tabs value={view} onValueChange={(v) => setView(v as TaskView)}>
+              <TabsList>
+                <TabsTrigger value="cards" aria-label="Вид карточками" title="в виде карточек">
+                  <PlayingCardsFan className="h-4 w-4" />
+                </TabsTrigger>
+                <TabsTrigger value="table" aria-label="Вид таблицей" title="списком">
+                  <Rows4 className="h-4 w-4" />
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
 
           {/* min-h-8 = высота кнопки сброса: строка не прыгает, когда кнопка
@@ -435,62 +558,43 @@ function TasksPageContent() {
             <div className="flex items-center justify-center py-12">
               <Loader className="animate-spin h-6 w-6" />
             </div>
+          ) : loadError && tasks.length === 0 ? (
+            <Card className="border-dashed border-destructive/40 bg-destructive/5">
+              <CardContent className="py-12 flex flex-col items-center gap-3 text-center">
+                <AlertTriangle className="h-6 w-6 text-destructive" />
+                <span className="text-sm text-muted-foreground">
+                  Не удалось загрузить задачи. Проверьте соединение и попробуйте ещё раз.
+                </span>
+                <Button size="sm" variant="outline" onClick={() => void refreshAll()}>
+                  Повторить
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
-            <Tabs defaultValue="all" className="w-full">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <TabsList>
-                  {/* «Все» — первым: задачи независимо от статуса. */}
-                  <TabsTrigger value="all">
-                    Все
-                    <span className="ml-1.5 text-xs text-muted-foreground">
-                      {filteredTasks.length}
-                    </span>
-                  </TabsTrigger>
-                  {STATUSES.map((s) => (
-                    <TabsTrigger key={s} value={s}>
-                      {STATUS_LABELS[s]}
-                      <span className="ml-1.5 text-xs text-muted-foreground">
-                        {byStatus[s].length}
-                      </span>
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                <TaskEditDialog
-                  mode="create"
-                  onSuccess={refreshAll}
-                  trigger={
-                    <Button size="sm">
-                      <Plus className="h-4 w-4 mr-1" />
-                      Новая задача
-                    </Button>
-                  }
-                />
-              </div>
-              <TabsContent value="all" className="mt-4">
+            <>
+              {view === "cards" ? (
                 <StatusBucket
                   tasks={filteredTasks}
                   onChanged={refreshAll}
+                  onOpenDetail={setOpenTaskId}
                   emptyLabel={
                     hasActiveFilters
                       ? "Нет задач по фильтрам."
                       : "Задач пока нет."
                   }
                 />
-              </TabsContent>
-              {STATUSES.map((s) => (
-                <TabsContent key={s} value={s} className="mt-4">
-                  <StatusBucket
-                    tasks={byStatus[s]}
-                    onChanged={refreshAll}
-                    emptyLabel={
-                      hasActiveFilters
-                        ? `Нет задач по фильтрам в «${STATUS_LABELS[s]}».`
-                        : `Нет задач в «${STATUS_LABELS[s]}».`
-                    }
-                  />
-                </TabsContent>
-              ))}
-            </Tabs>
+              ) : (
+                <TaskTable
+                  tasks={filteredTasks}
+                  onOpenDetail={setOpenTaskId}
+                  emptyLabel={
+                    hasActiveFilters
+                      ? "Нет задач по фильтрам."
+                      : "Задач пока нет."
+                  }
+                />
+              )}
+            </>
           )}
       </div>
 
@@ -509,21 +613,17 @@ function TasksPageContent() {
         </CardContent>
       </Card>
 
-      {openTask && (
-        <TaskEditDialog
-          mode="edit"
-          task={openTask}
-          trigger={<span />}
-          open
-          onOpenChange={(o) => {
-            if (!o) {
-              setOpenTaskId(null)
-              router.replace("/tasks")
-            }
-          }}
-          onSuccess={refreshAll}
-        />
-      )}
+      <TaskDetailDrawer
+        task={openTask}
+        open={Boolean(openTask)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setOpenTaskId(null)
+            router.replace("/tasks")
+          }
+        }}
+        onChanged={refreshAll}
+      />
     </div>
   )
 }

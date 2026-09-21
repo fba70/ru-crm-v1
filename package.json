@@ -3,8 +3,8 @@
   "version": "0.2.0",
   "private": false,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next dev",
-    "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 next build",
+    "dev": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192 --dns-result-order=ipv4first\" next dev",
+    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192 --dns-result-order=ipv4first\" next build",
     "start": "next start",
     "lint": "eslint"
   },
@@ -71,7 +71,7 @@
     "imapflow": "^1.4.1",
     "input-otp": "^1.4.2",
     "jszip": "^3.10.1",
-    "lucide-react": "^0.562.0",
+    "lucide-react": "^1.47.0",
     "mailparser": "^3.9.10",
     "mammoth": "^1.12.0",
     "media-chrome": "^4.18.3",

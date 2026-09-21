@@ -152,7 +152,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 pb-10">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-medium">Аналитика продаж</h1>
           <p className="text-muted-foreground text-xs">
@@ -190,7 +190,7 @@ export default function AnalyticsPage() {
         <AnalyticsSkeleton />
       ) : data ? (
         <Tabs defaultValue="overview" className="gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
             <TabsList className="flex-wrap">
               <TabsTrigger value="overview">Обзор</TabsTrigger>
               <TabsTrigger value="time">Время</TabsTrigger>

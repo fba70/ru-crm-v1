@@ -38,7 +38,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Globe, Pencil, Plus, Save } from "lucide-react"
+import { CloudSync, Pencil, Plus, Save } from "lucide-react"
 import { toast } from "sonner"
 import { authClient } from "@/lib/auth-client"
 import {
@@ -54,6 +54,7 @@ import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
 import { BlacklistEntityButton } from "@/components/blocks/client-blocklist-dialog"
 import { ClientContentTable } from "@/components/blocks/client-content-table"
+import { ContactDetailDrawer } from "@/components/blocks/contact-detail-drawer"
 import type { TaskStatus, EntityStatus, FunnelPhase } from "@/db/schema"
 import type { ClientRow } from "@/app/api/clients/route"
 import type { TaskRow } from "@/app/api/tasks/route"
@@ -425,7 +426,7 @@ export function ClientDetailDrawer({
           >
             <div className="p-4 pb-3 border-b shrink-0">
               <SheetTitle className="sr-only">{client.name}</SheetTitle>
-              <div className="flex items-start gap-2 pr-8">
+              <div className="flex items-start gap-2 pr-10">
                 <FollowCursorTooltip
                   text="Клик для редактирования"
                   disabled={nameFieldFocused}
@@ -465,7 +466,7 @@ export function ClientDetailDrawer({
                       aria-label="Поиск в интернете"
                       title="Поиск в интернете"
                     >
-                      <Globe className="h-4 w-4" />
+                      <CloudSync className="h-4 w-4" />
                     </Button>
                   }
                 />
@@ -975,21 +976,15 @@ export function ClientDetailDrawer({
         </Form>
       </SheetContent>
 
-      {editingContact && (
-        <ContactEditDialog
-          mode="edit"
-          contact={editingContact}
-          trigger={<span hidden />}
-          open={Boolean(editingContact)}
-          onOpenChange={(o) => {
-            if (!o) setEditingContact(null)
-          }}
-          onSuccess={() => {
-            setEditingContact(null)
-            onChanged()
-          }}
-        />
-      )}
+      <ContactDetailDrawer
+        contact={editingContact}
+        open={Boolean(editingContact)}
+        onOpenChange={(o) => {
+          if (!o) setEditingContact(null)
+        }}
+        onChanged={onChanged}
+        canBlock={canBlock}
+      />
 
       <AlertDialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
         <AlertDialogContent>

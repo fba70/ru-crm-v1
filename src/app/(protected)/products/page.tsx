@@ -906,12 +906,10 @@ export default function ProductsPage() {
         <Tabs value={tab} onValueChange={setTab} className="w-full">
           {/* One "New order" entry point (both tabs). The dialog branches on
               whether a client request was pasted: empty → manual builder;
-              filled → LLM split + assembly wizard. */}
-          <div className="flex items-center justify-between gap-2">
-            <TabsList>
-              <TabsTrigger value="catalog">Каталог товаров</TabsTrigger>
-              <TabsTrigger value="orders">Заказы</TabsTrigger>
-            </TabsList>
+              filled → LLM split + assembly wizard. «Новый заказ» — слева,
+              переключатель Каталог/Заказы — справа. Белый контейнер — как на
+              других страницах. */}
+          <div className="flex items-center justify-between gap-2 rounded-xl border bg-card p-3">
             <Button
               size="sm"
               onClick={() => setRequestDialogOpen(true)}
@@ -920,6 +918,10 @@ export default function ProductsPage() {
               <Plus className="h-4 w-4 mr-1" />
               Новый заказ
             </Button>
+            <TabsList>
+              <TabsTrigger value="catalog">Каталог товаров</TabsTrigger>
+              <TabsTrigger value="orders">Заказы</TabsTrigger>
+            </TabsList>
           </div>
 
           <TabsContent value="catalog" className="mt-4 space-y-4">

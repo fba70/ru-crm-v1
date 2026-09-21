@@ -213,6 +213,7 @@ export async function listClientRevenue12mo(): Promise<
 }
 
 export type ClientFeedTab =
+  | "all"
   | "customers"
   | "potential"
   | "supplier"
@@ -229,7 +230,7 @@ export type ClientFeedTab =
 // Sort ("criticality", a heuristic proxy — TODO(backend): a real priority
 // score, mirroring the same disclaimer already on `clientAtRisk` / the deals
 // board's mock `agentPriorityScore`): overdue tasks first, then stale
-// (no-contact) clients, then oldest-touched as the final tiebreak.
+// (no-contact) clients, then most-recently-touched first as the final tiebreak.
 //
 // This runs the tab/sort logic in JS over the org's full client set rather
 // than a single paginated SQL query — acceptable at demo/pilot scale, same
@@ -285,6 +286,7 @@ export async function listClientsFeed(params: {
   const taskSummary = await listTaskSummaryByClient()
 
   const matching = rows.filter((r) => {
+    if (params.tab === "all") return true
     const kind = r.client.customFields?.companyKind
     if (kind === "supplier") return params.tab === "supplier"
     if (kind === "partner") return params.tab === "partner"
@@ -309,7 +311,8 @@ export async function listClientsFeed(params: {
     const staleA = clientAtRisk(a.client.updatedAt.toISOString()) ? 1 : 0
     const staleB = clientAtRisk(b.client.updatedAt.toISOString()) ? 1 : 0
     if (staleA !== staleB) return staleB - staleA
-    return a.client.updatedAt.getTime() - b.client.updatedAt.getTime()
+    // Final tiebreak: most-recently-touched first (was oldest-first).
+    return b.client.updatedAt.getTime() - a.client.updatedAt.getTime()
   })
 
   const total = matching.length

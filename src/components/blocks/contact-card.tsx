@@ -2,10 +2,9 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Mail, Phone, Briefcase, Building2, Pencil } from "lucide-react"
+import { Mail, Phone, Briefcase, Building2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { ContactRow } from "@/app/api/contacts/route"
-import ContactEditDialog from "@/components/forms/form-contact-edit"
 
 // `initial` is the auto-discovered state — accent for review attention.
 // `suspended` stays muted (archived). `deleted` is the soft-delete (excluded
@@ -29,27 +28,27 @@ const STATUS_LABEL: Record<string, string> = {
   blocked: "Заблокирован",
 }
 
+// Клик по всей карточке открывает <ContactDetailDrawer> — как у <ClientCard>,
+// поэтому отдельной кнопки редактирования на карточке больше нет (звонок
+// 18.09 + правки после него).
 export function ContactCard({
   contact,
-  onChanged,
-  canBlock = false,
+  onOpenDetail,
 }: {
   contact: ContactRow
-  onChanged: () => void
-  // Forwarded to the edit dialog (owner-only "add to blocklist" action —
-  // lives inside editing now, not as a standalone icon on the card, see
-  // refs/blocklist.md).
-  canBlock?: boolean
+  onOpenDetail: (contactId: string) => void
 }) {
   return (
     <Card
-      className={`flex flex-col ${
-        contact.status === "deleted" || contact.status === "blocked"
-          ? "opacity-60"
-          : ""
-      }`}
+      onClick={() => onOpenDetail(contact.id)}
+      className={cn(
+        // Тот же белый фон, что у карточек сделок — единый язык карточек.
+        "flex flex-col cursor-pointer bg-card border-border shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-card dark:hover:bg-secondary",
+        (contact.status === "deleted" || contact.status === "blocked") &&
+          "opacity-60",
+      )}
     >
-      <CardHeader className="flex flex-row items-start justify-between gap-2">
+      <CardHeader>
         <div className="min-w-0 flex-1">
           <CardTitle className="truncate">
             {contact.nameNative || contact.name}
@@ -74,19 +73,6 @@ export function ContactCard({
               </Badge>
             </div>
           )}
-        </div>
-        <div className="flex items-center gap-1">
-          <ContactEditDialog
-            mode="edit"
-            contact={contact}
-            onSuccess={onChanged}
-            canBlock={canBlock}
-            trigger={
-              <Button variant="ghost" size="icon" aria-label="Редактировать контакт">
-                <Pencil className="h-4 w-4" />
-              </Button>
-            }
-          />
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col space-y-1 text-sm text-muted-foreground">

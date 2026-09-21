@@ -82,12 +82,15 @@ const PRIORITY_COLOR: Record<CardPriority, string> = {
   high: "bg-amber-500/20 text-amber-700 dark:text-amber-300",
 }
 
-// Same surface + hover treatment as the Companies card (client-card.tsx) —
-// unified look/feel across the app's card grids. No -translate-y on hover
-// here either (client-card.tsx dropped it: inside an overflow-y-auto scroll
-// container the lift clipped the top row against the section's edge).
+// Same white bg-card surface as every other card grid in the app
+// (client-card.tsx/task-card.tsx/contact-card.tsx/deal-kanban-card.tsx) —
+// the page lost its outer white Card container, so a translucent tint would
+// show the atmospheric page background through it instead of reading white.
+// No -translate-y on hover (client-card.tsx dropped it: inside an
+// overflow-y-auto scroll container the lift clipped the top row against the
+// section's edge).
 const CARD_SURFACE =
-  "bg-[#FDF0D5]/[0.05] border-muted shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-[#FDF0D5]/[0.09] dark:bg-[#FDF0D5]/[0.045] dark:hover:bg-[#FDF0D5]/[0.08]"
+  "bg-card border-border shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-card dark:hover:bg-secondary"
 
 // A message field (Analysis / Recommendation) shown clamped to 3 lines on
 // the card. The FULL text is only revealed via hover-card/click when it's
@@ -359,9 +362,13 @@ export function DashboardCard({
               <div className="flex items-start gap-2">
                 <Building2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <div className="flex flex-wrap gap-1">
+                  {/* Кликабельно — переход на карточку компании (звонок
+                      18.09: «у меня контакт, но нелекабельный»). asChild +
+                      Link, не onClick-навигация — обычная ссылка, средней
+                      кнопкой можно открыть в новой вкладке. */}
                   {card.clients.map((c) => (
-                    <Badge key={c.id} variant="outline" className="font-normal">
-                      {c.name}
+                    <Badge key={c.id} variant="outline" className="font-normal" asChild>
+                      <Link href={`/clients?openClient=${c.id}`}>{c.name}</Link>
                     </Badge>
                   ))}
                 </div>
@@ -372,8 +379,8 @@ export function DashboardCard({
                 <Contact className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <div className="flex flex-wrap gap-1">
                   {card.contacts.map((c) => (
-                    <Badge key={c.id} variant="outline" className="font-normal">
-                      {c.name}
+                    <Badge key={c.id} variant="outline" className="font-normal" asChild>
+                      <Link href={`/contacts?openContact=${c.id}`}>{c.name}</Link>
                     </Badge>
                   ))}
                 </div>

@@ -11,9 +11,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
-  ArrowRight,
   MapPin,
   Globe,
+  CloudSync,
   MessageSquare,
   Clock,
   Briefcase,
@@ -168,16 +168,26 @@ export function ClientCard({
 
   return (
     <Card
+      onClick={() => onOpenDetail(client.id)}
       className={cn(
         // Слегка светлее дефолтного data-slot="card" (тёплая примесь того же
         // кремового акцента, что и на карточках сделок в канбане, чтобы
         // карточка не сливалась с атмосферным фоном страницы), + при
-        // наведении подсвечивается тенью/рамкой/подложкой (тот же язык, что
-        // deal-kanban-card.tsx). БЕЗ сдвига вверх (-translate-y) — в отличие
-        // от карточки сделки, эта карточка сидит в скролл-контейнере
-        // (CardContent overflow-y-auto), и сдвиг верхнего ряда обрезался
+        // наведении подсвечивается тенью (тот же язык, что deal-kanban-card.tsx).
+        // БЕЗ сдвига вверх (-translate-y) — в отличие от карточки сделки, эта
+        // карточка сидит в скролл-контейнере, и сдвиг верхнего ряда обрезался
         // верхней границей секции при скролле в начало.
-        "flex flex-col bg-[#FDF0D5]/[0.05] border-muted shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-[#FDF0D5]/[0.09] dark:bg-[#FDF0D5]/[0.045] dark:hover:bg-[#FDF0D5]/[0.08]",
+        // Клик в любое место карточки открывает дровер — как у карточки
+        // сделки (deal-kanban-card.tsx onOpen), а не только кнопка
+        // «Подробнее» (звонок 18.09: «мне почему-то надо кликать на
+        // кнопочку подробнее» вместо клика по карточке). Кнопка остаётся
+        // как явный CTA; вложенные интерактивные элементы (поиск в
+        // интернете, «Ещё о компании», ссылка на сайт, пагинация задач)
+        // сами глушат всплытие через stop(e).
+        // Белый bg-card (не кремовая подложка) — с тех пор, как страница
+        // потеряла внешний белый Card-контейнер, страница-фон просвечивал
+        // сквозь полупрозрачную подложку.
+        "flex flex-col cursor-pointer bg-card border-border shadow-sm transition-[box-shadow,background-color] duration-200 hover:shadow-lg hover:bg-card dark:hover:bg-secondary",
         (client.status === "deleted" || client.status === "blocked") &&
           "opacity-60",
       )}
@@ -225,8 +235,9 @@ export function ClientCard({
                 size="icon"
                 aria-label="Поиск в интернете"
                 title="Поиск в интернете"
+                onClick={stop}
               >
-                <Globe className="h-4 w-4" />
+                <CloudSync className="h-4 w-4" />
               </Button>
             }
           />
@@ -307,7 +318,10 @@ export function ClientCard({
             компании — см. обсуждение аккаунт-менеджмента). */}
         {(client.address || client.webUrl || client.comment) && (
           <details className="text-muted-foreground text-xs">
-            <summary className="cursor-pointer select-none hover:text-foreground">
+            <summary
+              className="cursor-pointer select-none hover:text-foreground"
+              onClick={stop}
+            >
               Ещё о компании
             </summary>
             <div className="mt-1.5 space-y-1">
@@ -325,6 +339,7 @@ export function ClientCard({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="truncate hover:underline text-[#2F5D77] dark:text-[#9FC4DC]"
+                    onClick={stop}
                   >
                     {client.webUrl}
                   </a>
@@ -361,23 +376,16 @@ export function ClientCard({
           </div>
         )}
 
-        {/* Spacer pushes the creator/details row to the bottom of the card so
-            it stays aligned across cards of different content height. */}
+        {/* Spacer pushes the creator row to the bottom of the card so it
+            stays aligned across cards of different content height. Кнопка
+            «Подробнее» убрана — клик по всей карточке и так открывает
+            дровер (см. onClick на <Card> выше). */}
         <div className="flex-1" aria-hidden />
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <span className="text-xs text-muted-foreground truncate">
-            {client.userName ? `Кто создал: ${client.userName}` : ""}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() => onOpenDetail(client.id)}
-          >
-            Подробнее
-            <ArrowRight className="h-3.5 w-3.5 ml-1" />
-          </Button>
-        </div>
+        {client.userName && (
+          <div className="pt-1 text-xs text-muted-foreground truncate">
+            Кто создал: {client.userName}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

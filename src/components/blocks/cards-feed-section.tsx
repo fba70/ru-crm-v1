@@ -1,12 +1,9 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
-import { Loader, X } from "lucide-react"
+import { AlertTriangle, Loader, X } from "lucide-react"
 import type { CardRow } from "@/app/api/cards/route"
 import { DashboardCard } from "@/components/blocks/dashboard-card"
 import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
@@ -17,16 +14,6 @@ import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
 // they considered and rejected.
 const PAGE_SIZE = 6
 export const ALL = "__all__"
-
-function isoDateNDaysAgo(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString().slice(0, 10)
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
 
 export const PRIORITIES = ["normal", "high"] as const
 export const CATEGORIES = [
@@ -64,30 +51,33 @@ export const PRIORITY_LABEL: Record<(typeof PRIORITIES)[number], string> = {
 export function CardsFeedSection({
   cards,
   loading,
+  loadError,
+  onRetry,
   onChanged,
   priority,
-  onPriorityChange,
   category,
-  onCategoryChange,
+  from,
+  to,
+  includeRejected,
+  onClearFilters,
 }: {
   cards: CardRow[]
   loading: boolean
+  // Отличает «реально пусто» от «запрос не выполнился» (сеть/БД) — иначе
+  // сбой рендерится как «карточек нет», что читается как потеря данных.
+  loadError: boolean
+  onRetry: () => void
   onChanged: () => void
-  // Приоритет/категория: селекты теперь в шапке страницы (по образцу
-  // /clients) — секция только фильтрует по уже переданным значениям.
+  // Приоритет/категория/период/отклонённые — все фильтры теперь в шапке
+  // страницы (по образцу /clients) — секция только фильтрует и рендерит по
+  // уже переданным значениям, селекты/контролы сами живут в page.tsx.
   priority: string
-  onPriorityChange: (v: string) => void
   category: string
-  onCategoryChange: (v: string) => void
+  from: string
+  to: string
+  includeRejected: boolean
+  onClearFilters: () => void
 }) {
-  // Default view is scoped to the last day; the "Все время" preset clears it.
-  const [from, setFrom] = useState<string>(() => isoDateNDaysAgo(1))
-  const [to, setTo] = useState<string>(() => todayIso())
-  // Accepted cards stay visible (they're a record of approved actions).
-  // This toggle only controls visibility of *rejected* cards, which are
-  // hidden by default since they were dismissed.
-  const [includeRejected, setIncludeRejected] = useState(false)
-
   const filtered = useMemo(() => {
     const fromTs = from ? new Date(from).getTime() : null
     const toTs = to ? new Date(`${to}T23:59:59.999`).getTime() : null
@@ -136,135 +126,46 @@ export function CardsFeedSection({
     [visible, onChanged],
   )
 
-  // The default date range is the last day; any deviation counts as a filter.
-  const isDefaultDateRange =
-    from === isoDateNDaysAgo(1) && to === todayIso()
-  const isWeekRange = from === isoDateNDaysAgo(7) && to === todayIso()
+  // The default date range is "Все время" (both empty); any deviation
+  // counts as a filter.
   const isAllTimeRange = from === "" && to === ""
 
   const hasFilters =
     priority !== ALL ||
     category !== ALL ||
-    !isDefaultDateRange ||
+    !isAllTimeRange ||
     includeRejected
 
-  const clearFilters = () => {
-    onPriorityChange(ALL)
-    onCategoryChange(ALL)
-    setFrom(isoDateNDaysAgo(1))
-    setTo(todayIso())
-    setIncludeRejected(false)
-  }
-
-  const rejectedCount = cards.filter((c) => !!c.rejectionReason).length
-
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="gap-3 shrink-0">
-        <CardTitle className="text-xl tracking-wide">
-          Утренние карточки
-        </CardTitle>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Label
-              htmlFor="cards-from"
-              className="text-xs text-muted-foreground"
-            >
-              С
-            </Label>
-            <Input
-              id="cards-from"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="w-fit"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="cards-to" className="text-xs text-muted-foreground">
-              По
-            </Label>
-            <Input
-              id="cards-to"
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="w-fit"
-            />
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant={isDefaultDateRange ? "default" : "outline"}
-              size="sm"
-              className="h-8"
-              aria-pressed={isDefaultDateRange}
-              onClick={() => {
-                setFrom(isoDateNDaysAgo(1))
-                setTo(todayIso())
-              }}
-            >
-              За день
-            </Button>
-            <Button
-              type="button"
-              variant={isWeekRange ? "default" : "outline"}
-              size="sm"
-              className="h-8"
-              aria-pressed={isWeekRange}
-              onClick={() => {
-                setFrom(isoDateNDaysAgo(7))
-                setTo(todayIso())
-              }}
-            >
-              За неделю
-            </Button>
-            <Button
-              type="button"
-              variant={isAllTimeRange ? "default" : "outline"}
-              size="sm"
-              className="h-8"
-              aria-pressed={isAllTimeRange}
-              onClick={() => {
-                setFrom("")
-                setTo("")
-              }}
-            >
-              Все время
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="cards-include-rejected"
-              checked={includeRejected}
-              onCheckedChange={(v) => setIncludeRejected(v === true)}
-            />
-            <Label
-              htmlFor="cards-include-rejected"
-              className="text-xs cursor-pointer"
-            >
-              Показать отклонённые ({rejectedCount})
-            </Label>
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              {visible.length} из {filtered.length} карточек
-            </span>
-            {hasFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Сбросить фильтры
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-4">
+    <div className="flex flex-col h-full gap-3">
+      <div className="flex items-center justify-between gap-3 shrink-0">
+        <span className="text-xs text-muted-foreground">
+          {visible.length} из {filtered.length} карточек
+        </span>
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={onClearFilters}>
+            <X className="h-4 w-4 mr-1" />
+            Сбросить фильтры
+          </Button>
+        )}
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none space-y-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader className="animate-spin h-6 w-6" />
           </div>
+        ) : loadError && cards.length === 0 ? (
+          <Card className="border-dashed border-destructive/40 bg-destructive/5">
+            <CardHeader className="items-center text-center gap-3">
+              <AlertTriangle className="h-6 w-6 text-destructive" />
+              <CardTitle className="text-base font-normal text-muted-foreground">
+                Не удалось загрузить карточки. Проверьте соединение и попробуйте ещё раз.
+              </CardTitle>
+              <Button size="sm" variant="outline" onClick={onRetry}>
+                Повторить
+              </Button>
+            </CardHeader>
+          </Card>
         ) : cards.length === 0 ? (
           <EmptyState label="Пока нет карточек." />
         ) : filtered.length === 0 ? (
@@ -284,8 +185,8 @@ export function CardsFeedSection({
             )}
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 

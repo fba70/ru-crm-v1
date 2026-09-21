@@ -11,7 +11,25 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Ban, Loader, Plus, Sparkles, X } from "lucide-react"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import {
+  AlertTriangle,
+  Ban,
+  Loader,
+  Plus,
+  Rows4,
+  Sparkles,
+  PlayingCardsFan,
+  X,
+} from "lucide-react"
 import type {
   ClientRow,
   ClientRevenueSummary,
@@ -19,6 +37,7 @@ import type {
 } from "@/app/api/clients/route"
 import type { DealRow } from "@/app/api/deals/route"
 import type { TaskRow } from "@/app/api/tasks/route"
+import type { ClientDetail } from "@/server/client-content"
 import ClientEditDialog from "@/components/forms/form-client-edit"
 import { ClientCard } from "@/components/blocks/client-card"
 import { ClientDetailDrawer } from "@/components/blocks/client-detail-drawer"
@@ -31,7 +50,10 @@ import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
 
 const ALL = "__all__"
+const TAB_ALL: ClientFeedTab = "all"
 const PAGE_SIZE = 12
+
+type ClientView = "cards" | "table"
 
 // `deleted`/`blocked` are hidden under the default "All statuses" view; pick
 // either explicitly to view/restore.
@@ -60,7 +82,7 @@ const TABS: { value: ClientFeedTab; label: string }[] = [
 ]
 
 export default function ClientsPage() {
-  const [tab, setTab] = useState<ClientFeedTab>("customers")
+  const [tab, setTab] = useState<ClientFeedTab>("all")
   const [statusFilter, setStatusFilter] = useState<string>(ALL)
 
   const [rows, setRows] = useState<ClientRow[]>([])
@@ -80,12 +102,16 @@ export default function ClientsPage() {
   >({})
   const [tasksLoaded, setTasksLoaded] = useState(false)
   const [canBlock, setCanBlock] = useState(false)
+  // Отличаем «реально пусто» от «запрос не выполнился» (сеть/БД) — иначе
+  // сбой рендерится как «нет компаний», что читается как потеря данных.
+  const [loadError, setLoadError] = useState(false)
 
   // Дровер с подробностями компании (по образцу /deals) — открывается по
   // «Подробнее» на карточке вместо перехода на /clients/[id]. Сам объект
   // выводим из живого `rows`, чтобы дровер не устарел после refreshAll.
   const [openClientId, setOpenClientId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [view, setView] = useState<ClientView>("cards")
 
   const reqIdRef = useRef(0)
 
@@ -101,14 +127,21 @@ export default function ClientsPage() {
         })
         if (statusFilter !== ALL) params.set("status", statusFilter)
         const res = await fetch(`/api/clients?${params.toString()}`)
-        if (!res.ok || reqIdRef.current !== reqId) return
+        if (reqIdRef.current !== reqId) return
+        if (!res.ok) {
+          setLoadError(true)
+          return
+        }
         const data = await res.json()
         if (reqIdRef.current !== reqId) return
+        setLoadError(false)
         const newRows: ClientRow[] = data.rows ?? []
         setRows((prev) => (nextOffset === 0 ? newRows : [...prev, ...newRows]))
         setTotal(data.total ?? 0)
         setOffset(nextOffset + newRows.length)
         setHasMore(nextOffset + newRows.length < (data.total ?? 0))
+      } catch {
+        if (reqIdRef.current === reqId) setLoadError(true)
       } finally {
         if (reqIdRef.current === reqId) setLoading(false)
       }
@@ -168,6 +201,56 @@ export default function ClientsPage() {
     void loadExtras()
   }, [loadExtras])
 
+  // Deep-link (from global search / notifications / card chips): /clients?openClient=<id>.
+  // The id may not be in the currently loaded tab's rows, so fetch the full
+  // detail and map it down to the list shape ClientDetailDrawer expects —
+  // same mapping client-detail-shell.tsx already does for its own edit form.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const clientId = params.get("openClient")
+    if (!clientId) return
+    window.history.replaceState(null, "", window.location.pathname)
+    void (async () => {
+      const res = await fetch(`/api/clients?id=${encodeURIComponent(clientId)}`)
+      if (!res.ok) return
+      const data: { client?: ClientDetail } = await res.json()
+      const d = data.client
+      if (!d) return
+      const row: ClientRow = {
+        id: d.id,
+        name: d.name,
+        namePhys: d.namePhys,
+        comment: d.comment,
+        aliases: d.aliases,
+        phone: d.phone,
+        email: d.email,
+        address: d.address,
+        webUrl: d.webUrl,
+        customFields: d.customFields,
+        funnelPhase: d.funnelPhase,
+        status: d.status,
+        currency: d.currency,
+        userId: d.userId,
+        userName: d.userName,
+        organizationId: d.organizationId,
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+        contacts: d.contacts.map((c) => ({
+          id: c.id,
+          name: c.name,
+          nameNative: c.nameNative,
+          email: c.email,
+          phone: c.phone,
+          position: c.position,
+          status: c.status,
+        })),
+      }
+      setRows((prev) => (prev.some((r) => r.id === row.id) ? prev : [row, ...prev]))
+      setOpenClientId(row.id)
+      setDrawerOpen(true)
+    })()
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     fetch("/api/blocklist")
@@ -208,98 +291,110 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <DiscoverDialog
-            onApplied={refreshAll}
-            canBlock={canBlock}
+        {/* «Новая компания» — первой, слева; селекты типа/статуса следом;
+            «Найти в источниках»/«Обогатить»/«Список блокировки»/Magic —
+            прижаты вправо, переключатель вида — правее всех кнопок. Белый
+            контейнер — как на Сделках/Домашней. */}
+        <div className="flex items-center gap-2 flex-wrap rounded-xl border bg-card p-3">
+          <ClientEditDialog
+            mode="create"
+            onSuccess={refreshAll}
             trigger={
-              <Button size="sm" variant="outline">
-                <Sparkles className="h-4 w-4 mr-1" />
-                Найти в источниках
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-1" />
+                Новая компания
               </Button>
             }
           />
-          <ClientEnrichControl refreshKey={total} onChanged={refreshAll} />
-          {canBlock && (
-            <ClientBlocklistDialog
-              onChanged={refreshAll}
+          <Select value={tab} onValueChange={(v) => setTab(v as ClientFeedTab)}>
+            <SelectTrigger size="sm" className="w-fit">
+              <SelectValue placeholder="Тип компании" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TAB_ALL}>Все компании</SelectItem>
+              {TABS.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger size="sm" className="w-fit">
+              <SelectValue placeholder="Статус" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Все статусы</SelectItem>
+              {CLIENT_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {STATUS_LABEL[s] ?? s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {statusFilter !== ALL && (
+            <Button variant="ghost" size="sm" onClick={() => setStatusFilter(ALL)}>
+              <X className="h-4 w-4 mr-1" />
+              Сбросить
+            </Button>
+          )}
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            <DiscoverDialog
+              onApplied={refreshAll}
+              canBlock={canBlock}
               trigger={
                 <Button size="sm" variant="outline">
-                  <Ban className="h-4 w-4 mr-1" />
-                  Список блокировки
+                  <Sparkles className="h-4 w-4 mr-1" />
+                  Найти в источниках
                 </Button>
               }
             />
-          )}
-          <MagicDiscoverButton onApplied={refreshAll} />
-          <div className="ml-auto">
-            <ClientEditDialog
-              mode="create"
-              onSuccess={refreshAll}
-              trigger={
-                <Button size="sm">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Новая компания
-                </Button>
-              }
-            />
+            <ClientEnrichControl refreshKey={total} onChanged={refreshAll} />
+            {canBlock && (
+              <ClientBlocklistDialog
+                onChanged={refreshAll}
+                trigger={
+                  <Button size="sm" variant="outline">
+                    <Ban className="h-4 w-4 mr-1" />
+                    Список блокировки
+                  </Button>
+                }
+              />
+            )}
+            <MagicDiscoverButton onApplied={refreshAll} />
+            <Tabs value={view} onValueChange={(v) => setView(v as ClientView)}>
+              <TabsList>
+                <TabsTrigger value="cards" aria-label="Вид карточками" title="в виде карточек">
+                  <PlayingCardsFan className="h-4 w-4" />
+                </TabsTrigger>
+                <TabsTrigger value="table" aria-label="Вид таблицей" title="списком">
+                  <Rows4 className="h-4 w-4" />
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 p-4 pt-4">
-        <Card className="h-full flex flex-col">
-          <CardHeader className="gap-3 shrink-0">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Tabs value={tab} onValueChange={(v) => setTab(v as ClientFeedTab)}>
-                <TabsList>
-                  {TABS.map((t) => (
-                    <TabsTrigger key={t.value} value={t.value}>
-                      {t.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-              <div className="flex items-center gap-2">
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-fit">
-                    <SelectValue placeholder="Статус" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>Все статусы</SelectItem>
-                    {CLIENT_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {STATUS_LABEL[s] ?? s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {statusFilter !== ALL && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setStatusFilter(ALL)}
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Сбросить
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {rows.length} из {total} компаний
-            </div>
-          </CardHeader>
-          <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-4">
+      {/* Без внешнего Card-контейнера — как на Задачах, заголовок страницы
+          достаточен. */}
+      <div className="flex-1 min-h-0 flex flex-col gap-3 p-4 pt-4">
+        <div className="text-xs text-muted-foreground shrink-0">
+          {rows.length} из {total} компаний
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
           {loading && rows.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader className="animate-spin h-6 w-6" />
             </div>
+          ) : loadError && rows.length === 0 ? (
+            <LoadErrorState onRetry={() => void loadPage(0)} />
           ) : rows.length === 0 ? (
             <EmptyState label="Нет компаний в этом разделе." />
-          ) : (
+          ) : view === "cards" ? (
             <>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 {rows.map((c) => (
                   <ClientCard
                     key={c.id}
@@ -325,9 +420,70 @@ export default function ClientsPage() {
                 </div>
               )}
             </>
+          ) : (
+            <>
+              <Card className="py-0">
+                <CardContent className="p-3">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Компания</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Телефон</TableHead>
+                        <TableHead>Выручка за 12 мес.</TableHead>
+                        <TableHead>Статус</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((c) => {
+                        const rev = revenueByClient[c.id]
+                        return (
+                          <TableRow
+                            key={c.id}
+                            className="cursor-pointer even:bg-muted/40"
+                            onClick={() => {
+                              setOpenClientId(c.id)
+                              setDrawerOpen(true)
+                            }}
+                          >
+                            <TableCell>
+                              <div className="font-medium">{c.name}</div>
+                              {c.namePhys && (
+                                <div className="text-xs text-muted-foreground">
+                                  {c.namePhys}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>{c.email ?? "—"}</TableCell>
+                            <TableCell>{c.phone ?? "—"}</TableCell>
+                            <TableCell>
+                              {rev && rev.revenue > 0
+                                ? `${Math.round(rev.revenue).toLocaleString("ru-RU")} · ${rev.orders} зак.`
+                                : "нет заказов"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                {STATUS_LABEL[c.status] ?? c.status}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+              {hasMore && (
+                <div
+                  ref={sentinelRef}
+                  className="flex items-center justify-center py-6"
+                >
+                  {loading && <Loader className="animate-spin h-5 w-5" />}
+                </div>
+              )}
+            </>
           )}
-        </CardContent>
-        </Card>
+        </div>
       </div>
 
       <ClientDetailDrawer
@@ -348,6 +504,24 @@ function EmptyState({ label }: { label: string }) {
         <CardTitle className="text-base text-muted-foreground font-normal text-center">
           {label}
         </CardTitle>
+      </CardHeader>
+    </Card>
+  )
+}
+
+// Отдельно от EmptyState — сбой загрузки (сеть/БД) не должен читаться как
+// «компаний нет», иначе выглядит как потеря данных.
+function LoadErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Card className="border-dashed border-destructive/40 bg-destructive/5">
+      <CardHeader className="items-center text-center gap-3">
+        <AlertTriangle className="h-6 w-6 text-destructive" />
+        <CardTitle className="text-base font-normal text-muted-foreground">
+          Не удалось загрузить компании. Проверьте соединение и попробуйте ещё раз.
+        </CardTitle>
+        <Button size="sm" variant="outline" onClick={onRetry}>
+          Повторить
+        </Button>
       </CardHeader>
     </Card>
   )

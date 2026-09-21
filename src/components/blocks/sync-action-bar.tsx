@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { FolderUp, Loader, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 import type { SystemSource } from "@/server/sources"
@@ -70,7 +71,7 @@ export function SyncActionBar({
   const hasArchiveSource = sources.some((s) => archiveProviders.has(s.provider))
 
   return (
-    <div className="flex flex-wrap items-center gap-2 justify-between">
+    <div className="flex flex-wrap items-center gap-2 justify-between rounded-xl border bg-card p-3">
       <div className="flex flex-wrap items-center gap-2">
         {sources
           .filter((s) => getProvider(s.provider).capabilities.supportsRemoteSync)
@@ -98,46 +99,53 @@ export function SyncActionBar({
           ))}
 
         {/* Processing period — bounds which fetched items get parsed+uploaded
-            after a sync (by source_created_at). Empty = all. */}
-        <div className="flex items-center gap-1.5 rounded-md border px-2 py-1">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Период обработки:
-          </span>
+            after a sync (by source_created_at). Empty = all. Тот же паттерн
+            С/По, что на Домашней. */}
+        <div className="flex items-center gap-2">
+          <Label htmlFor="process-date-from" className="text-xs text-muted-foreground">
+            С
+          </Label>
           <Input
+            id="process-date-from"
             type="date"
             aria-label="Период обработки: с"
             value={processDateFrom}
             max={processDateTo || undefined}
             onChange={(e) => onProcessDateFromChange(e.target.value)}
             disabled={processRunning}
-            className="h-7 w-35 text-xs"
+            className="h-8 w-fit"
           />
-          <span className="text-xs text-muted-foreground">—</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="process-date-to" className="text-xs text-muted-foreground">
+            По
+          </Label>
           <Input
+            id="process-date-to"
             type="date"
             aria-label="Период обработки: по"
             value={processDateTo}
             min={processDateFrom || undefined}
             onChange={(e) => onProcessDateToChange(e.target.value)}
             disabled={processRunning}
-            className="h-7 w-35 text-xs"
+            className="h-8 w-fit"
           />
-          {(processDateFrom || processDateTo) && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              title="Сбросить период (обрабатывать все)"
-              disabled={processRunning}
-              onClick={() => {
-                onProcessDateFromChange("")
-                onProcessDateToChange("")
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          )}
         </div>
+        {(processDateFrom || processDateTo) && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Сбросить период (обрабатывать все)"
+            aria-label="Сбросить период (обрабатывать все)"
+            disabled={processRunning}
+            onClick={() => {
+              onProcessDateFromChange("")
+              onProcessDateToChange("")
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {hasArchiveSource && (
