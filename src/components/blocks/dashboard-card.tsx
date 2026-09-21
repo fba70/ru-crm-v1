@@ -327,11 +327,11 @@ export function DashboardCard({
         // action row without forcing line-clamp across the card boundary,
         // while staying tight enough that short cards don't leave a big
         // gap above the footer group.
-        "flex flex-col h-120 overflow-hidden",
+        "flex flex-col h-120 gap-4 overflow-hidden",
         CARD_SURFACE,
       )}
     >
-      <CardHeader className="pb-3 space-y-2">
+      <CardHeader className="pb-1.5 space-y-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base min-w-0 flex-1 truncate">
             {CATEGORY_LABEL[card.category]}
@@ -383,7 +383,7 @@ export function DashboardCard({
             (scrollbar-none — скроллбар спрятан, скролл работает) с
             градиентом-подсказкой внизу, а не тихая обрезка. */}
         <div className="relative flex-1 min-h-0">
-        <div className="h-full overflow-y-auto scrollbar-none space-y-3">
+        <div className="h-full overflow-y-auto scrollbar-none space-y-3 pt-4 pb-4">
           {analysis && <MessageField label="Анализ" text={analysis} noClamp />}
           {recommendation && (
             <MessageField
@@ -496,9 +496,10 @@ export function DashboardCard({
           </div>
         )}
         </div>
-        {/* Градиент-подсказка «есть что проскроллить» — поверх низа
-            скролл-зоны, не самой карточки, поэтому не перекрывает кнопки
-            Принять/Отклонить ниже. */}
+        {/* Градиенты-подсказки «есть что проскроллить» — поверх верха и
+            низа скролл-зоны, не самой карточки, поэтому не перекрывают
+            заголовок выше и кнопки Принять/Отклонить ниже. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-4 bg-gradient-to-b from-card to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-card to-transparent" />
         </div>
 
