@@ -111,6 +111,7 @@ function MessageField({
   text,
   highlight = false,
   action,
+  noClamp = false,
 }: {
   label: string
   text: string
@@ -121,12 +122,17 @@ function MessageField({
   // «Создать заказ» на new_order-карточках живёт прямо в блоке рекомендации
   // (прижато вправо), а не отдельной кнопкой внизу карточки.
   action?: ReactNode
+  // Рекомендация теперь показывается ПОЛНОСТЬЮ, без клэмпа на 3 строки и
+  // без hover-card — карточка и так скроллится по вертикали (см. CardContent
+  // выше), так что обрезать текст незачем.
+  noClamp?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [truncated, setTruncated] = useState(false)
   const ref = useRef<HTMLParagraphElement>(null)
 
   useEffect(() => {
+    if (noClamp) return
     const el = ref.current
     if (!el) return
     const check = () => setTruncated(el.scrollHeight - el.clientHeight > 1)
@@ -134,7 +140,7 @@ function MessageField({
     const ro = new ResizeObserver(check)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [text])
+  }, [text, noClamp])
 
   const paragraph = (
     <p
@@ -142,7 +148,8 @@ function MessageField({
       tabIndex={truncated ? 0 : undefined}
       onClick={truncated ? () => setOpen((o) => !o) : undefined}
       className={cn(
-        "leading-relaxed line-clamp-3 whitespace-pre-wrap rounded -mx-1 px-1 transition-colors outline-hidden",
+        "leading-relaxed whitespace-pre-wrap rounded -mx-1 px-1 transition-colors outline-hidden",
+        !noClamp && "line-clamp-3",
         truncated && "cursor-pointer hover:bg-muted/40 focus:bg-muted/40",
       )}
     >
@@ -167,36 +174,32 @@ function MessageField({
       >
         {label}
       </div>
-      <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1">
-          {truncated ? (
-            <HoverCard
-              open={open}
-              onOpenChange={setOpen}
-              openDelay={150}
-              closeDelay={100}
-            >
-              <HoverCardTrigger asChild>{paragraph}</HoverCardTrigger>
-              <HoverCardContent
-                align="start"
-                className="w-96 max-h-80 overflow-y-auto"
-              >
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                  {label}
-                </div>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {text}
-                </p>
-              </HoverCardContent>
-            </HoverCard>
-          ) : (
-            paragraph
-          )}
-        </div>
-        {/* Та же строка, что текст рекомендации — не новая строка снизу,
-            чтобы кнопка не увеличивала высоту цветного блока. */}
-        {action && <div className="shrink-0">{action}</div>}
-      </div>
+      {truncated ? (
+        <HoverCard
+          open={open}
+          onOpenChange={setOpen}
+          openDelay={150}
+          closeDelay={100}
+        >
+          <HoverCardTrigger asChild>{paragraph}</HoverCardTrigger>
+          <HoverCardContent
+            align="start"
+            className="w-96 max-h-80 overflow-y-auto"
+          >
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+              {label}
+            </div>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+              {text}
+            </p>
+          </HoverCardContent>
+        </HoverCard>
+      ) : (
+        paragraph
+      )}
+      {/* На следующей строке — ширину растягивает сам вызывающий компонент
+          через свой className, MessageField её не навязывает. */}
+      {action && <div className="mt-2">{action}</div>}
     </div>
   )
 }
@@ -372,16 +375,25 @@ export function DashboardCard({
       </CardHeader>
 
       <CardContent className="flex-1 min-h-0 flex flex-col gap-3 text-sm overflow-hidden">
-        <div className="space-y-2 min-h-0">
-          {analysis && <MessageField label="Анализ" text={analysis} />}
+        {/* Раньше overflow-hidden на всю CardContent молча ОБРЕЗАЛ
+            содержимое, если анализ+рекомендация+причина отклонения+теги не
+            влезали в фиксированную высоту карточки (h-120) — «Причина
+            отклонения» могла визуально наехать на блок рекомендации прямо
+            на границе обрезки. Теперь это отдельная скроллящаяся зона
+            (scrollbar-none — скроллбар спрятан, скролл работает) с
+            градиентом-подсказкой внизу, а не тихая обрезка. */}
+        <div className="relative flex-1 min-h-0">
+        <div className="h-full overflow-y-auto scrollbar-none space-y-3">
+          {analysis && <MessageField label="Анализ" text={analysis} noClamp />}
           {recommendation && (
             <MessageField
               label="Рекомендация"
               text={recommendation}
               highlight
+              noClamp
               action={
                 card.category === "new_order" ? (
-                  <Button asChild size="sm" variant="outline">
+                  <Button asChild size="sm" variant="outline" className="w-full">
                     {/* Hands the card off to /products, where the New Order
                         dialog opens prefilled with the linked client + the
                         verbatim client message (message.orderRequest). */}
@@ -397,7 +409,6 @@ export function DashboardCard({
           {!analysis && !recommendation && (
             <p className="text-muted-foreground italic">Нет содержимого.</p>
           )}
-        </div>
 
         {card.rejectionReason && (
           <div className="rounded-md border border-red-300/50 bg-red-500/5 p-2 text-xs">
@@ -484,6 +495,12 @@ export function DashboardCard({
             )}
           </div>
         )}
+        </div>
+        {/* Градиент-подсказка «есть что проскроллить» — поверх низа
+            скролл-зоны, не самой карточки, поэтому не перекрывает кнопки
+            Принять/Отклонить ниже. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-card to-transparent" />
+        </div>
 
         {/* Единая нижняя группа (одна mt-auto на весь блок, а не на каждый
             элемент по отдельности) — иначе несколько mt-auto-соседей делят
