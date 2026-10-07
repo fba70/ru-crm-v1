@@ -15,6 +15,11 @@ import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
 const PAGE_SIZE = 6
 export const ALL = "__all__"
 
+// Та же дефиниция «решённости», что и в dashboard-card.tsx.
+function isResolved(card: CardRow): boolean {
+  return card.accepted || !!card.rejectionReason
+}
+
 export const PRIORITIES = ["normal", "high"] as const
 export const CATEGORIES = [
   "client_activity",
@@ -82,7 +87,7 @@ export function CardsFeedSection({
     const fromTs = from ? new Date(from).getTime() : null
     const toTs = to ? new Date(`${to}T23:59:59.999`).getTime() : null
 
-    return cards.filter((c) => {
+    const matched = cards.filter((c) => {
       // Hide rejected cards unless the toggle includes them. Accepted
       // cards always pass — they remain on the dashboard as a record of
       // approved actions.
@@ -97,6 +102,11 @@ export function CardsFeedSection({
 
       return true
     })
+
+    // Карточки, требующие действия, всегда идут первыми — Array.prototype.sort
+    // стабилен (ES2019+), так что внутри каждой из двух групп порядок не
+    // меняется.
+    return matched.sort((a, b) => Number(isResolved(a)) - Number(isResolved(b)))
   }, [cards, priority, category, from, to, includeRejected])
 
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)

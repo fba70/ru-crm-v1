@@ -30,6 +30,8 @@ import {
 import {
   Building2,
   Check,
+  ChevronDown,
+  ChevronUp,
   Contact,
   FileText,
   Link2,
@@ -226,6 +228,35 @@ export function DashboardCard({
 
   const resolved = card.accepted || !!card.rejectionReason
 
+  // Чевроны вместо градиентов-подсказок: кнопка видна только когда реально
+  // есть куда скроллить в эту сторону (а не просто «на всякий случай»).
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollUp, setCanScrollUp] = useState(false)
+  const [canScrollDown, setCanScrollDown] = useState(false)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const check = () => {
+      setCanScrollUp(el.scrollTop > 1)
+      setCanScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 1)
+    }
+    check()
+    el.addEventListener("scroll", check)
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener("scroll", check)
+      ro.disconnect()
+    }
+  }, [card])
+
+  const scrollByPage = (direction: 1 | -1) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollBy({ top: direction * el.clientHeight, behavior: "smooth" })
+  }
+
   const handleAccept = () => {
     startTransition(async () => {
       try {
@@ -329,6 +360,15 @@ export function DashboardCard({
         // gap above the footer group.
         "flex flex-col h-120 gap-4 overflow-hidden",
         CARD_SURFACE,
+        // Принятые/отклонённые карточки слегка темнее — читается как «уже
+        // решено, внимания больше не требует», без ухода в неразличимость.
+        resolved &&
+          // Непрозрачный bg-muted — не bg-muted/50. --muted и так лишь чуть
+          // темнее --card (это и даёт «лёгкое» затемнение), а сплошной
+          // (не альфа-смешанный) цвет даёт градиенту ниже честный флэт-цвет
+          // для перехода без шва — два полупрозрачных слоя друг на друге
+          // (карточка + градиент) визуально складывались и были видны.
+          "bg-muted hover:bg-muted",
       )}
     >
       <CardHeader className="pb-1.5 space-y-2">
@@ -345,12 +385,16 @@ export function DashboardCard({
             >
               {PRIORITY_LABEL[card.priority]} приоритет
             </Badge>
-            <Badge
-              className={CATEGORY_COLOR[card.category]}
-              variant="secondary"
-            >
-              {CATEGORY_LABEL[card.category]}
-            </Badge>
+            {/* Скрыт на уже решённых карточках — «Требуется действие»
+                рядом с «Принята»/«Отклонена» читалось как противоречие. */}
+            {!resolved && (
+              <Badge
+                className={CATEGORY_COLOR[card.category]}
+                variant="secondary"
+              >
+                {CATEGORY_LABEL[card.category]}
+              </Badge>
+            )}
             {card.accepted && (
               <Badge
                 variant="secondary"
@@ -383,7 +427,10 @@ export function DashboardCard({
             (scrollbar-none — скроллбар спрятан, скролл работает) с
             градиентом-подсказкой внизу, а не тихая обрезка. */}
         <div className="relative flex-1 min-h-0">
-        <div className="h-full overflow-y-auto scrollbar-none space-y-3 pt-4 pb-4">
+        <div
+          ref={scrollRef}
+          className="h-full overflow-y-auto scrollbar-none space-y-3 pt-4 pb-4"
+        >
           {analysis && <MessageField label="Анализ" text={analysis} noClamp />}
           {recommendation && (
             <MessageField
@@ -496,11 +543,32 @@ export function DashboardCard({
           </div>
         )}
         </div>
-        {/* Градиенты-подсказки «есть что проскроллить» — поверх верха и
-            низа скролл-зоны, не самой карточки, поэтому не перекрывают
-            заголовок выше и кнопки Принять/Отклонить ниже. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-4 bg-gradient-to-b from-card to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-card to-transparent" />
+        {/* Чевроны вместо градиентов — показывают, что есть что проскроллить,
+            и сами скроллят по клику на высоту видимой области; колесо мыши
+            продолжает работать как обычно. Видны только когда реально есть
+            куда скроллить в эту сторону. */}
+        {canScrollUp && (
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => scrollByPage(-1)}
+            className="absolute left-1/2 top-0 -translate-x-1/2 rounded-full dark:hover:bg-input/60 dark:hover:text-foreground"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        {canScrollDown && (
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => scrollByPage(1)}
+            className="absolute left-1/2 bottom-0 -translate-x-1/2 rounded-full dark:hover:bg-input/60 dark:hover:text-foreground"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        )}
         </div>
 
         {/* Единая нижняя группа (одна mt-auto на весь блок, а не на каждый
