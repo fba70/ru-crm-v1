@@ -27,7 +27,7 @@ const CARD_CATEGORY_LABEL: Record<CardCategory, string> = {
   client_activity: "Активность клиента",
   colleagues_activity: "Активность коллег",
   business_info: "Бизнес-информация",
-  action_required: "Требуется действие",
+  action_required: "Нужен ответ",
   ambiguity: "Неоднозначность",
   data_intelligence: "Аналитика данных",
   momentum: "Динамика",

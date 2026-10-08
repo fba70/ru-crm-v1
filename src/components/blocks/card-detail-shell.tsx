@@ -23,6 +23,7 @@ import {
   Contact,
   FileText,
   Link2,
+  ListTodo,
   ShoppingCart,
   Users,
   X,
@@ -47,7 +48,7 @@ const CATEGORY_LABEL: Record<CardCategory, string> = {
   client_activity: "Активность клиента",
   colleagues_activity: "Активность коллег",
   business_info: "Бизнес-информация",
-  action_required: "Требуется действие",
+  action_required: "Нужен ответ",
   ambiguity: "Неоднозначность",
   data_intelligence: "Аналитика данных",
   momentum: "Динамика",
@@ -56,18 +57,10 @@ const CATEGORY_LABEL: Record<CardCategory, string> = {
   support: "Поддержка",
 }
 
-const CATEGORY_COLOR: Record<CardCategory, string> = {
-  client_activity: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
-  colleagues_activity: "bg-purple-500/15 text-purple-600 dark:text-purple-300",
-  business_info: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  action_required: "bg-red-500/15 text-red-600 dark:text-red-300",
-  ambiguity: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
-  data_intelligence: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-300",
-  momentum: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
-  log_only: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  new_order: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  support: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
-}
+// Статус, не категория — см. то же решение в dashboard-card.tsx. Красный,
+// как у старого бейджа category action_required, но теперь для любой
+// нерешённой карточки.
+const STATUS_PENDING_COLOR = "bg-red-500/15 text-red-600 dark:text-red-300"
 
 const PRIORITY_COLOR: Record<CardPriority, string> = {
   normal: "bg-slate-500/15 text-slate-700 dark:text-slate-200",
@@ -112,13 +105,17 @@ export function CardDetailShell({ card }: { card: CardRow }) {
     [card.category, card.priority, recommendation],
   )
 
-  const handleAccept = () => {
+  const handleAccept = (taskId?: string) => {
     startTransition(async () => {
       try {
         const res = await fetch("/api/cards", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: card.id, action: "accept" }),
+          body: JSON.stringify({
+            id: card.id,
+            action: "accept",
+            ...(taskId ? { resultTaskId: taskId } : {}),
+          }),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
@@ -188,9 +185,12 @@ export function CardDetailShell({ card }: { card: CardRow }) {
             <Badge className={PRIORITY_COLOR[card.priority]} variant="secondary">
               {PRIORITY_LABEL[card.priority]} приоритет
             </Badge>
-            <Badge className={CATEGORY_COLOR[card.category]} variant="secondary">
-              {CATEGORY_LABEL[card.category]}
-            </Badge>
+            {/* Статус, не категория — та же логика, что в dashboard-card.tsx. */}
+            {!resolved && (
+              <Badge className={STATUS_PENDING_COLOR} variant="secondary">
+                Требуется решение
+              </Badge>
+            )}
             {card.accepted && (
               <Badge
                 variant="secondary"
@@ -301,26 +301,29 @@ export function CardDetailShell({ card }: { card: CardRow }) {
             </section>
           )}
 
-          {card.category === "new_order" && (
-            <div className="flex pt-3 border-t border-border/40">
-              <Button
-                asChild
-                className="flex-1 bg-lime-600 text-white hover:bg-lime-600/90"
-              >
-                {/* → /products, where the New Order dialog opens prefilled with
-                    the linked client + the verbatim client message. */}
-                <Link href={`/products?orderFromCard=${card.id}`}>
-                  <ShoppingCart className="h-4 w-4 mr-1" />
-                  Создать заказ
-                </Link>
-              </Button>
-            </div>
-          )}
-
           {!resolved && (
             <div className="flex gap-2 pt-3 border-t border-border/40">
-              {/* "Принять" opens the New Task dialog prefilled from this card;
-                  the card is accepted only once the task is created. */}
+              {/* new_order cards swap "Принять" for "Создать заказ" in the
+                  same slot — same consolidation as dashboard-card.tsx: one
+                  recommendation, one action, not a competing task button
+                  next to a separate order button. */}
+              {card.category === "new_order" ? (
+                <Button
+                  asChild
+                  disabled={isPending}
+                  // Solid fill, same weight as the default "Принять" button
+                  // it replaces here (this page doesn't use the pastel-badge
+                  // treatment dashboard-card.tsx's own Принять uses).
+                  className="flex-1 bg-emerald-600 text-white hover:bg-emerald-600/90"
+                >
+                  {/* → /products, where the New Order dialog opens prefilled
+                      with the linked client + the verbatim client message. */}
+                  <Link href={`/products?orderFromCard=${card.id}`}>
+                    <ShoppingCart className="h-4 w-4 mr-1" />
+                    Создать заказ
+                  </Link>
+                </Button>
+              ) : (
               <TaskEditDialog
                 mode="create"
                 initialValues={taskInitialValues}
@@ -332,6 +335,7 @@ export function CardDetailShell({ card }: { card: CardRow }) {
                   </Button>
                 }
               />
+              )}
               <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
                 <DialogTrigger asChild>
                   <Button
@@ -376,6 +380,25 @@ export function CardDetailShell({ card }: { card: CardRow }) {
                 </DialogContent>
               </Dialog>
             </div>
+          )}
+          {resolved && (card.resultTaskId || card.resultOrderId) && (
+            <Button
+              asChild
+              variant="ghost"
+              className="w-full justify-start text-muted-foreground hover:text-foreground mt-3"
+            >
+              {card.resultTaskId ? (
+                <Link href={`/tasks?openTask=${card.resultTaskId}`}>
+                  <ListTodo className="h-4 w-4 mr-1" />
+                  Открыть задачу
+                </Link>
+              ) : (
+                <Link href={`/products?openOrder=${card.resultOrderId}`}>
+                  <ShoppingCart className="h-4 w-4 mr-1" />
+                  Открыть заказ
+                </Link>
+              )}
+            </Button>
           )}
         </CardContent>
       </Card>

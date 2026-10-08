@@ -878,6 +878,21 @@ export const card = pgTable(
     ruleId: text("rule_id").references(() => rule.id, {
       onDelete: "set null",
     }),
+    // What accepting this card's recommendation actually created — stamped
+    // at acceptance time by the two flows that can produce a durable row:
+    // the generic "Принять" → create-task dialog (resultTaskId) and the
+    // new_order "Создать заказ" flow once a real order is minted
+    // (resultOrderId, from either order-builder.tsx's persist() or
+    // products/page.tsx's startAssembly — see dashboard-card.tsx's
+    // handleAccept). At most one is ever set per card (a card has exactly
+    // one recommendation). ON DELETE SET NULL — a later hard-delete of the
+    // task/order shouldn't take the card's own accept/reject history with it.
+    resultTaskId: text("result_task_id").references(() => task.id, {
+      onDelete: "set null",
+    }),
+    resultOrderId: text("result_order_id").references(() => order.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -891,6 +906,8 @@ export const card = pgTable(
     index("card_accepted_idx").on(table.accepted),
     index("card_sourceItemId_idx").on(table.sourceItemId),
     index("card_ruleId_idx").on(table.ruleId),
+    index("card_resultTaskId_idx").on(table.resultTaskId),
+    index("card_resultOrderId_idx").on(table.resultOrderId),
   ],
 )
 

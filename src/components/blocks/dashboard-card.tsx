@@ -1,13 +1,6 @@
 "use client"
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-  type ReactNode,
-} from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -35,6 +28,7 @@ import {
   Contact,
   FileText,
   Link2,
+  ListTodo,
   ShoppingCart,
   Users,
   X,
@@ -60,7 +54,7 @@ const CATEGORY_LABEL: Record<CardCategory, string> = {
   client_activity: "Активность клиента",
   colleagues_activity: "Активность коллег",
   business_info: "Бизнес-информация",
-  action_required: "Требуется действие",
+  action_required: "Нужен ответ",
   ambiguity: "Неоднозначность",
   data_intelligence: "Аналитика данных",
   momentum: "Динамика",
@@ -69,22 +63,16 @@ const CATEGORY_LABEL: Record<CardCategory, string> = {
   support: "Поддержка",
 }
 
-// Хью взяты из палитры доски сделок («драгоценные тона», src/lib/deal-board.ts
-// STAGE_COLOR + бейджи deal-kanban-card.tsx), а не разрозненного набора Tailwind-
-// цветов — чтобы Домашняя читалась как часть того же продукта, что и Сделки.
-const CATEGORY_COLOR: Record<CardCategory, string> = {
-  client_activity: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
-  colleagues_activity: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
-  business_info: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
-  action_required:
-    "bg-[#C1121F]/10 text-[#A31018] dark:bg-[#C1121F]/15 dark:text-[#FF8F96]",
-  ambiguity: "bg-[#C2410C]/15 text-[#C2410C] dark:text-[#E5824A]",
-  data_intelligence: "bg-[#294A6B]/15 text-[#294A6B] dark:text-[#8FB4D9]",
-  momentum: "bg-teal-500/15 text-teal-600 dark:text-teal-300",
-  log_only: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  new_order: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  support: "bg-[#669BBC]/20 text-[#2F5D77] dark:text-[#9FC4DC]",
-}
+// Статус-бейдж под приоритетом больше НЕ показывает категорию (она и так
+// всегда в заголовке карточки — дублирование того же текста дважды читалось
+// как баг: «бейдж пропал» воспринималось как «решение уже принято», хотя это
+// просто была другая категория). Один цвет на все категории — бейдж отвечает
+// только на вопрос «решение уже принято или нет», сам текст решения
+// (Принята/Отклонена) задаётся прямо в месте использования. Красный — то же
+// предупреждающее прочтение, что было у старого бейджа категории
+// action_required («Требуется действие»), только теперь относится к ЛЮБОЙ
+// нерешённой карточке, а не только к одной категории.
+const STATUS_PENDING_COLOR = "bg-red-500/15 text-red-600 dark:text-red-300"
 
 const PRIORITY_COLOR: Record<CardPriority, string> = {
   normal: "bg-slate-500/15 text-slate-700 dark:text-slate-200",
@@ -112,7 +100,6 @@ function MessageField({
   label,
   text,
   highlight = false,
-  action,
   noClamp = false,
 }: {
   label: string
@@ -121,9 +108,6 @@ function MessageField({
   // оператора, поэтому визуально выделяется цветным блоком (в отличие от
   // «Анализ», который просто контекст).
   highlight?: boolean
-  // «Создать заказ» на new_order-карточках живёт прямо в блоке рекомендации
-  // (прижато вправо), а не отдельной кнопкой внизу карточки.
-  action?: ReactNode
   // Рекомендация теперь показывается ПОЛНОСТЬЮ, без клэмпа на 3 строки и
   // без hover-card — карточка и так скроллится по вертикали (см. CardContent
   // выше), так что обрезать текст незачем.
@@ -199,9 +183,6 @@ function MessageField({
       ) : (
         paragraph
       )}
-      {/* На следующей строке — ширину растягивает сам вызывающий компонент
-          через свой className, MessageField её не навязывает. */}
-      {action && <div className="mt-2">{action}</div>}
     </div>
   )
 }
@@ -218,9 +199,16 @@ function formatDate(iso: string): string {
 export function DashboardCard({
   card,
   onChanged,
+  onCreateOrder,
 }: {
   card: CardRow
   onChanged: () => void
+  // «Создать заказ» on a new_order card — when provided, opens the New Order
+  // dialog right here on the dashboard instead of navigating to /products
+  // first (see dashboard/page.tsx). Falls back to the old Link-based
+  // navigation when omitted, so this component still works if ever reused
+  // somewhere without that wiring.
+  onCreateOrder?: (card: CardRow) => void
 }) {
   const [rejectOpen, setRejectOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
@@ -257,13 +245,17 @@ export function DashboardCard({
     el.scrollBy({ top: direction * el.clientHeight, behavior: "smooth" })
   }
 
-  const handleAccept = () => {
+  const handleAccept = (taskId?: string) => {
     startTransition(async () => {
       try {
         const res = await fetch("/api/cards", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: card.id, action: "accept" }),
+          body: JSON.stringify({
+            id: card.id,
+            action: "accept",
+            ...(taskId ? { resultTaskId: taskId } : {}),
+          }),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
@@ -362,13 +354,17 @@ export function DashboardCard({
         CARD_SURFACE,
         // Принятые/отклонённые карточки слегка темнее — читается как «уже
         // решено, внимания больше не требует», без ухода в неразличимость.
-        resolved &&
-          // Непрозрачный bg-muted — не bg-muted/50. --muted и так лишь чуть
-          // темнее --card (это и даёт «лёгкое» затемнение), а сплошной
-          // (не альфа-смешанный) цвет даёт градиенту ниже честный флэт-цвет
-          // для перехода без шва — два полупрозрачных слоя друг на друге
-          // (карточка + градиент) визуально складывались и были видны.
-          "bg-muted hover:bg-muted",
+        // Светлая тема: --muted и так лишь чуть темнее --card (L 0.955 vs
+        // 1.0) — этого достаточно. Тёмная тема: --muted (L 0.2738) почти
+        // не отличается от --card (L 0.2938, разница вдвое меньше, чем в
+        // светлой) — на тёмной теме решённая карточка читалась как
+        // нерешённая. dark:bg-background берёт более тёмный токен страницы
+        // (L 0.2321) вместо --muted, давая заметную разницу там, где не
+        // хватало светлой темы. Непрозрачные цвета без альфы (не bg-muted/50)
+        // — изначально это было ради честного перехода под градиент снизу,
+        // но тот градиент заменили на чевроны (см. ниже), так что это условие
+        // больше не обязательно, просто сохранили как есть.
+        resolved && "bg-muted hover:bg-muted dark:bg-background dark:hover:bg-background",
       )}
     >
       <CardHeader className="pb-1.5 space-y-2">
@@ -385,14 +381,12 @@ export function DashboardCard({
             >
               {PRIORITY_LABEL[card.priority]} приоритет
             </Badge>
-            {/* Скрыт на уже решённых карточках — «Требуется действие»
-                рядом с «Принята»/«Отклонена» читалось как противоречие. */}
+            {/* Статус, не категория — категория уже в заголовке выше.
+                Один и тот же текст/цвет для ЛЮБОЙ категории, пока карточка
+                не решена; сменяется на Принята/Отклонена ниже. */}
             {!resolved && (
-              <Badge
-                className={CATEGORY_COLOR[card.category]}
-                variant="secondary"
-              >
-                {CATEGORY_LABEL[card.category]}
+              <Badge className={STATUS_PENDING_COLOR} variant="secondary">
+                Требуется решение
               </Badge>
             )}
             {card.accepted && (
@@ -438,19 +432,6 @@ export function DashboardCard({
               text={recommendation}
               highlight
               noClamp
-              action={
-                card.category === "new_order" ? (
-                  <Button asChild size="sm" variant="outline" className="w-full">
-                    {/* Hands the card off to /products, where the New Order
-                        dialog opens prefilled with the linked client + the
-                        verbatim client message (message.orderRequest). */}
-                    <Link href={`/products?orderFromCard=${card.id}`}>
-                      <ShoppingCart className="h-4 w-4 mr-1" />
-                      Создать заказ
-                    </Link>
-                  </Button>
-                ) : undefined
-              }
             />
           )}
           {!analysis && !recommendation && (
@@ -578,9 +559,44 @@ export function DashboardCard({
         <div className="mt-auto flex flex-col gap-2 pt-2">
             {!resolved && (
             <div className="flex gap-2">
-            {/* "Принять" opens the New Task dialog prefilled from this card.
-                The card is marked accepted only once the task is actually
-                created (onSuccess → handleAccept); cancelling leaves it open. */}
+            {/* new_order cards swap "Принять" for "Создать заказ" in the
+                exact same slot — the one recommendation on a new_order card
+                IS "create the order", so a generic task made no sense there,
+                and a THIRD button living inside the Рекомендация block (the
+                earlier approach) looked bolted-on next to this row. One
+                slot, one action per category, same visual rhythm either way. */}
+            {card.category === "new_order" ? (
+              onCreateOrder ? (
+                // Opens the New Order dialog right on the dashboard,
+                // prefilled with the linked client + the verbatim client
+                // message (message.orderRequest) — see dashboard/page.tsx.
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="flex-1 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:bg-emerald-400/15 dark:text-emerald-300 dark:hover:bg-emerald-400/25"
+                  disabled={isPending}
+                  onClick={() => onCreateOrder(card)}
+                >
+                  <ShoppingCart className="h-4 w-4 mr-1" />
+                  Создать заказ
+                </Button>
+              ) : (
+                <Button
+                  asChild
+                  size="sm"
+                  variant="secondary"
+                  className="flex-1 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:bg-emerald-400/15 dark:text-emerald-300 dark:hover:bg-emerald-400/25"
+                >
+                  {/* Fallback when no onCreateOrder is wired: hands the card
+                      off to /products, where the New Order dialog opens
+                      prefilled the same way. */}
+                  <Link href={`/products?orderFromCard=${card.id}`}>
+                    <ShoppingCart className="h-4 w-4 mr-1" />
+                    Создать заказ
+                  </Link>
+                </Button>
+              )
+            ) : (
             <TaskEditDialog
               mode="create"
               initialValues={taskInitialValues}
@@ -604,6 +620,7 @@ export function DashboardCard({
                 </Button>
               }
             />
+            )}
             <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -649,6 +666,29 @@ export function DashboardCard({
               </DialogContent>
             </Dialog>
             </div>
+            )}
+            {/* Куда ведёт принятие рекомендации — задача или заказ, смотря
+                что реально создалось (см. handleAccept / onCreateOrder выше,
+                resultTaskId/resultOrderId стамповаются в момент создания). */}
+            {resolved && (card.resultTaskId || card.resultOrderId) && (
+              <Button
+                asChild
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start text-muted-foreground hover:text-foreground"
+              >
+                {card.resultTaskId ? (
+                  <Link href={`/tasks?openTask=${card.resultTaskId}`}>
+                    <ListTodo className="h-4 w-4 mr-1" />
+                    Открыть задачу
+                  </Link>
+                ) : (
+                  <Link href={`/products?openOrder=${card.resultOrderId}`}>
+                    <ShoppingCart className="h-4 w-4 mr-1" />
+                    Открыть заказ
+                  </Link>
+                )}
+              </Button>
             )}
 
         </div>

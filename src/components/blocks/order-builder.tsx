@@ -128,6 +128,12 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
   // a suspended client, or options not loaded yet). The effective preview
   // discount derives from the selected client option when available — see below.
   const [orderDiscount, setOrderDiscount] = useState(0)
+  // Set when the session was opened from a Truffalo Card's "Создать заказ"
+  // (orderFromCard handoff, manual branch). The FIRST successful create in
+  // persist() below auto-accepts that card — see dashboard-card.tsx's
+  // "Resolved cards" note for why the card must flip to accepted the moment
+  // an order actually exists for it, not just when the dialog opens.
+  const [originCardId, setOriginCardId] = useState<string | null>(null)
 
   const [clientOptions, setClientOptions] = useState<OrderClientOption[]>([])
   const clientsLoaded = useRef(false)
@@ -156,13 +162,18 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     setLink(null)
     setStockOnly(true)
     setOrderDiscount(0)
+    setOriginCardId(null)
   }, [])
 
-  const openNew = useCallback(() => {
-    reset()
-    setIsActive(true)
-    loadClients()
-  }, [reset, loadClients])
+  const openNew = useCallback(
+    (cardId?: string) => {
+      reset()
+      setOriginCardId(cardId ?? null)
+      setIsActive(true)
+      loadClients()
+    },
+    [reset, loadClients],
+  )
 
   const hydrate = useCallback((o: OrderDetail) => {
     setMode("edit")
@@ -361,6 +372,24 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
         const data = await res.json()
         setMode("edit")
         setOrderId(data.id)
+        // First real order row for this session — if it was opened from a
+        // card's "Создать заказ", that IS the decision on the card, so
+        // auto-accept it the same as clicking "Принять" would. Best-effort,
+        // fire-and-forget: a failure here shouldn't block the order save the
+        // operator is actually waiting on.
+        if (originCardId) {
+          const cardToAccept = originCardId
+          setOriginCardId(null)
+          void fetch("/api/cards", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: cardToAccept,
+              action: "accept",
+              resultOrderId: data.id,
+            }),
+          }).catch(() => {})
+        }
         return data.id as string
       }
       const res = await fetch("/api/orders", {
@@ -380,7 +409,7 @@ export function useOrderBuilder({ onSaved }: { onSaved?: () => void } = {}) {
     } finally {
       setSaving(false)
     }
-  }, [clientId, description, currency, lines, mode, orderId])
+  }, [clientId, description, currency, lines, mode, orderId, originCardId])
 
   const saveDraft = useCallback(async () => {
     const id = await persist()

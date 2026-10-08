@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -27,6 +28,7 @@ import { ExploreSourcesDialog } from "@/components/blocks/explore-sources-dialog
 import { MagicCardsButton } from "@/components/blocks/magic-cards-button"
 import { GlobalSearch } from "@/components/blocks/global-search"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
+import { NewOrderDialog } from "@/components/blocks/order-request-wizard"
 
 function isoDateNDaysAgo(days: number): string {
   const d = new Date()
@@ -41,6 +43,7 @@ function todayIso(): string {
 type PeriodPreset = "day" | "week" | "all"
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [cards, setCards] = useState<CardRow[]>([])
   const [loading, setLoading] = useState(true)
   // Отличаем «реально пусто» от «запрос не выполнился» (сеть/БД) — иначе
@@ -76,6 +79,18 @@ export default function DashboardPage() {
       setTo("")
     }
   }
+
+  // "Создать заказ" on a new_order card opens this dialog right here instead
+  // of navigating to /products first — the dialog itself (client + pasted
+  // text) is a self-contained component (loads its own client options),
+  // unlike the actual order-assembly builder below it, which lives entirely
+  // in /products's page state (catalog table, useOrderBuilder) and isn't
+  // portable here. So: client+text step happens on the dashboard, the parse
+  // (POST /api/order-requests, done inside NewOrderDialog's own onAssemble
+  // path) runs from here too, and only THEN do we navigate — straight into
+  // the already-parsed assembly wizard via ?assembleRequest=, skipping the
+  // old flow's redundant second dialog on /products.
+  const [orderDialogCard, setOrderDialogCard] = useState<CardRow | null>(null)
 
   const clearFilters = () => {
     setPriority(ALL)
@@ -239,6 +254,7 @@ export default function DashboardPage() {
           loadError={loadError}
           onRetry={() => void load()}
           onChanged={load}
+          onCreateOrder={setOrderDialogCard}
           priority={priority}
           category={category}
           from={from}
@@ -247,6 +263,35 @@ export default function DashboardPage() {
           onClearFilters={clearFilters}
         />
       </div>
+
+      <NewOrderDialog
+        open={!!orderDialogCard}
+        onOpenChange={(o) => {
+          if (!o) setOrderDialogCard(null)
+        }}
+        onManual={() => {
+          // No catalog here to build manually against — same fallback the
+          // card's own Link used before this dialog moved to the dashboard.
+          if (orderDialogCard) {
+            router.push(`/products?orderFromCard=${orderDialogCard.id}`)
+          }
+          setOrderDialogCard(null)
+        }}
+        onAssemble={(requestId) => {
+          // The request is already parsed at this point (NewOrderDialog's own
+          // submit() did that before calling onAssemble) — hand off straight
+          // into the assembly wizard instead of re-showing this same dialog
+          // on /products.
+          if (orderDialogCard) {
+            router.push(
+              `/products?assembleRequest=${requestId}&cardId=${orderDialogCard.id}`,
+            )
+          }
+          setOrderDialogCard(null)
+        }}
+        initialClientId={orderDialogCard?.clients?.[0]?.id ?? null}
+        initialRawText={orderDialogCard?.message?.orderRequest ?? ""}
+      />
     </div>
   )
 }

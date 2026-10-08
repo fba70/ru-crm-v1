@@ -48,6 +48,10 @@ export type CardRow = {
   message: CardMessage
   accepted: boolean
   rejectionReason: string | null
+  // What accepting this card actually created — set by acceptCard() when the
+  // caller passes resultTaskId/resultOrderId. At most one is ever non-null.
+  resultTaskId: string | null
+  resultOrderId: string | null
   sourceItemId: string | null
   sourceItemTitle: string | null
   ruleId: string | null
@@ -257,6 +261,8 @@ export async function listCards(): Promise<CardRow[]> {
     message: normaliseMessage(r.card.message),
     accepted: r.card.accepted,
     rejectionReason: r.card.rejectionReason,
+    resultTaskId: r.card.resultTaskId,
+    resultOrderId: r.card.resultOrderId,
     sourceItemId: r.card.sourceItemId,
     sourceItemTitle: r.sourceItemFilename ?? r.sourceItemExternalId,
     ruleId: r.card.ruleId,
@@ -326,6 +332,8 @@ export async function getCard(cardId: string): Promise<CardRow | null> {
     message: normaliseMessage(row.card.message),
     accepted: row.card.accepted,
     rejectionReason: row.card.rejectionReason,
+    resultTaskId: row.card.resultTaskId,
+    resultOrderId: row.card.resultOrderId,
     sourceItemId: row.card.sourceItemId,
     sourceItemTitle: row.sourceItemFilename ?? row.sourceItemExternalId,
     ruleId: row.card.ruleId,
@@ -472,12 +480,20 @@ export async function updateCard(
   }
 }
 
-export async function acceptCard(cardId: string) {
+export async function acceptCard(
+  cardId: string,
+  opts?: { resultTaskId?: string; resultOrderId?: string },
+) {
   const { activeOrgId } = await requireOrgContext()
   await assertCardInOrg(cardId, activeOrgId)
   await db
     .update(card)
-    .set({ accepted: true, rejectionReason: null })
+    .set({
+      accepted: true,
+      rejectionReason: null,
+      ...(opts?.resultTaskId ? { resultTaskId: opts.resultTaskId } : {}),
+      ...(opts?.resultOrderId ? { resultOrderId: opts.resultOrderId } : {}),
+    })
     .where(eq(card.id, cardId))
 }
 

@@ -89,6 +89,8 @@ export async function PUT(request: NextRequest) {
       id,
       action,
       rejectionReason,
+      resultTaskId,
+      resultOrderId,
       priority,
       category,
       message,
@@ -102,7 +104,10 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 })
     }
     if (action === "accept") {
-      await acceptCard(id)
+      await acceptCard(id, {
+        resultTaskId: typeof resultTaskId === "string" ? resultTaskId : undefined,
+        resultOrderId: typeof resultOrderId === "string" ? resultOrderId : undefined,
+      })
       return NextResponse.json({ success: true })
     }
     if (action === "reject") {

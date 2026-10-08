@@ -38,7 +38,7 @@ export const CATEGORY_LABEL: Record<(typeof CATEGORIES)[number], string> = {
   client_activity: "Активность клиента",
   colleagues_activity: "Активность коллег",
   business_info: "Бизнес-информация",
-  action_required: "Требуется действие",
+  action_required: "Нужен ответ",
   ambiguity: "Неоднозначность",
   data_intelligence: "Аналитика данных",
   momentum: "Динамика",
@@ -59,6 +59,7 @@ export function CardsFeedSection({
   loadError,
   onRetry,
   onChanged,
+  onCreateOrder,
   priority,
   category,
   from,
@@ -73,6 +74,8 @@ export function CardsFeedSection({
   loadError: boolean
   onRetry: () => void
   onChanged: () => void
+  // Threaded straight through to <DashboardCard> — see its own prop comment.
+  onCreateOrder?: (card: CardRow) => void
   // Приоритет/категория/период/отклонённые — все фильтры теперь в шапке
   // страницы (по образцу /clients) — секция только фильтрует и рендерит по
   // уже переданным значениям, селекты/контролы сами живут в page.tsx.
@@ -131,9 +134,14 @@ export function CardsFeedSection({
   const grid = useMemo(
     () =>
       visible.map((c) => (
-        <DashboardCard key={c.id} card={c} onChanged={onChanged} />
+        <DashboardCard
+          key={c.id}
+          card={c}
+          onChanged={onChanged}
+          onCreateOrder={onCreateOrder}
+        />
       )),
-    [visible, onChanged],
+    [visible, onChanged, onCreateOrder],
   )
 
   // The default date range is "Все время" (both empty); any deviation

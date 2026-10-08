@@ -101,7 +101,10 @@ type Props = {
   mode: "create" | "edit"
   task?: TaskRow
   trigger: React.ReactNode
-  onSuccess?: () => void
+  // In create mode, called with the newly-created task's id (so a caller can
+  // e.g. link it back to the card it was created from — see
+  // dashboard-card.tsx's handleAccept). Undefined in edit mode.
+  onSuccess?: (taskId?: string) => void
   // Create-mode-only prefill (ignored in edit mode, where `task` wins).
   // Used e.g. by the dashboard cards "Принять" → "create task from card" flow.
   // Pass a stable reference (memoize in the parent) so the open-effect's
@@ -128,7 +131,7 @@ export function TaskEditForm({
 }: {
   mode: "create" | "edit"
   task?: TaskRow
-  onSuccess?: () => void
+  onSuccess?: (taskId?: string) => void
   onCancel?: () => void
   initialValues?: Partial<TaskFormData>
 }) {
@@ -247,7 +250,12 @@ export function TaskEditForm({
           return
         }
         toast.success(mode === "create" ? "Задача создана" : "Задача обновлена")
-        onSuccess?.()
+        if (mode === "create") {
+          const created = await res.json().catch(() => ({}))
+          onSuccess?.(typeof created.id === "string" ? created.id : undefined)
+        } else {
+          onSuccess?.()
+        }
       } catch {
         toast.error("Не удалось сохранить задачу")
       }
@@ -544,8 +552,8 @@ export default function TaskEditDialog({
             mode={mode}
             task={task}
             initialValues={initialValues}
-            onSuccess={() => {
-              onSuccess?.()
+            onSuccess={(taskId) => {
+              onSuccess?.(taskId)
               setOpen(false)
             }}
             onCancel={() => setOpen(false)}
