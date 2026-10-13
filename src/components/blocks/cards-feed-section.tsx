@@ -21,10 +21,19 @@ function isResolved(card: CardRow): boolean {
 }
 
 export const PRIORITIES = ["normal", "high"] as const
+// Only the 7 categories the org's active Custom rule ("Cards - Email,
+// Telegram and Support") actually defines CASES for — client_activity /
+// colleagues_activity / business_info are valid DB enum values (other,
+// older/inactive rules in this org's /rules list still declare them) but
+// this rule's own # OUTPUT CONTRACT no longer lists them (see
+// scripts/fix-cards-rule-category-enum.ts + src/app/CLAUDE.md § "Card
+// category labels"), so a card can never actually carry one in practice
+// today. Dropped from the filter dropdown so it doesn't offer dead options;
+// CardCategory itself (schema.ts) and every other CATEGORY_LABEL copy
+// (dashboard-card.tsx / card-detail-shell.tsx / notifications.ts) still
+// cover all ten, so a historical/other-rule card in one of the three would
+// still render its title correctly — it just can't be filtered TO here.
 export const CATEGORIES = [
-  "client_activity",
-  "colleagues_activity",
-  "business_info",
   "action_required",
   "ambiguity",
   "data_intelligence",
@@ -35,9 +44,6 @@ export const CATEGORIES = [
 ] as const
 
 export const CATEGORY_LABEL: Record<(typeof CATEGORIES)[number], string> = {
-  client_activity: "Активность клиента",
-  colleagues_activity: "Активность коллег",
-  business_info: "Бизнес-информация",
   action_required: "Нужен ответ",
   ambiguity: "Неоднозначность",
   data_intelligence: "Аналитика данных",
