@@ -26,7 +26,6 @@ import {
   ChevronDown,
   ChevronUp,
   Contact,
-  FileText,
   Link2,
   ListTodo,
   ShoppingCart,
@@ -452,8 +451,7 @@ export function DashboardCard({
         {(card.clients.length > 0 ||
           card.contacts.length > 0 ||
           card.users.length > 0 ||
-          card.ruleName ||
-          card.sourceItemTitle) && (
+          card.ruleName) && (
           <div className="space-y-1.5 text-xs text-muted-foreground">
             {card.clients.length > 0 && (
               <div className="space-y-1">
@@ -510,15 +508,6 @@ export function DashboardCard({
                   Правило
                 </div>
                 <p className="pl-[22px] truncate">{card.ruleName}</p>
-              </div>
-            )}
-            {card.sourceItemTitle && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                  Источник
-                </div>
-                <p className="pl-[22px] truncate">{card.sourceItemTitle}</p>
               </div>
             )}
           </div>
