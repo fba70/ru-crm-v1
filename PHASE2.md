@@ -865,3 +865,37 @@ cards — shipped right after). Transcripts live next to the recordings in
   a previous job) so the agent's hints and card recommendations follow it.
   Methodologies as pluggable prompt context; must be reachable everywhere the
   agent advises, not only as a contextual tooltip.
+
+---
+
+## 22. Companies feed — move sorting back to the server at scale
+
+Today `/clients` loads the WHOLE tab in one request (`FEED_LIMIT = 500`) and
+sorts it client-side with `sortClientFeed` (`src/lib/client-feed-sort.ts`) so
+«Сначала новые / Сначала критичные» switches instantly with a motion layout
+animation. Fine at current volume (largest org: 22 companies), but the client
+says an org may have hundreds/thousands. Past ~300–500 companies:
+
+- **Payload / DOM cost.** Thousands of rows ≈ 1–2 MB JSON and thousands of
+  animated cards in the DOM — slow first load, janky reorder.
+- **Wrong order past the cap.** Over 500 the page shows «Показаны первые N из
+  M», and sorting only covers the loaded part.
+- **`listClientsFeed` itself doesn't scale.** It already loads every org
+  client + deals + task summary into memory and filters/sorts in JS on every
+  request.
+
+Plan (≈ half a day):
+
+1. Rewrite `listClientsFeed` as SQL: tab classification (closed/open deal
+   stages, `custom_fields.companyKind`) as joins/`EXISTS`, `ORDER BY` for both
+   modes (`created_at desc`; critical = overdue-task count desc → stale
+   (`updated_at` < now − `CLIENT_STALE_THRESHOLD_DAYS`) desc → `updated_at`
+   desc), `LIMIT/OFFSET`. Keep `sortClientFeed` as the reference definition
+   (or delete it) so the two orders can't drift.
+2. Restore the `sort` query param on `GET /api/clients?tab=…` and scroll
+   loading (`useInfiniteScroll`) on the page.
+3. Keep the UX: on sort switch keep the current list on screen until the new
+   page arrives (no blank state / spinner), then animate only the visible
+   cards/rows into place.
+4. Consider virtualization for the table view if a tab is still thousands of
+   rows after filtering.
