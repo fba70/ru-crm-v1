@@ -30,7 +30,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-import { AlertTriangle, Loader, Plus, Rows4, PlayingCardsFan, X } from "lucide-react"
+import { AlertTriangle, Plus, Rows4, PlayingCardsFan, X } from "lucide-react"
 import type {
   TaskRow,
   OrgMemberOption,
@@ -44,6 +44,7 @@ import { TaskDetailDrawer } from "@/components/blocks/task-detail-drawer"
 import { TaskTimeline } from "@/components/blocks/task-timeline"
 import { GlobalSearch } from "@/components/blocks/global-search"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
+import { PageLoader } from "@/components/blocks/page-loader"
 
 const PAGE_SIZE = 6
 
@@ -560,9 +561,7 @@ function TasksPageContent() {
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader className="animate-spin h-6 w-6" />
-            </div>
+            <PageLoader />
           ) : loadError && tasks.length === 0 ? (
             <Card className="border-dashed border-destructive/40 bg-destructive/5">
               <CardContent className="py-12 flex flex-col items-center gap-3 text-center">
@@ -609,9 +608,7 @@ function TasksPageContent() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader className="animate-spin h-6 w-6" />
-            </div>
+            <PageLoader />
           ) : (
             <TaskTimeline tasks={filteredTasks} onChanged={refreshAll} />
           )}

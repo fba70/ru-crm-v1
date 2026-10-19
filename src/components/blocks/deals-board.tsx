@@ -605,10 +605,11 @@ export function DealsBoard({
     }
     // Короткая запись по умолчанию, если комментарий пуст — перевод без
     // комментария раньше затирал deal.changes на null (карточка/дровер
-    // пустели). Обратный перевод: причина обязательна в диалоге и ВСЕГДА
-    // попадает в журнал (historyNote → Хронология/Лента решений) — только
-    // карточечное deal.changes (note) её не показывает (дежурная запись
-    // вместо неё), чтобы не путать с реальным текущим состоянием сделки.
+    // пустели). Комментарий необязателен в обе стороны; если он есть, он
+    // ВСЕГДА попадает в журнал (historyNote → Хронология/Лента решений).
+    // У обратного перевода карточечное deal.changes (note) его не показывает
+    // (дежурная запись вместо него), чтобы не путать с реальным текущим
+    // состоянием сделки.
     const stamp = `Переведено: ${move.toLabel}`
     const realNote = note.trim() || stamp
     const noteToSend = move.direction === "back" ? stamp : realNote
@@ -944,9 +945,6 @@ export function DealsBoard({
       <DealMoveDialog
         move={pendingMove}
         pending={isPending}
-        commitments={
-          pendingMove ? (board.commitments[pendingMove.toStageId] ?? []) : []
-        }
         onConfirm={confirmMove}
         onCancel={() => setPendingMove(null)}
       />

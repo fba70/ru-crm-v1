@@ -7,6 +7,7 @@ import { AlertTriangle, Loader, X } from "lucide-react"
 import type { CardRow } from "@/app/api/cards/route"
 import { DashboardCard } from "@/components/blocks/dashboard-card"
 import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
+import { PageLoader } from "@/components/blocks/page-loader"
 
 // Two rows on the lg grid (3 cols) per scroll batch — was one row (3) behind
 // click-through pagination; the team asked for roughly double, scroll-loaded
@@ -175,9 +176,7 @@ export function CardsFeedSection({
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none space-y-4">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader className="animate-spin h-6 w-6" />
-          </div>
+          <PageLoader />
         ) : loadError && cards.length === 0 ? (
           <Card className="border-dashed border-destructive/40 bg-destructive/5">
             <CardHeader className="items-center text-center gap-3">

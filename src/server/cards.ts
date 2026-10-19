@@ -10,6 +10,7 @@ import {
   contact,
   member,
   rule,
+  source,
   sourceItem,
   user,
   type CardPriority,
@@ -53,7 +54,15 @@ export type CardRow = {
   resultTaskId: string | null
   resultOrderId: string | null
   sourceItemId: string | null
+  // Human-readable description of the source the card was built from: email
+  // subject / first line of a chat message / file name. Never the provider's
+  // opaque external id (that read as a meaningless hash on the card).
   sourceItemTitle: string | null
+  sourceProvider: string | null
+  sourceSender: string | null
+  // Email To + Cc, formatted for display (null for chats/files).
+  sourceRecipients: string | null
+  sourceCreatedAt: string | null
   ruleId: string | null
   ruleName: string | null
   clients: CardClientRef[]
@@ -61,6 +70,85 @@ export type CardRow = {
   contacts: CardContactRef[]
   createdAt: string
   updatedAt: string
+}
+
+// Raw join columns describing a card's source item (see sourceSummary).
+type SourceJoin = {
+  sourceItemFilename: string | null
+  sourceItemMetadata: unknown
+  sourceItemCreatedAt: Date | null
+  sourceProvider: string | null
+}
+
+const SOURCE_SELECT = {
+  sourceItemFilename: sourceItem.filename,
+  sourceItemMetadata: sourceItem.metadataJson,
+  sourceItemCreatedAt: sourceItem.sourceCreatedAt,
+  sourceProvider: source.provider,
+}
+
+function firstLine(text: unknown, max = 120): string | null {
+  if (typeof text !== "string") return null
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0)
+  if (!line) return null
+  return line.length > max ? line.slice(0, max - 1) + "…" : line
+}
+
+function formatParty(p: unknown): string | null {
+  const f = p as { name?: unknown; email?: unknown }
+  const name = typeof f?.name === "string" ? f.name.trim() : ""
+  const email = typeof f?.email === "string" ? f.email.trim() : ""
+  if (name && email) return `${name} <${email}>`
+  return name || email || null
+}
+
+function formatParties(list: unknown): string[] {
+  if (!Array.isArray(list)) return []
+  return list.map(formatParty).filter((p): p is string => !!p)
+}
+
+function firstSender(meta: Record<string, unknown>): string | null {
+  const from = formatParties(meta.from)
+  if (from.length > 0) return from[0]
+  const senders = meta.senders
+  if (Array.isArray(senders) && typeof senders[0] === "string") {
+    return senders[0].trim() || null
+  }
+  return null
+}
+
+// Turns the joined source columns into what the card shows: a title the
+// operator recognises (subject / message preview / file name), the sender and
+// the original date. The opaque external id is deliberately never used.
+function sourceSummary(r: SourceJoin) {
+  const meta =
+    r.sourceItemMetadata && typeof r.sourceItemMetadata === "object"
+      ? (r.sourceItemMetadata as Record<string, unknown>)
+      : {}
+  const subject =
+    typeof meta.subject === "string" && meta.subject.trim()
+      ? meta.subject.trim()
+      : null
+  const title =
+    subject ??
+    firstLine(meta.text) ??
+    firstLine(meta.rawText) ??
+    r.sourceItemFilename ??
+    firstLine(meta.summary)
+  return {
+    sourceItemTitle: title,
+    sourceProvider: r.sourceProvider,
+    sourceSender: firstSender(meta),
+    sourceRecipients:
+      [...formatParties(meta.to), ...formatParties(meta.cc)].join(", ") ||
+      null,
+    sourceCreatedAt: r.sourceItemCreatedAt
+      ? r.sourceItemCreatedAt.toISOString()
+      : null,
+  }
 }
 
 async function requireOrgContext() {
@@ -187,12 +275,12 @@ export async function listCards(): Promise<CardRow[]> {
     .select({
       card,
       ruleName: rule.name,
-      sourceItemFilename: sourceItem.filename,
-      sourceItemExternalId: sourceItem.externalId,
+      ...SOURCE_SELECT,
     })
     .from(card)
     .leftJoin(rule, eq(card.ruleId, rule.id))
     .leftJoin(sourceItem, eq(card.sourceItemId, sourceItem.id))
+    .leftJoin(source, eq(sourceItem.sourceId, source.id))
     .where(eq(card.organizationId, activeOrgId))
     .orderBy(desc(card.createdAt))
 
@@ -264,7 +352,7 @@ export async function listCards(): Promise<CardRow[]> {
     resultTaskId: r.card.resultTaskId,
     resultOrderId: r.card.resultOrderId,
     sourceItemId: r.card.sourceItemId,
-    sourceItemTitle: r.sourceItemFilename ?? r.sourceItemExternalId,
+    ...sourceSummary(r),
     ruleId: r.card.ruleId,
     ruleName: r.ruleName,
     clients: clientsByCard.get(r.card.id) ?? [],
@@ -281,12 +369,12 @@ export async function getCard(cardId: string): Promise<CardRow | null> {
     .select({
       card,
       ruleName: rule.name,
-      sourceItemFilename: sourceItem.filename,
-      sourceItemExternalId: sourceItem.externalId,
+      ...SOURCE_SELECT,
     })
     .from(card)
     .leftJoin(rule, eq(card.ruleId, rule.id))
     .leftJoin(sourceItem, eq(card.sourceItemId, sourceItem.id))
+    .leftJoin(source, eq(sourceItem.sourceId, source.id))
     .where(eq(card.id, cardId))
     .limit(1)
   const row = rows[0]
@@ -335,7 +423,7 @@ export async function getCard(cardId: string): Promise<CardRow | null> {
     resultTaskId: row.card.resultTaskId,
     resultOrderId: row.card.resultOrderId,
     sourceItemId: row.card.sourceItemId,
-    sourceItemTitle: row.sourceItemFilename ?? row.sourceItemExternalId,
+    ...sourceSummary(row),
     ruleId: row.card.ruleId,
     ruleName: row.ruleName,
     clients: clientLinks.map((l) => ({ id: l.clientId, name: l.clientName })),

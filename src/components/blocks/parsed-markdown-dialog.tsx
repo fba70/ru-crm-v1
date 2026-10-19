@@ -73,10 +73,17 @@ export function ParsedMarkdownDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-5xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      {/* Radix по умолчанию фокусирует первый focusable — крестик закрытия,
+          и он открывается «подсвеченным». Здесь фокусировать нечего. */}
+      {/* Шапка с крестиком закреплена — прокручивается только содержимое. */}
+      <DialogContent
+        className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-5xl"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="shrink-0 border-b p-6 pr-12">
           <DialogTitle className="text-base truncate">{title}</DialogTitle>
         </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
         {loading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
             <Loader className="h-4 w-4 animate-spin" />
@@ -85,6 +92,7 @@ export function ParsedMarkdownDialog({
         )}
         {error && <p className="text-sm text-destructive py-4">{error}</p>}
         {markdown && <ParsedBlock markdown={markdown} />}
+        </div>
       </DialogContent>
     </Dialog>
   )

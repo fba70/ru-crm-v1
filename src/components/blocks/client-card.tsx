@@ -47,7 +47,13 @@ const COMPANY_KIND_COLOR: Record<string, string> = {
 // dimmed below.
 // Хью — те же, что уже использует доска сделок (src/lib/deal-board.ts +
 // deal-kanban-card.tsx), а не разрозненные Tailwind-цвета.
-const STATUS_COLOR: Record<string, string> = {
+// Общая карта цветов статуса компании — используется и карточкой, и
+// табличным видом на /clients. «Не проверена» (initial — найдена системой,
+// ждёт проверки человеком) — оранжевая, «Активная» — зелёная, чтобы их было
+// видно с первого взгляда.
+export const STATUS_COLOR: Record<string, string> = {
+  active:
+    "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300",
   initial: "bg-[#C2410C]/15 text-[#C2410C] dark:text-[#E5824A]",
   suspended: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
   deleted: "bg-red-500/15 text-red-600 dark:text-red-300",
@@ -56,11 +62,11 @@ const STATUS_COLOR: Record<string, string> = {
 
 // UI display labels for the status badge (DB enum values stay English).
 const STATUS_LABEL: Record<string, string> = {
-  active: "Активный",
-  initial: "Новый",
-  suspended: "Приостановлен",
-  deleted: "Удалён",
-  blocked: "Заблокирован",
+  active: "Активная",
+  initial: "Не проверена",
+  suspended: "Приостановлена",
+  deleted: "Удалена",
+  blocked: "Заблокирована",
 }
 
 // Блок аккаунт-менеджмента (UX со звонка 14.08): выручка за 12 мес., активная
@@ -200,30 +206,26 @@ export function ClientCard({
               {client.namePhys}
             </div>
           )}
-          {/* Funnel-phase badge intentionally hidden for now — only the
-              non-active status + company-kind badges are shown. */}
-          {(client.status !== "active" || client.customFields?.companyKind) && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {client.status !== "active" && (
-                <Badge
-                  variant="secondary"
-                  className={STATUS_COLOR[client.status] ?? ""}
-                >
-                  {STATUS_LABEL[client.status] ?? client.status}
-                </Badge>
-              )}
-              {client.customFields?.companyKind && (
-                <Badge
-                  variant="secondary"
-                  className={
-                    COMPANY_KIND_COLOR[client.customFields.companyKind] ?? ""
-                  }
-                >
-                  {COMPANY_KIND_LABELS[client.customFields.companyKind]}
-                </Badge>
-              )}
-            </div>
-          )}
+          {/* Funnel-phase badge intentionally hidden for now — status (incl.
+              «Активная») + company-kind badges are shown. */}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge
+              variant="secondary"
+              className={STATUS_COLOR[client.status] ?? ""}
+            >
+              {STATUS_LABEL[client.status] ?? client.status}
+            </Badge>
+            {client.customFields?.companyKind && (
+              <Badge
+                variant="secondary"
+                className={
+                  COMPANY_KIND_COLOR[client.customFields.companyKind] ?? ""
+                }
+              >
+                {COMPANY_KIND_LABELS[client.customFields.companyKind]}
+              </Badge>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <ClientLookupDialog
@@ -381,11 +383,11 @@ export function ClientCard({
             «Подробнее» убрана — клик по всей карточке и так открывает
             дровер (см. onClick на <Card> выше). */}
         <div className="flex-1" aria-hidden />
-        {client.userName && (
-          <div className="pt-1 text-xs text-muted-foreground truncate">
-            Кто создал: {client.userName}
-          </div>
-        )}
+        <div className="pt-1 text-xs text-muted-foreground truncate">
+          Создана:{" "}
+          {new Date(client.createdAt).toLocaleDateString("ru-RU")}
+          {client.userName && ` · ${client.userName}`}
+        </div>
       </CardContent>
     </Card>
   )

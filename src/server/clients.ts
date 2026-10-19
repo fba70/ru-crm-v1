@@ -28,7 +28,6 @@ import {
   listTaskSummaryByClient,
   type ClientTaskSummary,
 } from "@/server/tasks"
-import { clientAtRisk } from "@/lib/client-mocks"
 import { generateText, Output, stepCountIs } from "ai"
 import { google } from "@ai-sdk/google"
 import { z } from "zod"
@@ -247,7 +246,8 @@ export async function listClientsFeed(params: {
   taskSummary: Record<string, ClientTaskSummary>
 }> {
   const { activeOrgId } = await requireOrgContext()
-  const limit = Math.min(Math.max(params.limit ?? 20, 1), 50)
+  // До 500 — страница /clients грузит вкладку целиком и сортирует на клиенте.
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 500)
   const offset = Math.max(params.offset ?? 0, 0)
 
   const stages = await listDealFunnelStages()
@@ -304,16 +304,13 @@ export async function listClientsFeed(params: {
     }
   })
 
-  matching.sort((a, b) => {
-    const overdueA = taskSummary[a.client.id]?.overdueCount ?? 0
-    const overdueB = taskSummary[b.client.id]?.overdueCount ?? 0
-    if (overdueA !== overdueB) return overdueB - overdueA
-    const staleA = clientAtRisk(a.client.updatedAt.toISOString()) ? 1 : 0
-    const staleB = clientAtRisk(b.client.updatedAt.toISOString()) ? 1 : 0
-    if (staleA !== staleB) return staleB - staleA
-    // Final tiebreak: most-recently-touched first (was oldest-first).
-    return b.client.updatedAt.getTime() - a.client.updatedAt.getTime()
-  })
+  // Базовый порядок — по дате добавления, новые наверху. Страница грузит
+  // ленту вкладки целиком (limit до 500) и пересортировывает её сама
+  // (`sortClientFeed` в src/lib/client-feed-sort.ts — там же «Сначала
+  // критичные»), чтобы переключение было мгновенным и с анимацией.
+  matching.sort(
+    (a, b) => b.client.createdAt.getTime() - a.client.createdAt.getTime(),
+  )
 
   const total = matching.length
   const page = matching.slice(offset, offset + limit)

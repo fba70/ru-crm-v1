@@ -70,6 +70,7 @@ import type {
 } from "@/app/api/products/route"
 import type { OrderRequestItemView } from "@/app/api/order-requests/route"
 import { parseQtyHint } from "@/lib/order-request"
+import { PageLoader } from "@/components/blocks/page-loader"
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 const DEFAULT_PAGE_SIZE = 10
@@ -1186,7 +1187,7 @@ export default function ProductsPage() {
                             colSpan={catalogColSpan}
                             className="h-40 text-center"
                           >
-                            <Loader className="animate-spin h-6 w-6 mx-auto" />
+                            <PageLoader className="min-h-0" />
                           </TableCell>
                         </TableRow>
                       ) : rows.length === 0 ? (

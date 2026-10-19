@@ -83,11 +83,11 @@ const PHASE_LABEL: Record<string, string> = {
   retention: "Удержание",
 }
 const STATUS_LABEL: Record<string, string> = {
-  active: "Активный",
-  suspended: "Приостановлен",
-  initial: "Новый",
-  deleted: "Удалён",
-  blocked: "Заблокирован",
+  active: "Активная",
+  suspended: "Приостановлена",
+  initial: "Не проверена",
+  deleted: "Удалена",
+  blocked: "Заблокирована",
 }
 
 const CURRENCIES: { value: string; label: string }[] = [

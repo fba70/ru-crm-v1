@@ -3,21 +3,20 @@
 import { authClient } from "@/lib/auth-client"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { ShieldAlert, Loader } from "lucide-react"
+import { ShieldAlert } from "lucide-react"
 import { TableAdminUsers } from "@/components/tables/table-admin-users"
 import { TableAdminOrgs } from "@/components/tables/table-admin-orgs"
 import { TableAdminSources } from "@/components/tables/table-admin-sources"
 import { TableAdminTemplates } from "@/components/tables/table-admin-templates"
 import { AdminTeardown } from "@/components/blocks/admin-teardown"
+import { PageLoader } from "@/components/blocks/page-loader"
 
 export default function SettingsPage() {
   const { data: session, isPending } = authClient.useSession()
 
   if (isPending) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader className="animate-spin h-8 w-8 text-gray-900 dark:text-gray-100" />
-      </div>
+      <PageLoader className="min-h-screen" />
     )
   }
 

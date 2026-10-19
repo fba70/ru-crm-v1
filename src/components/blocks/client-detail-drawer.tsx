@@ -74,11 +74,11 @@ const TYPE_NONE = "__none__"
 const COMPANY_KIND_NONE = "__none__"
 
 const STATUS_OPTIONS: { value: EntityStatus; label: string }[] = [
-  { value: "active", label: "Активный" },
-  { value: "initial", label: "Новый" },
-  { value: "suspended", label: "Приостановлен" },
-  { value: "deleted", label: "Удалён" },
-  { value: "blocked", label: "Заблокирован" },
+  { value: "active", label: "Активная" },
+  { value: "initial", label: "Не проверена" },
+  { value: "suspended", label: "Приостановлена" },
+  { value: "deleted", label: "Удалена" },
+  { value: "blocked", label: "Заблокирована" },
 ]
 const PHASE_OPTIONS: { value: FunnelPhase; label: string }[] = [
   { value: "awareness", label: "Осведомлённость" },

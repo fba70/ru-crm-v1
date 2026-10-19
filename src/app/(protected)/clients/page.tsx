@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { motion } from "motion/react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,7 +25,6 @@ import { Badge } from "@/components/ui/badge"
 import {
   AlertTriangle,
   Ban,
-  Loader,
   Plus,
   Rows4,
   Sparkles,
@@ -40,7 +40,7 @@ import type { DealRow } from "@/app/api/deals/route"
 import type { TaskRow } from "@/app/api/tasks/route"
 import type { ClientDetail } from "@/server/client-content"
 import ClientEditDialog from "@/components/forms/form-client-edit"
-import { ClientCard } from "@/components/blocks/client-card"
+import { ClientCard, STATUS_COLOR } from "@/components/blocks/client-card"
 import { ClientDetailDrawer } from "@/components/blocks/client-detail-drawer"
 import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
@@ -48,11 +48,11 @@ import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
 import { GlobalSearch } from "@/components/blocks/global-search"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
-import { useInfiniteScroll } from "@/lib/use-infinite-scroll"
+import { sortClientFeed, type ClientFeedSort } from "@/lib/client-feed-sort"
+import { PageLoader } from "@/components/blocks/page-loader"
 
 const ALL = "__all__"
 const TAB_ALL: ClientFeedTab = "all"
-const PAGE_SIZE = 12
 
 type ClientView = "cards" | "table"
 
@@ -67,11 +67,11 @@ const CLIENT_STATUSES = [
 ] as const
 
 const STATUS_LABEL: Record<string, string> = {
-  active: "Активный",
-  initial: "Новый",
-  suspended: "Приостановлен",
-  deleted: "Удалён",
-  blocked: "Заблокирован",
+  active: "Активная",
+  initial: "Не проверена",
+  suspended: "Приостановлена",
+  deleted: "Удалена",
+  blocked: "Заблокирована",
 }
 
 const TABS: { value: ClientFeedTab; label: string }[] = [
@@ -82,14 +82,40 @@ const TABS: { value: ClientFeedTab; label: string }[] = [
   { value: "unclassified", label: "Не определено" },
 ]
 
+// Вкладка грузится целиком одним запросом (сервер отдаёт до 500), чтобы
+// сортировка на клиенте была верной для всего списка. TODO: при тысячах
+// компаний вернуть серверную сортировку + порционную подгрузку.
+const FEED_LIMIT = 500
+
+const LAYOUT_TRANSITION = { duration: 0.35, ease: "easeInOut" } as const
+
+const MotionTableRow = motion.create(TableRow)
+
+function TotalCapNote({ shown, total }: { shown: number; total: number }) {
+  if (total <= shown) return null
+  return (
+    <p className="py-4 text-center text-xs text-muted-foreground">
+      Показаны первые {shown} из {total} компаний.
+    </p>
+  )
+}
+
 export default function ClientsPage() {
   const [tab, setTab] = useState<ClientFeedTab>("all")
   const [statusFilter, setStatusFilter] = useState<string>(ALL)
+  // Порядок ленты. Живёт на уровне страницы, поэтому не сбрасывается при
+  // переключении карточки/таблица (обе раскладки показывают одни и те же rows).
+  // Сортировка — на клиенте над уже загруженной вкладкой: переключение
+  // мгновенное, без запроса, карточки/строки плавно переезжают (motion layout).
+  const [sort, setSort] = useState<ClientFeedSort>("new")
 
+  // Вся вкладка целиком (до FEED_LIMIT) — иначе «Сначала критичные» не мог бы
+  // поднять компанию из ещё не загруженной порции.
   const [rows, setRows] = useState<ClientRow[]>([])
   const [total, setTotal] = useState(0)
-  const [offset, setOffset] = useState(0)
-  const [hasMore, setHasMore] = useState(true)
+  const [taskSummary, setTaskSummary] = useState<
+    Record<string, { overdueCount: number } | undefined>
+  >({})
   const [loading, setLoading] = useState(true)
 
   const [revenueByClient, setRevenueByClient] = useState<
@@ -118,47 +144,45 @@ export default function ClientsPage() {
 
   const reqIdRef = useRef(0)
 
-  const loadPage = useCallback(
-    async (nextOffset: number) => {
-      setLoading(true)
-      const reqId = ++reqIdRef.current
-      try {
-        const params = new URLSearchParams({
-          tab,
-          limit: String(PAGE_SIZE),
-          offset: String(nextOffset),
-        })
-        if (statusFilter !== ALL) params.set("status", statusFilter)
-        const res = await fetch(`/api/clients?${params.toString()}`)
-        if (reqIdRef.current !== reqId) return
-        if (!res.ok) {
-          setLoadError(true)
-          return
-        }
-        const data = await res.json()
-        if (reqIdRef.current !== reqId) return
-        setLoadError(false)
-        const newRows: ClientRow[] = data.rows ?? []
-        setRows((prev) => (nextOffset === 0 ? newRows : [...prev, ...newRows]))
-        setTotal(data.total ?? 0)
-        setOffset(nextOffset + newRows.length)
-        setHasMore(nextOffset + newRows.length < (data.total ?? 0))
-      } catch {
-        if (reqIdRef.current === reqId) setLoadError(true)
-      } finally {
-        if (reqIdRef.current === reqId) setLoading(false)
+  const loadPage = useCallback(async () => {
+    setLoading(true)
+    const reqId = ++reqIdRef.current
+    try {
+      const params = new URLSearchParams({
+        tab,
+        limit: String(FEED_LIMIT),
+        offset: "0",
+      })
+      if (statusFilter !== ALL) params.set("status", statusFilter)
+      const res = await fetch(`/api/clients?${params.toString()}`)
+      if (reqIdRef.current !== reqId) return
+      if (!res.ok) {
+        setLoadError(true)
+        return
       }
-    },
-    [tab, statusFilter],
+      const data = await res.json()
+      if (reqIdRef.current !== reqId) return
+      setLoadError(false)
+      setRows(data.rows ?? [])
+      setTotal(data.total ?? 0)
+      setTaskSummary(data.taskSummary ?? {})
+    } catch {
+      if (reqIdRef.current === reqId) setLoadError(true)
+    } finally {
+      if (reqIdRef.current === reqId) setLoading(false)
+    }
+  }, [tab, statusFilter])
+
+  const sortedRows = useMemo(
+    () => sortClientFeed(rows, sort, taskSummary),
+    [rows, sort, taskSummary],
   )
 
   // Каждый таб/фильтр статуса — независимая лента: смена любого из них
   // сбрасывает накопленные карточки и грузит с начала.
   useEffect(() => {
     setRows([])
-    setOffset(0)
-    setHasMore(true)
-    void loadPage(0)
+    void loadPage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, statusFilter])
 
@@ -272,16 +296,8 @@ export default function ClientsPage() {
     // свежие данные. Иначе открытый ClientDetailDrawer (client берётся из
     // rows.find(...)) на миг терял бы объект и захлопывался сам собой при
     // каждом «Сохранить» внутри него.
-    setOffset(0)
-    setHasMore(true)
-    await Promise.all([loadPage(0), loadExtras()])
+    await Promise.all([loadPage(), loadExtras()])
   }, [loadPage, loadExtras])
-
-  const { sentinelRef } = useInfiniteScroll({
-    hasMore,
-    loading,
-    onLoadMore: () => void loadPage(offset),
-  })
 
   return (
     <div className="flex flex-col h-[calc(100vh-1rem)]">
@@ -335,6 +351,15 @@ export default function ClientsPage() {
               ))}
             </SelectContent>
           </Select>
+          <Tabs
+            value={sort}
+            onValueChange={(v) => setSort(v as ClientFeedSort)}
+          >
+            <TabsList>
+              <TabsTrigger value="new">Сначала новые</TabsTrigger>
+              <TabsTrigger value="critical">Сначала критичные</TabsTrigger>
+            </TabsList>
+          </Tabs>
           {statusFilter !== ALL && (
             <Button variant="ghost" size="sm" onClick={() => setStatusFilter(ALL)}>
               <X className="h-4 w-4 mr-1" />
@@ -390,19 +415,24 @@ export default function ClientsPage() {
 
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
           {loading && rows.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader className="animate-spin h-6 w-6" />
-            </div>
+            <PageLoader />
           ) : loadError && rows.length === 0 ? (
-            <LoadErrorState onRetry={() => void loadPage(0)} />
+            <LoadErrorState onRetry={() => void loadPage()} />
           ) : rows.length === 0 ? (
             <EmptyState label="Нет компаний в этом разделе." />
           ) : view === "cards" ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                {rows.map((c) => (
-                  <ClientCard
+                {sortedRows.map((c) => (
+                  <motion.div
                     key={c.id}
+                    layout
+                    transition={LAYOUT_TRANSITION}
+                    // Обёртка — ячейка сетки; карточка внутри тянется на всю
+                    // высоту ряда, как раньше, когда была прямым grid-item.
+                    className="h-full [&>*]:h-full"
+                  >
+                    <ClientCard
                     client={c}
                     onChanged={refreshAll}
                     revenue={revenueByClient[c.id]}
@@ -414,16 +444,10 @@ export default function ClientsPage() {
                       setDrawerOpen(true)
                     }}
                   />
+                  </motion.div>
                 ))}
               </div>
-              {hasMore && (
-                <div
-                  ref={sentinelRef}
-                  className="flex items-center justify-center py-6"
-                >
-                  {loading && <Loader className="animate-spin h-5 w-5" />}
-                </div>
-              )}
+              <TotalCapNote shown={rows.length} total={total} />
             </>
           ) : (
             <>
@@ -436,15 +460,19 @@ export default function ClientsPage() {
                         <TableHead>Email</TableHead>
                         <TableHead>Телефон</TableHead>
                         <TableHead>Выручка за 12 мес.</TableHead>
+                        <TableHead>Дата создания</TableHead>
+                        <TableHead>Кто создал</TableHead>
                         <TableHead>Статус</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {rows.map((c) => {
+                      {sortedRows.map((c) => {
                         const rev = revenueByClient[c.id]
                         return (
-                          <TableRow
+                          <MotionTableRow
                             key={c.id}
+                            layout="position"
+                            transition={LAYOUT_TRANSITION}
                             className="cursor-pointer even:bg-muted/40"
                             onClick={() => {
                               setOpenClientId(c.id)
@@ -466,26 +494,26 @@ export default function ClientsPage() {
                                 ? `${Math.round(rev.revenue).toLocaleString("ru-RU")} · ${rev.orders} зак.`
                                 : "нет заказов"}
                             </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {new Date(c.createdAt).toLocaleDateString("ru-RU")}
+                            </TableCell>
+                            <TableCell>{c.userName ?? "—"}</TableCell>
                             <TableCell>
-                              <Badge variant="secondary">
+                              <Badge
+                                variant="secondary"
+                                className={STATUS_COLOR[c.status] ?? ""}
+                              >
                                 {STATUS_LABEL[c.status] ?? c.status}
                               </Badge>
                             </TableCell>
-                          </TableRow>
+                          </MotionTableRow>
                         )
                       })}
                     </TableBody>
                   </Table>
                 </CardContent>
               </Card>
-              {hasMore && (
-                <div
-                  ref={sentinelRef}
-                  className="flex items-center justify-center py-6"
-                >
-                  {loading && <Loader className="animate-spin h-5 w-5" />}
-                </div>
-              )}
+              <TotalCapNote shown={rows.length} total={total} />
             </>
           )}
         </div>

@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronUp,
   Contact,
+  FileText,
   Link2,
   ListTodo,
   ShoppingCart,
@@ -35,6 +36,7 @@ import {
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import TaskEditDialog from "@/components/forms/form-task-edit"
+import { SourceMessageDialog } from "@/components/blocks/source-message-dialog"
 import type { CardRow } from "@/app/api/cards/route"
 import type {
   CardCategory,
@@ -43,6 +45,28 @@ import type {
   TaskStatus,
   TaskType,
 } from "@/db/schema"
+
+// Канал источника по-человечески — вместо внутреннего id/хэша.
+const SOURCE_CHANNEL_LABEL: Record<string, string> = {
+  nylas: "Письмо",
+  imap: "Письмо",
+  telegram: "Telegram",
+  gchat: "Google Chat",
+  gdrive: "Google Drive",
+  whatsapp: "WhatsApp",
+  dropoff: "Файл",
+  aichat: "ИИ чат",
+}
+
+function formatSourceDate(iso: string | null): string | null {
+  if (!iso) return null
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
 
 const PRIORITY_LABEL: Record<CardPriority, string> = {
   normal: "Обычный",
@@ -211,9 +235,13 @@ export function DashboardCard({
 }) {
   const [rejectOpen, setRejectOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
+  const [sourceOpen, setSourceOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   const resolved = card.accepted || !!card.rejectionReason
+  const sourceChannel = card.sourceProvider
+    ? (SOURCE_CHANNEL_LABEL[card.sourceProvider] ?? card.sourceProvider)
+    : null
 
   // Чевроны вместо градиентов-подсказок: кнопка видна только когда реально
   // есть куда скроллить в эту сторону (а не просто «на всякий случай»).
@@ -451,8 +479,48 @@ export function DashboardCard({
         {(card.clients.length > 0 ||
           card.contacts.length > 0 ||
           card.users.length > 0 ||
-          card.ruleName) && (
+          card.ruleName ||
+          card.sourceItemId) && (
           <div className="space-y-1.5 text-xs text-muted-foreground">
+            {/* Реальный источник, на основании которого создана карточка
+                (письмо / сообщение в Telegram / файл) — must have, пока
+                пользователь не доверяет системе: открыть оригинал прямо
+                здесь и проверить, кто и что на самом деле написал. */}
+            {card.sourceItemId && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  Источник
+                </div>
+                <div className="pl-[22px] space-y-1">
+                  {/* Кликабельна строка «канал · отправитель · дата» — она
+                      есть у любого источника (у карточки заказа первая строка
+                      сообщения может быть пустой). Пунктир, как у ссылок
+                      «JSON»: откроется здесь же, в модалке, без перехода.
+                      pb-1 обязателен: truncate = overflow:hidden, и без
+                      нижнего отступа подчёркивание (underline-offset-4)
+                      выпадает за бокс и обрезается — проверено в Chromium. */}
+                  <button
+                    type="button"
+                    onClick={() => setSourceOpen(true)}
+                    className="block max-w-full truncate pb-1 text-left underline decoration-dashed decoration-muted-foreground/60 underline-offset-4 hover:text-foreground hover:decoration-foreground cursor-pointer"
+                  >
+                    {[
+                      sourceChannel,
+                      card.sourceSender,
+                      formatSourceDate(card.sourceCreatedAt),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "Открыть источник"}
+                  </button>
+                  {card.sourceItemTitle && (
+                    <p className="truncate text-foreground">
+                      {card.sourceItemTitle}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             {card.clients.length > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide">
@@ -682,6 +750,23 @@ export function DashboardCard({
 
         </div>
       </CardContent>
+      <SourceMessageDialog
+        itemId={sourceOpen ? card.sourceItemId : null}
+        title={card.sourceItemTitle ?? "Источник"}
+        open={sourceOpen}
+        onOpenChange={setSourceOpen}
+        channel={sourceChannel}
+        from={card.sourceSender}
+        to={card.sourceRecipients}
+        date={
+          card.sourceCreatedAt
+            ? new Date(card.sourceCreatedAt).toLocaleString("ru-RU", {
+                dateStyle: "long",
+                timeStyle: "short",
+              })
+            : null
+        }
+      />
     </Card>
   )
 }

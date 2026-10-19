@@ -56,10 +56,10 @@ const PHASE_LABEL: Record<string, string> = {
   retention: "Удержание",
 }
 const STATUS_LABEL: Record<string, string> = {
-  active: "Активный",
-  initial: "Новый",
-  suspended: "Приостановлен",
-  deleted: "Удалён",
+  active: "Активная",
+  initial: "Не проверена",
+  suspended: "Приостановлена",
+  deleted: "Удалена",
 }
 
 const CONTACTS_PAGE_SIZE = 5

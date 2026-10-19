@@ -1,10 +1,7 @@
-import { Loader2 } from "lucide-react"
+import { PageLoader } from "@/components/blocks/page-loader"
 
+// Показывается при перезагрузке страницы / первом заходе после авторизации —
+// тот же индикатор, что и на внутренних страницах.
 export default function Loading() {
-  return (
-    <div className="flex flex-col min-h-svh items-center justify-center p-6 gap-4">
-      <Loader2 className="text-muted-foreground size-8 animate-spin" />
-      Please wait, loading the content ...
-    </div>
-  )
+  return <PageLoader className="min-h-svh" />
 }

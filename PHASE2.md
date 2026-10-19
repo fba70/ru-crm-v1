@@ -831,3 +831,37 @@ NO deep-link tenant binding (the bot IS the tenant). See `src/app/CLAUDE.md`
   wanted, a `deleteWebhook` action + a cron poll would be the seam.
 - **Self-hosted Bot API server** (`TELEGRAM_API_BASE_URL`) — only if the
   20 MB cap or higher throughput becomes a real constraint.
+
+---
+
+## 21. Product backlog from client-feedback calls (09.10 + 17.10.2026)
+
+Items raised on the 09.10 and 17.10 calls that were explicitly deferred
+(the same calls' items 1–4 — optional move comment, agent no longer
+overriding a manual move, fresh companies first, real source on dashboard
+cards — shipped right after). Transcripts live next to the recordings in
+`записи встреч/`.
+
+- **Company event feed (client history).** A per-company chronological
+  activity stream — what happened, when, by whom — independent of whether a
+  deal exists. Today chronology lives only inside a deal (`deal_activity`), so
+  a company / contact / task with no deal has no history at all. Must fold in
+  the card accept/reject history (a card decision is part of the client's
+  history). Pilot clients (Масловы) keep exactly this as a dated free-text
+  column in Excel. Open design question: one stream per company vs several
+  "streams" per company — a signed client can run separate large projects /
+  tenders as their own funnels under one contract, plus potential contacts
+  being warmed up with no deal yet; all of these need to be linked to the
+  company.
+- **Home page as a dashboard.** Replace the plain card grid on «Домашняя» with
+  modules for three entity sets: (1) **needs a decision** — Truffalo cards;
+  (2) **needs an action** — my tasks, incl. overdue; (3) **event stream** —
+  everything that happened (new companies/contacts, created/moved deals…),
+  as a right-hand feed with filters. Plus a short summary (new companies /
+  contacts, "hot" tasks, deal stats). Keep «Аналитика» as sales analytics;
+  this is the operational view, not a separate screen.
+- **Selectable sales methodology.** Let the org pick a sales methodology
+  (e.g. one with a stakeholder/role map per deal, as a client described from
+  a previous job) so the agent's hints and card recommendations follow it.
+  Methodologies as pluggable prompt context; must be reachable everywhere the
+  agent advises, not only as a contextual tooltip.
