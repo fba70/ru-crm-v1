@@ -85,7 +85,7 @@ const PHASE_LABEL: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   active: "Активная",
   suspended: "Приостановлена",
-  initial: "Не проверена",
+  initial: "Новая",
   deleted: "Удалена",
   blocked: "Заблокирована",
 }

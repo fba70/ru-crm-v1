@@ -11,10 +11,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
-  MapPin,
   Globe,
   CloudSync,
-  MessageSquare,
   Clock,
   Briefcase,
   ChevronLeft,
@@ -48,7 +46,7 @@ const COMPANY_KIND_COLOR: Record<string, string> = {
 // Хью — те же, что уже использует доска сделок (src/lib/deal-board.ts +
 // deal-kanban-card.tsx), а не разрозненные Tailwind-цвета.
 // Общая карта цветов статуса компании — используется и карточкой, и
-// табличным видом на /clients. «Не проверена» (initial — найдена системой,
+// табличным видом на /clients. «Новая» (initial — найдена системой,
 // ждёт проверки человеком) — оранжевая, «Активная» — зелёная, чтобы их было
 // видно с первого взгляда.
 export const STATUS_COLOR: Record<string, string> = {
@@ -63,7 +61,7 @@ export const STATUS_COLOR: Record<string, string> = {
 // UI display labels for the status badge (DB enum values stay English).
 const STATUS_LABEL: Record<string, string> = {
   active: "Активная",
-  initial: "Не проверена",
+  initial: "Новая",
   suspended: "Приостановлена",
   deleted: "Удалена",
   blocked: "Заблокирована",
@@ -188,7 +186,7 @@ export function ClientCard({
         // «Подробнее» (звонок 18.09: «мне почему-то надо кликать на
         // кнопочку подробнее» вместо клика по карточке). Кнопка остаётся
         // как явный CTA; вложенные интерактивные элементы (поиск в
-        // интернете, «Ещё о компании», ссылка на сайт, пагинация задач)
+        // интернете, ссылка на сайт, пагинация задач)
         // сами глушат всплытие через stop(e).
         // Белый bg-card (не кремовая подложка) — с тех пор, как страница
         // потеряла внешний белый Card-контейнер, страница-фон просвечивал
@@ -201,9 +199,18 @@ export function ClientCard({
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <CardTitle className="truncate">{client.name}</CardTitle>
-          {client.namePhys && (
-            <div className="text-sm text-muted-foreground truncate">
-              {client.namePhys}
+          {client.webUrl && (
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              <a
+                href={client.webUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="truncate hover:underline text-[#2F5D77] dark:text-[#9FC4DC]"
+                onClick={stop}
+              >
+                {client.webUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              </a>
             </div>
           )}
           {/* Funnel-phase badge intentionally hidden for now — status (incl.
@@ -314,48 +321,6 @@ export function ClientCard({
         )}
 
         {/* Email/телефон — только на /clients/[id], не на компактной карточке. */}
-
-        {/* Адрес/сайт/комментарий — второстепенная справочная информация,
-            свёрнута по умолчанию (это не то, ради чего открывают карточку
-            компании — см. обсуждение аккаунт-менеджмента). */}
-        {(client.address || client.webUrl || client.comment) && (
-          <details className="text-muted-foreground text-xs">
-            <summary
-              className="cursor-pointer select-none hover:text-foreground"
-              onClick={stop}
-            >
-              Ещё о компании
-            </summary>
-            <div className="mt-1.5 space-y-1">
-              {client.address && (
-                <div className="flex items-center gap-2 truncate">
-                  <MapPin className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{client.address}</span>
-                </div>
-              )}
-              {client.webUrl && (
-                <div className="flex items-center gap-2 truncate">
-                  <Globe className="h-3.5 w-3.5 shrink-0" />
-                  <a
-                    href={client.webUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="truncate hover:underline text-[#2F5D77] dark:text-[#9FC4DC]"
-                    onClick={stop}
-                  >
-                    {client.webUrl}
-                  </a>
-                </div>
-              )}
-              {client.comment && (
-                <div className="flex items-start gap-2">
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                  <span className="line-clamp-2">{client.comment}</span>
-                </div>
-              )}
-            </div>
-          </details>
-        )}
 
         {client.contacts.length > 0 && (
           <div className="rounded-md border p-2 space-y-1">

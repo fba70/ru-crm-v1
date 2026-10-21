@@ -75,7 +75,7 @@ const COMPANY_KIND_NONE = "__none__"
 
 const STATUS_OPTIONS: { value: EntityStatus; label: string }[] = [
   { value: "active", label: "Активная" },
-  { value: "initial", label: "Не проверена" },
+  { value: "initial", label: "Новая" },
   { value: "suspended", label: "Приостановлена" },
   { value: "deleted", label: "Удалена" },
   { value: "blocked", label: "Заблокирована" },

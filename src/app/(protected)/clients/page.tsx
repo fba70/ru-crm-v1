@@ -68,7 +68,7 @@ const CLIENT_STATUSES = [
 
 const STATUS_LABEL: Record<string, string> = {
   active: "Активная",
-  initial: "Не проверена",
+  initial: "Новая",
   suspended: "Приостановлена",
   deleted: "Удалена",
   blocked: "Заблокирована",
