@@ -33,7 +33,6 @@ import { ModeSwitcher } from "./mode-switcher"
 import { usePathname } from "next/navigation"
 import { BrandMark } from "./brand-mark"
 import Link from "next/link"
-import { NotificationsDrawer } from "./notifications-drawer"
 import type { getServerSession } from "@/lib/get-session"
 
 export type AuthSession = NonNullable<
@@ -195,9 +194,6 @@ export function AppSidebar({
             </SidebarMenuItem>
           )}
 
-          <SidebarMenuItem>
-            <NotificationsDrawer />
-          </SidebarMenuItem>
 
           <SidebarMenuItem>
             <SidebarMenuButton asChild>

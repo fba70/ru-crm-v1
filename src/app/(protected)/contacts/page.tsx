@@ -35,6 +35,7 @@ import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ContactDetailDrawer } from "@/components/blocks/contact-detail-drawer"
 import { ContactCard } from "@/components/blocks/contact-card"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { PageLoader } from "@/components/blocks/page-loader"
 
@@ -151,6 +152,7 @@ export default function ContactsPage() {
         <div className="flex items-center gap-2">
           <AiChatTrigger />
           <GlobalSearch />
+          <NotificationsDrawer />
         </div>
       </div>
 

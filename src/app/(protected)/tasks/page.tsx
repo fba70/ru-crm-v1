@@ -43,6 +43,7 @@ import { TaskCard } from "@/components/blocks/task-card"
 import { TaskDetailDrawer } from "@/components/blocks/task-detail-drawer"
 import { TaskTimeline } from "@/components/blocks/task-timeline"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { PageLoader } from "@/components/blocks/page-loader"
 
@@ -415,6 +416,7 @@ function TasksPageContent() {
         <div className="flex items-center gap-2">
           <AiChatTrigger />
           <GlobalSearch />
+          <NotificationsDrawer />
         </div>
       </div>
 

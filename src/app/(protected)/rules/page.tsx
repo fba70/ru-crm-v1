@@ -4,6 +4,7 @@ import { authClient } from "@/lib/auth-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TableRules } from "@/components/tables/table-rules"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { PageLoader } from "@/components/blocks/page-loader"
 
@@ -25,6 +26,7 @@ export default function RulesPage() {
         <div className="flex items-center gap-2">
           <AiChatTrigger />
           <GlobalSearch />
+          <NotificationsDrawer />
         </div>
       </div>
 

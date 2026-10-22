@@ -120,7 +120,11 @@ function SheetTitle({
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn("font-semibold text-foreground", className)}
+      // min-h-9 + content-center: строка заголовка той же высоты, что
+      // крестик закрытия (size-9 в top-4), — текст встаёт ровно по его
+      // центру. Без этого текстовый заголовок (24px) сидел на 6px выше
+      // крестика; у дроверов с полем-заголовком (h-9) уже было ровно.
+      className={cn("min-h-9 content-center font-semibold text-foreground", className)}
       {...props}
     />
   )

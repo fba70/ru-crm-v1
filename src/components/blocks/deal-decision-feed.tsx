@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/sheet"
 import { Sparkles, User } from "lucide-react"
 import type { FeedEvent } from "@/server/deals"
+import { groupByDate } from "@/lib/date-groups"
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString("ru-RU", {
@@ -17,45 +18,6 @@ function formatTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })
-}
-
-// «Человеческая» дата-группа события (UX №16), как в Outlook: сегодня, вчера,
-// день недели, прошлая неделя, прошлый месяц, ранее.
-function dateGroupLabel(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ).getTime()
-  const startOfDay = new Date(
-    d.getFullYear(),
-    d.getMonth(),
-    d.getDate(),
-  ).getTime()
-  const diff = Math.round((startOfToday - startOfDay) / 86_400_000)
-  if (diff <= 0) return "Сегодня"
-  if (diff === 1) return "Вчера"
-  if (diff < 7) {
-    const wd = d.toLocaleDateString("ru-RU", { weekday: "long" })
-    return wd.charAt(0).toUpperCase() + wd.slice(1)
-  }
-  if (diff < 14) return "Прошлая неделя"
-  if (diff < 31) return "Прошлый месяц"
-  return "Ранее"
-}
-
-// Группирует события по дата-группам, сохраняя исходный порядок.
-function groupByDate(events: FeedEvent[]): { label: string; items: FeedEvent[] }[] {
-  const groups: { label: string; items: FeedEvent[] }[] = []
-  for (const ev of events) {
-    const label = dateGroupLabel(ev.at)
-    const last = groups[groups.length - 1]
-    if (last && last.label === label) last.items.push(ev)
-    else groups.push({ label, items: [ev] })
-  }
-  return groups
 }
 
 // Рендер текста события: заменяем токен "{deal}" на жирное имя сделки.
@@ -92,7 +54,7 @@ export function DealDecisionFeed({
           {events.length === 0 ? (
             <div className="text-sm text-muted-foreground">Пока нет событий.</div>
           ) : (
-            groupByDate(events).map((group) => (
+            groupByDate(events, (ev) => ev.at).map((group) => (
               <div key={group.label} className="space-y-3">
                 {/* «Человеческая» дата-группа (UX №16). */}
                 <div className="sticky top-0 -mt-1 bg-background/95 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">

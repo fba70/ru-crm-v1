@@ -2,6 +2,7 @@ import { getActiveOrgRole, listOrgSources } from "@/server/sources"
 import { getServerSession } from "@/lib/get-session"
 import { SourcesPageShell } from "@/components/blocks/sources-page-shell"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 
 export default async function SourcesPage() {
@@ -28,6 +29,7 @@ export default async function SourcesPage() {
         <div className="flex items-center gap-2">
           <AiChatTrigger />
           <GlobalSearch />
+          <NotificationsDrawer />
         </div>
       </div>
 

@@ -47,6 +47,7 @@ import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { sortClientFeed, type ClientFeedSort } from "@/lib/client-feed-sort"
 import { PageLoader } from "@/components/blocks/page-loader"
@@ -307,6 +308,7 @@ export default function ClientsPage() {
           <div className="flex items-center gap-2">
             <AiChatTrigger />
             <GlobalSearch />
+            <NotificationsDrawer />
           </div>
         </div>
 

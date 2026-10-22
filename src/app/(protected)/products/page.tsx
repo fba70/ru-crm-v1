@@ -40,6 +40,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { ProductDetailDialog } from "@/components/blocks/product-detail-dialog"
 import { OrdersTable } from "@/components/blocks/orders-table"
@@ -935,6 +936,7 @@ export default function ProductsPage() {
         <div className="flex items-center gap-2">
           <AiChatTrigger />
           <GlobalSearch />
+          <NotificationsDrawer />
         </div>
       </div>
 

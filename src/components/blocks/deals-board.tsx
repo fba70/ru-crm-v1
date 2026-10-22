@@ -66,6 +66,7 @@ import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
 import { DealDetailDrawer } from "@/components/blocks/deal-detail-drawer"
 import { DealDecisionFeed } from "@/components/blocks/deal-decision-feed"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { useBoardIntel } from "@/hooks/use-board-intel"
 import {
@@ -727,6 +728,7 @@ export function DealsBoard({
             <div className="flex items-center gap-2">
               <AiChatTrigger />
               <GlobalSearch />
+              <NotificationsDrawer />
             </div>
           </div>
 

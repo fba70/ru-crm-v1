@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, RefreshCw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { GlobalSearch } from "@/components/blocks/global-search"
+import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
 import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { TabOverview } from "@/components/blocks/analytics/tab-overview"
 import { TabTime } from "@/components/blocks/analytics/tab-time"
@@ -164,6 +165,7 @@ export default function AnalyticsPage() {
         <div className="flex items-center gap-2">
           <AiChatTrigger />
           <GlobalSearch />
+          <NotificationsDrawer />
         </div>
       </div>
 
