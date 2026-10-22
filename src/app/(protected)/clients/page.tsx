@@ -1,5 +1,6 @@
 "use client"
 
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "motion/react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,9 +28,9 @@ import {
   Ban,
   Plus,
   Rows4,
-  Sparkles,
   PlayingCardsFan,
   X,
+  ScanSearch,
 } from "lucide-react"
 import type {
   ClientRow,
@@ -46,9 +47,6 @@ import { DiscoverDialog } from "@/components/blocks/discover-dialog"
 import { MagicDiscoverButton } from "@/components/blocks/magic-discover-button"
 import { ClientEnrichControl } from "@/components/blocks/client-enrich-control"
 import { ClientBlocklistDialog } from "@/components/blocks/client-blocklist-dialog"
-import { GlobalSearch } from "@/components/blocks/global-search"
-import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
-import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { sortClientFeed, type ClientFeedSort } from "@/lib/client-feed-sort"
 import { PageLoader } from "@/components/blocks/page-loader"
 
@@ -142,6 +140,7 @@ export default function ClientsPage() {
   const [view, setView] = useState<ClientView>("cards")
   const cardsViewTip = useAnchorTooltip()
   const tableViewTip = useAnchorTooltip()
+  const blocklistTip = useAnchorTooltip()
 
   const reqIdRef = useRef(0)
 
@@ -305,11 +304,7 @@ export default function ClientsPage() {
       <div className="flex flex-col gap-4 p-4 pb-0 shrink-0">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-xl font-medium">Компании</h1>
-          <div className="flex items-center gap-2">
-            <AiChatTrigger />
-            <GlobalSearch />
-            <NotificationsDrawer />
-          </div>
+          <PageHeaderActions />
         </div>
 
         {/* «Новая компания» — первой, слева; селекты типа/статуса следом;
@@ -374,7 +369,7 @@ export default function ClientsPage() {
               canBlock={canBlock}
               trigger={
                 <Button size="sm" variant="outline">
-                  <Sparkles className="h-4 w-4 mr-1" />
+                  <ScanSearch className="h-4 w-4 mr-1" />
                   Найти в источниках
                 </Button>
               }
@@ -384,9 +379,13 @@ export default function ClientsPage() {
               <ClientBlocklistDialog
                 onChanged={refreshAll}
                 trigger={
-                  <Button size="sm" variant="outline">
-                    <Ban className="h-4 w-4 mr-1" />
-                    Список блокировки
+                  <Button
+                    size="icon-sm"
+                    variant="outline"
+                    aria-label="Список блокировки"
+                    {...blocklistTip.bind}
+                  >
+                    <Ban className="h-4 w-4" />
                   </Button>
                 }
               />
@@ -402,6 +401,7 @@ export default function ClientsPage() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            <AnchorTooltip text="список блокировки" open={blocklistTip.open} virtualRef={blocklistTip.virtualRef} />
             <AnchorTooltip text="в виде карточек" open={cardsViewTip.open} virtualRef={cardsViewTip.virtualRef} />
             <AnchorTooltip text="списком" open={tableViewTip.open} virtualRef={tableViewTip.virtualRef} />
           </div>

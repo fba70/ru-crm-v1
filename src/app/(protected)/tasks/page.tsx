@@ -1,5 +1,6 @@
 "use client"
 
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -42,9 +43,6 @@ import TaskEditDialog from "@/components/forms/form-task-edit"
 import { TaskCard } from "@/components/blocks/task-card"
 import { TaskDetailDrawer } from "@/components/blocks/task-detail-drawer"
 import { TaskTimeline } from "@/components/blocks/task-timeline"
-import { GlobalSearch } from "@/components/blocks/global-search"
-import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
-import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { PageLoader } from "@/components/blocks/page-loader"
 
 const PAGE_SIZE = 6
@@ -413,11 +411,7 @@ function TasksPageContent() {
     <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-medium">Задачи</h1>
-        <div className="flex items-center gap-2">
-          <AiChatTrigger />
-          <GlobalSearch />
-          <NotificationsDrawer />
-        </div>
+        <PageHeaderActions />
       </div>
 
       {/* Канбан без внешнего Card-контейнера — заголовок страницы достаточен. */}

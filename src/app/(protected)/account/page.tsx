@@ -4,9 +4,6 @@ import { useEffect, useState } from "react"
 import { authClient } from "@/lib/auth-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { BadgeCheck, BadgeAlert } from "lucide-react"
-import UpdateUserDialog from "@/components/forms/form-edit-user"
-import ResetPasswordForm from "@/components/forms/form-reset-password"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Separator } from "@/components/ui/separator"
@@ -14,11 +11,13 @@ import { PolarCustomerState } from "@/types/polar"
 import { TableUserOrders } from "@/components/tables/table-user-orders"
 import { TableUserUsage } from "@/components/tables/table-user-usage"
 import { TableUserApiKeys } from "@/components/tables/table-user-api-keys"
-import UpdateOrganizationDialog from "@/components/forms/form-edit-organization"
-import { OrgIdentityDialog } from "@/components/blocks/org-identity-dialog"
+import { OrganizationInfoForm } from "@/components/blocks/organization-info-form"
 import { TableOrgMembers } from "@/components/tables/table-org-members"
 import { InferSelectModel } from "drizzle-orm"
 import { schema } from "@/db/schema"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
+import { PageLoader } from "@/components/blocks/page-loader"
 
 type User = {
   id: string
@@ -42,13 +41,13 @@ const SHOW_PREVIEW_BILLING_BLOCKS: boolean = false
 type Organization = InferSelectModel<typeof schema.organization>
 
 export default function AccountPage() {
-  const { data: session, refetch } = authClient.useSession()
+  const { data: session } = authClient.useSession()
   const user = session?.user as User | undefined
 
   const [userState, setUserState] = useState<PolarCustomerState>()
   const [organization, setOrganization] = useState<Organization | null>(null)
   const [memberRole, setMemberRole] = useState<string | null>(null)
-  const [orgKey, setOrgKey] = useState(0)
+  const [loaded, setLoaded] = useState(false)
 
   //console.log("User session in settings page:", session)
 
@@ -73,213 +72,99 @@ export default function AccountPage() {
   useEffect(() => {
     async function fetchOrganization() {
       if (!user?.id) return
+      // Организация и роль текущего пользователя грузятся ПАРАЛЛЕЛЬНО, и
+      // страница показывается, только когда пришли оба ответа: раньше роль
+      // запрашивалась после организации полным списком участников, и вкладка
+      // «Участники» с кнопкой «Сохранить» появлялись на несколько секунд
+      // позже остальной страницы.
       try {
-        const res = await fetch(
-          `/api/organization?userId=${encodeURIComponent(user.id)}`,
-        )
-        const data = await res.json()
-        setOrganization(data.organization)
-
-        if (data.organization?.id) {
+        const [orgRes, activeMember] = await Promise.all([
+          fetch(`/api/organization?userId=${encodeURIComponent(user.id)}`).then(
+            (r) => r.json(),
+          ),
+          authClient.organization.getActiveMember(),
+        ])
+        const org: Organization | null = orgRes.organization ?? null
+        let role: string | null = null
+        if (org?.id && activeMember.data?.organizationId === org.id) {
+          role = activeMember.data.role ?? null
+        } else if (org?.id) {
+          // Активная организация сессии ≠ показываемой — редкий случай
+          // (несколько организаций): берём роль из списка участников.
           const { data: members } = await authClient.organization.listMembers({
-            query: { organizationId: data.organization.id },
+            query: { organizationId: org.id },
           })
-          const currentMember = members?.members?.find(
-            (m: { userId: string }) => m.userId === user.id,
-          )
-          setMemberRole(currentMember?.role ?? null)
+          role =
+            members?.members?.find(
+              (m: { userId: string }) => m.userId === user.id,
+            )?.role ?? null
         }
+        setOrganization(org)
+        setMemberRole(role)
       } catch (e) {
         console.error("Failed to fetch organization:", e)
+      } finally {
+        setLoaded(true)
       }
     }
 
     fetchOrganization()
-  }, [user?.id, orgKey])
+  }, [user?.id])
+
+  const initials = (name: string | null | undefined) =>
+    name
+      ? name
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .toUpperCase()
+      : "О"
+
+  // Страница организации: заголовок — название организации, ниже две
+  // вкладки («Информация об организации» / «Участники»). Данные пользователя
+  // переехали на отдельную страницу профиля (/profile).
+  if (!loaded || !organization) {
+    // Как на «Правилах»/«Настройках»: лоадер на всю высоту страницы — иначе
+    // в колонке без растяжения он прилипал к верху.
+    return <PageLoader className="min-h-screen" />
+  }
+
+  const isOwner = memberRole === "owner"
 
   return (
-    <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
-      <h1 className="text-xl font-medium">Эккаунт</h1>
-
-      <div className="flex flex-row gap-6 items-stretch w-full">
-        {user && (
-          <Card className="w-1/2 flex flex-col">
-            <CardHeader className="flex flex-row items-center gap-6 justify-start">
-              <CardTitle className="text-xl font-medium">Пользователь:</CardTitle>
-              <Avatar>
-                <AvatarImage
-                  src={user.image ?? undefined}
-                  alt={user.name ?? "Пользователь"}
-                />
-                <AvatarFallback>
-                  {user.name
-                    ? user.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .toUpperCase()
-                    : "U"}
-                </AvatarFallback>
-              </Avatar>
-              <CardTitle className="text-xl font-medium">{user.name}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 flex flex-1 flex-col">
-              <div className="grid grid-cols-2 grid-rows-3 gap-2">
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Email:
-                </span>
-                <span>{user.email}</span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Email подтверждён:
-                </span>
-                <span>
-                  {user.emailVerified ? (
-                    <BadgeCheck className="inline-block text-green-500" />
-                  ) : (
-                    <BadgeAlert className="inline-block text-red-500" />
-                  )}
-                </span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Дата регистрации:
-                </span>
-                <span>
-                  {user.createdAt
-                    ? new Date(user.createdAt).toLocaleString("ru-RU")
-                    : "—"}
-                </span>
-              </div>
-
-              <div className="mt-auto flex flex-row gap-4 items-center justify-center pt-4">
-                <UpdateUserDialog user={user} onSuccess={refetch} />
-                <ResetPasswordForm />
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {organization && (
-          <Card className="w-1/2 flex flex-col">
-            <CardHeader className="flex flex-row items-center gap-6 justify-start">
-              <CardTitle className="text-xl font-medium">
-                Организация:
-              </CardTitle>
-              <Avatar>
-                <AvatarImage
-                  src={organization.logo ?? undefined}
-                  alt={organization.name ?? "Организация"}
-                />
-                <AvatarFallback>
-                  {organization.name
-                    ? organization.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .toUpperCase()
-                    : "U"}
-                </AvatarFallback>
-              </Avatar>
-              <CardTitle className="text-xl font-medium truncate">
-                {organization.name}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 flex flex-1 flex-col">
-              <div className="grid grid-cols-2 gap-2">
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Название организации:
-                </span>
-                <span>{organization.name}</span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Идентификатор (slug):
-                </span>
-                <span className="truncate">{organization.slug}</span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  ИНН:
-                </span>
-                <span>
-                  {(() => {
-                    try {
-                      const parsed =
-                        typeof organization.metadata === "string"
-                          ? JSON.parse(organization.metadata)
-                          : organization.metadata
-                      return parsed?.taxId || "—"
-                    } catch {
-                      return "—"
-                    }
-                  })()}
-                </span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Веб-сайт:
-                </span>
-                <span className="truncate">
-                  {organization.webUrl ? (
-                    <a
-                      href={organization.webUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:underline"
-                    >
-                      {organization.webUrl}
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Адрес:
-                </span>
-                <span>{organization.address || "—"}</span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Контактный email:
-                </span>
-                <span className="truncate">{organization.email || "—"}</span>
-                <span className="font-medium dark:text-gray-400 text-gray-500">
-                  Контактный телефон:
-                </span>
-                <span>{organization.phone || "—"}</span>
-              </div>
-
-              {memberRole === "owner" && (
-                <div className="mt-auto flex flex-row flex-wrap gap-4 items-center justify-center pt-8">
-                  <UpdateOrganizationDialog
-                    organization={organization}
-                    onSuccess={() => setOrgKey((prev) => prev + 1)}
-                  />
-                  {/* Own-organisation identity registry: extra names /
-                      websites / addresses used to recognise US during source
-                      parsing (see src/app/CLAUDE.md). Owner-only. */}
-                  <OrgIdentityDialog
-                    trigger={
-                      <Button variant="outline">Своя организация</Button>
-                    }
-                    organizationName={organization.name}
-                    organizationWebUrl={organization.webUrl}
-                    organizationAddress={organization.address}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+    <div className="flex flex-col gap-4 p-4 min-h-screen">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar className="border border-border">
+            <AvatarImage
+              src={organization.logo ?? undefined}
+              alt={organization.name ?? "Организация"}
+            />
+            <AvatarFallback>{initials(organization.name)}</AvatarFallback>
+          </Avatar>
+          <h1 className="truncate text-xl font-medium">{organization.name}</h1>
+        </div>
+        <PageHeaderActions />
       </div>
 
-      {memberRole === "owner" && organization && user && (
-        <>
-          <Card className="w-full">
-            <CardHeader className="flex flex-row items-center gap-6 justify-start">
-              <CardTitle className="text-xl font-medium">
-                Участники организации
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TableOrgMembers
-                organizationId={organization.id}
-                currentUserId={user.id}
-              />
-            </CardContent>
-          </Card>
+      <Tabs defaultValue="info" className="flex-1 gap-4">
+        <TabsList>
+          <TabsTrigger value="info">Информация об организации</TabsTrigger>
+          {isOwner && user && (
+            <TabsTrigger value="members">Участники</TabsTrigger>
+          )}
+        </TabsList>
 
-          {SHOW_PREVIEW_BILLING_BLOCKS && (
+        <TabsContent value="info" className="flex flex-col gap-4">
+          <OrganizationInfoForm
+            organization={organization}
+            canEdit={isOwner}
+            onSaved={(patch) =>
+              setOrganization((prev) => (prev ? { ...prev, ...patch } : prev))
+            }
+          />
+
+          {SHOW_PREVIEW_BILLING_BLOCKS && isOwner && (
             <>
               <Card className="w-full">
                 <CardHeader className="flex flex-row items-center gap-6 justify-start">
@@ -436,8 +321,21 @@ export default function AccountPage() {
               </Card>
             </>
           )}
-        </>
-      )}
+        </TabsContent>
+
+        {isOwner && user && (
+          <TabsContent value="members">
+            <Card className="w-full">
+              <CardContent>
+                <TableOrgMembers
+                  organizationId={organization.id}
+                  currentUserId={user.id}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 "use client"
 
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -14,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Sparkles, X } from "lucide-react"
+import { X, ScanSearch } from "lucide-react"
 import type { CardRow } from "@/app/api/cards/route"
 import {
   CardsFeedSection,
@@ -26,9 +27,6 @@ import {
 } from "@/components/blocks/cards-feed-section"
 import { ExploreSourcesDialog } from "@/components/blocks/explore-sources-dialog"
 import { MagicCardsButton } from "@/components/blocks/magic-cards-button"
-import { GlobalSearch } from "@/components/blocks/global-search"
-import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
-import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { NewOrderDialog } from "@/components/blocks/order-request-wizard"
 
 function isoDateNDaysAgo(days: number): string {
@@ -136,11 +134,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4 p-4 pb-0 shrink-0">
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-xl font-medium">Домашняя</h1>
-          <div className="flex items-center gap-2">
-            <AiChatTrigger />
-            <GlobalSearch />
-            <NotificationsDrawer />
-          </div>
+          <PageHeaderActions />
         </div>
 
         {/* Селекты приоритета/категории + датапикеры + сегментед периода +
@@ -237,7 +231,7 @@ export default function DashboardPage() {
               onCardsGenerated={load}
               trigger={
                 <Button size="sm" variant="outline">
-                  <Sparkles className="h-4 w-4 mr-1" />
+                  <ScanSearch className="h-4 w-4 mr-1" />
                   Найти в источниках
                 </Button>
               }

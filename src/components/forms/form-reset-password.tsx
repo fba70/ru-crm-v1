@@ -11,6 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { KeyRound } from "lucide-react"
 import {
   Form,
   FormControl,
@@ -78,7 +79,10 @@ export default function ResetPasswordForm() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="mt-4">
+        {/* Без внешнего отступа: кнопка стоит в столбце полей профиля,
+            отступы задаёт сам столбец. */}
+        <Button variant="outline" className="w-fit">
+          <KeyRound />
           Сменить пароль
         </Button>
       </DialogTrigger>

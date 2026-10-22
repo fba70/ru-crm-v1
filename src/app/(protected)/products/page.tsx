@@ -1,5 +1,6 @@
 "use client"
 
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -39,9 +40,6 @@ import {
 } from "@/components/ui/popover"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { GlobalSearch } from "@/components/blocks/global-search"
-import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
-import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { ProductDetailDialog } from "@/components/blocks/product-detail-dialog"
 import { OrdersTable } from "@/components/blocks/orders-table"
 import {
@@ -933,11 +931,7 @@ export default function ProductsPage() {
     <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-medium">Заказы & продукты</h1>
-        <div className="flex items-center gap-2">
-          <AiChatTrigger />
-          <GlobalSearch />
-          <NotificationsDrawer />
-        </div>
+        <PageHeaderActions />
       </div>
 
       <div className="w-full">

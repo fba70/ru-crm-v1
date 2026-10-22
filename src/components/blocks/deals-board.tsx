@@ -1,5 +1,6 @@
 "use client"
 
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -28,11 +29,11 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Plus,
-  Sparkles,
   ListTree,
   ChevronsRightLeft,
   ChevronsLeftRight,
   ChevronsUpDown,
+  ScanSearch,
 } from "lucide-react"
 import {
   Tooltip,
@@ -65,9 +66,6 @@ import DealEditDialog from "@/components/forms/form-deal-edit"
 import { DiscoverDealsDialog } from "@/components/blocks/discover-deals-dialog"
 import { DealDetailDrawer } from "@/components/blocks/deal-detail-drawer"
 import { DealDecisionFeed } from "@/components/blocks/deal-decision-feed"
-import { GlobalSearch } from "@/components/blocks/global-search"
-import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
-import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { useBoardIntel } from "@/hooks/use-board-intel"
 import {
   DealOutcomeDialog,
@@ -725,11 +723,7 @@ export function DealsBoard({
                 · открытых: <b className="text-foreground">{openCount}</b>
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <AiChatTrigger />
-              <GlobalSearch />
-              <NotificationsDrawer />
-            </div>
+            <PageHeaderActions />
           </div>
 
           <div className="flex items-center gap-3 flex-wrap rounded-xl border bg-card p-3">
@@ -793,7 +787,7 @@ export function DealsBoard({
               onDealsGenerated={router.refresh}
               trigger={
                 <Button size="sm" variant="secondary">
-                  <Sparkles className="h-4 w-4 mr-1" />
+                  <ScanSearch className="h-4 w-4 mr-1" />
                   Найти в источниках
                 </Button>
               }

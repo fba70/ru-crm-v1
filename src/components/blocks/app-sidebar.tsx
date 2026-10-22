@@ -3,9 +3,8 @@
 import {
   Home,
   ChartColumnBig,
-  FileText,
-  ShieldCheck,
-  CircleUserRound,
+  Settings2,
+  Building2,
   PencilRuler,
   Database,
   Users,
@@ -29,7 +28,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Logout } from "./logout"
-import { ModeSwitcher } from "./mode-switcher"
 import { usePathname } from "next/navigation"
 import { BrandMark } from "./brand-mark"
 import Link from "next/link"
@@ -86,6 +84,27 @@ export const items = [
     icon: Database,
   },
 ]
+
+// Инициалы для аватарки без картинки: «Анна Соколова» → «АС».
+function initialsOf(name: string | null | undefined, fallback: string) {
+  if (!name) return fallback
+  const letters = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+  return letters || fallback
+}
+
+function footerLinkClass(active: boolean) {
+  return `flex items-center p-2 rounded-md ${
+    active
+      ? "bg-gray-200 text-primary dark:bg-sidebar-accent dark:text-sidebar-accent-foreground"
+      : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
+  }`
+}
 
 export function AppSidebar({
   session,
@@ -157,109 +176,63 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
 
+      {/* Нижний блок — административные пункты: профиль пользователя,
+          организация, настройки, выход. Тема и уведомления переехали в шапку
+          страницы (PageHeaderActions), отдельный блок «организация +
+          пользователь» в самом низу больше не нужен — эти пункты и есть они. */}
       <SidebarFooter className="mt-auto mb-1">
         <SidebarMenu>
           <Separator className="my-1" />
 
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
-              <Link
-                href={"/account"}
-                className={`flex items-center p-2 rounded-md ${
-                  pathname === "/account"
-                    ? "bg-gray-200 text-primary dark:bg-sidebar-accent dark:text-sidebar-accent-foreground"
-                    : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <CircleUserRound className="size-4 mr-2 shrink-0" />
-                <span className="text-sm">Организация</span>
+              <Link href="/profile" className={footerLinkClass(pathname === "/profile")}>
+                {/* size-5 при контент-боксе пункта 16px: -m-0.5 компенсирует
+                    лишние 4px, чтобы аватарка стояла по центру и в свёрнутом
+                    сайдбаре, а подпись — вровень с остальными пунктами.
+                    Бордер — цвет разделителей и рамок карточек (border-border). */}
+                <Avatar className="size-5 -m-0.5 mr-1.5 shrink-0 border border-border">
+                  <AvatarImage src={userImage || undefined} alt={userName ?? "Пользователь"} />
+                  <AvatarFallback className="text-[9px]">
+                    {initialsOf(userName, "П")}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-sm truncate">{userName}</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link href="/account" className={footerLinkClass(pathname === "/account")}>
+                {orgLogo ? (
+                  <Avatar className="size-5 -m-0.5 mr-1.5 shrink-0 border border-border">
+                    <AvatarImage src={orgLogo} alt={orgName ?? "Организация"} />
+                    <AvatarFallback className="text-[9px]">
+                      {initialsOf(orgName, "О")}
+                    </AvatarFallback>
+                  </Avatar>
+                ) : (
+                  <Building2 className="size-4 mr-2 shrink-0" />
+                )}
+                <span className="text-sm truncate">{orgName ?? "Организация"}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+
           {isAdmin && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild>
-                <Link
-                  href={"/settings"}
-                  className={`flex items-center p-2 rounded-md ${
-                    pathname === "/settings"
-                      ? "bg-gray-200 text-primary dark:bg-sidebar-accent dark:text-sidebar-accent-foreground"
-                      : "text-gray-600 dark:text-white hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:text-sidebar-accent-foreground"
-                  }`}
-                >
-                  <ShieldCheck className="size-4 mr-2 shrink-0" />
+                <Link href="/settings" className={footerLinkClass(pathname === "/settings")}>
+                  <Settings2 className="size-4 mr-2 shrink-0" />
                   <span className="text-sm">Настройки</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
 
-
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <ModeSwitcher />
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-
           <SidebarMenuItem>
             <Logout />
-          </SidebarMenuItem>
-
-          <Separator className="my-1" />
-          <SidebarMenuItem className="p-1">
-            {orgName ? (
-              // Текст всегда в DOM: в свёрнутом сайдбаре его срезает
-              // overflow-hidden (как у пунктов меню), а аватар центрируется
-              // паддингом — React-условие по `open` дёргало строку при
-              // анимации сворачивания.
-              <div className="flex items-center gap-3 overflow-hidden">
-                <Avatar className="h-6 w-6 shrink-0">
-                  <AvatarImage
-                    src={orgLogo ?? undefined}
-                    alt={orgName ?? "Organization"}
-                  />
-                  <AvatarFallback>
-                    {orgName
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
-                  {orgName}
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center p-2">
-                <span className="text-sm text-gray-500 truncate">
-                  No organization
-                </span>
-              </div>
-            )}
-          </SidebarMenuItem>
-
-          <SidebarMenuItem className="p-1">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <Avatar className="h-6 w-6 shrink-0">
-                <AvatarImage
-                  src={userImage ?? undefined}
-                  alt={userName ?? "User"}
-                />
-                <AvatarFallback>
-                  {userName
-                    ? userName
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .toUpperCase()
-                    : "U"}
-                </AvatarFallback>
-              </Avatar>
-              <span className="min-w-0 text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
-                {userName}
-              </span>
-            </div>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

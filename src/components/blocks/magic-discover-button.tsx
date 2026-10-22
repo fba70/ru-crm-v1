@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader, Wand2 } from "lucide-react"
+import { AnchorTooltip, useAnchorTooltip } from "@/components/blocks/anchor-tooltip"
 import { toast } from "sonner"
 import type { DiscoveryPreview } from "@/app/api/discovery/preview/route"
 import type { ApplyDiscoveryResult } from "@/app/api/discovery/apply/route"
@@ -35,6 +36,7 @@ export function MagicDiscoverButton({
   /** Called after a successful apply so the parent can refresh its lists. */
   onApplied: () => void
 }) {
+  const tip = useAnchorTooltip()
   const [running, setRunning] = useState(false)
 
   const handleClick = async () => {
@@ -130,24 +132,29 @@ export function MagicDiscoverButton({
     }
   }
 
+  // Кнопка-иконка без подписи (в тулбаре «Компаний» не хватало места) —
+  // название в подсказке, тем же AnchorTooltip, что у остальных иконок.
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      onClick={handleClick}
-      disabled={running}
-    >
-      {running ? (
-        <>
-          <Loader className="h-4 w-4 mr-1 animate-spin" />
-          Магия…
-        </>
-      ) : (
-        <>
-          <Wand2 className="h-4 w-4 mr-1" />
-          Magic
-        </>
-      )}
-    </Button>
+    <>
+      <Button
+        size="icon-sm"
+        variant="outline"
+        onClick={handleClick}
+        disabled={running}
+        aria-label="Magic"
+        {...tip.bind}
+      >
+        {running ? (
+          <Loader className="h-4 w-4 animate-spin" />
+        ) : (
+          <Wand2 className="h-4 w-4" />
+        )}
+      </Button>
+      <AnchorTooltip
+        text={running ? "Магия…" : "Magic"}
+        open={tip.open}
+        virtualRef={tip.virtualRef}
+      />
+    </>
   )
 }

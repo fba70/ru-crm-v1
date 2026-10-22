@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Sparkles, Loader, X, ExternalLink, ClipboardCheck } from "lucide-react"
+import { AnchorTooltip, useAnchorTooltip } from "@/components/blocks/anchor-tooltip"
 import type { EnrichReviewRow } from "@/app/api/clients/enrich/review/route"
 import type { EnrichClientResult } from "@/app/api/clients/[id]/enrich/route"
 
@@ -62,6 +63,7 @@ export function ClientEnrichControl({
   refreshKey: number
   onChanged: () => void
 }) {
+  const enrichTip = useAnchorTooltip()
   const [pendingTotal, setPendingTotal] = useState(0)
   const [reviewCount, setReviewCount] = useState(0)
   const [running, setRunning] = useState(false)
@@ -215,10 +217,19 @@ export function ClientEnrichControl({
         </div>
       ) : (
         pendingTotal > 0 && (
-          <Button size="sm" variant="outline" onClick={runBatch}>
-            <Sparkles className="h-4 w-4 mr-1" />
-            Обогатить клиентскую информацию ({pendingTotal})
-          </Button>
+          <>
+            {/* Короткая подпись — в тулбаре «Компаний» не хватало места;
+                полное название и число компаний — в подсказке. */}
+            <Button size="sm" variant="outline" onClick={runBatch} {...enrichTip.bind}>
+              <Sparkles className="h-4 w-4 mr-1" />
+              Обогатить
+            </Button>
+            <AnchorTooltip
+              text={`Обогатить клиентскую информацию: ${pendingTotal}`}
+              open={enrichTip.open}
+              virtualRef={enrichTip.virtualRef}
+            />
+          </>
         )
       )}
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
+import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 
 // A small, fast, app-styled hover tooltip for triggers that can't tolerate
@@ -25,21 +25,23 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 // the existing trigger's own props, so the trigger's DOM node and React
 // tree are completely untouched.
 export function useAnchorTooltip() {
-  const [rect, setRect] = useState<DOMRect | null>(null)
+  const [open, setOpen] = useState(false)
   const virtualRef = useRef({ getBoundingClientRect: () => new DOMRect() })
 
-  useEffect(() => {
-    if (!rect) return
-    virtualRef.current = { getBoundingClientRect: () => rect }
-  }, [rect])
-
   return {
-    open: rect !== null,
+    open,
     virtualRef,
     bind: {
-      onMouseEnter: (e: ReactMouseEvent<HTMLElement>) =>
-        setRect(e.currentTarget.getBoundingClientRect()),
-      onMouseLeave: () => setRect(null),
+      // The anchor rect is written in the event handler, BEFORE `open` flips.
+      // Syncing it in a useEffect (the earlier version) ran after Radix's
+      // Popper had already measured the still-empty DOMRect on open, so
+      // every tooltip landed at the screen's top-left corner (0, 6).
+      onMouseEnter: (e: ReactMouseEvent<HTMLElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        virtualRef.current = { getBoundingClientRect: () => rect }
+        setOpen(true)
+      },
+      onMouseLeave: () => setOpen(false),
     },
   }
 }
@@ -61,6 +63,7 @@ export function AnchorTooltip({
       <PopoverContent
         side={side}
         sideOffset={6}
+        collisionPadding={8}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
         className="pointer-events-none w-fit rounded-md border-none bg-foreground px-2 py-1 text-xs text-background shadow-md"

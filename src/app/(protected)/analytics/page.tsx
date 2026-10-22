@@ -1,5 +1,6 @@
 "use client"
 
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -14,9 +15,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, RefreshCw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { GlobalSearch } from "@/components/blocks/global-search"
-import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
-import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { TabOverview } from "@/components/blocks/analytics/tab-overview"
 import { TabTime } from "@/components/blocks/analytics/tab-time"
 import { TabSellers } from "@/components/blocks/analytics/tab-sellers"
@@ -162,11 +160,7 @@ export default function AnalyticsPage() {
               : "Загрузка периода…"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <AiChatTrigger />
-          <GlobalSearch />
-          <NotificationsDrawer />
-        </div>
+        <PageHeaderActions />
       </div>
 
       {error ? (

@@ -1,5 +1,6 @@
 "use client"
 
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -34,9 +35,6 @@ import type { ContactRow, ClientOption } from "@/app/api/contacts/route"
 import ContactEditDialog from "@/components/forms/form-contact-edit"
 import { ContactDetailDrawer } from "@/components/blocks/contact-detail-drawer"
 import { ContactCard } from "@/components/blocks/contact-card"
-import { GlobalSearch } from "@/components/blocks/global-search"
-import { NotificationsDrawer } from "@/components/blocks/notifications-drawer"
-import { AiChatTrigger } from "@/components/blocks/global-ai-chat"
 import { PageLoader } from "@/components/blocks/page-loader"
 
 type ContactView = "cards" | "table"
@@ -149,11 +147,7 @@ export default function ContactsPage() {
     <div className="flex flex-col h-[calc(100vh-1rem)] p-4 gap-4">
       <div className="flex items-center justify-between gap-4 shrink-0">
         <h1 className="text-xl font-medium">Контакты</h1>
-        <div className="flex items-center gap-2">
-          <AiChatTrigger />
-          <GlobalSearch />
-          <NotificationsDrawer />
-        </div>
+        <PageHeaderActions />
       </div>
 
       {/* «Новый контакт» — слева; селекты статуса/компании следом;

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Loader, Wand2 } from "lucide-react"
+import { AnchorTooltip, useAnchorTooltip } from "@/components/blocks/anchor-tooltip"
 import { toast } from "sonner"
 import { DEFAULT_MODEL_KEY } from "@/lib/llm-models"
 import type { RuleRow } from "@/app/api/rules/route"
@@ -42,6 +43,7 @@ export function MagicCardsButton({
   onCardsGenerated: () => void
 }) {
   const [running, setRunning] = useState(false)
+  const tip = useAnchorTooltip()
 
   const handleClick = async () => {
     setRunning(true)
@@ -118,24 +120,29 @@ export function MagicCardsButton({
     }
   }
 
+  // Кнопка-иконка без подписи, как Magic на «Компаниях» — название в
+  // подсказке (AnchorTooltip).
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      onClick={handleClick}
-      disabled={running}
-    >
-      {running ? (
-        <>
-          <Loader className="h-4 w-4 mr-1 animate-spin" />
-          Магия…
-        </>
-      ) : (
-        <>
-          <Wand2 className="h-4 w-4 mr-1" />
-          Magic
-        </>
-      )}
-    </Button>
+    <>
+      <Button
+        size="icon-sm"
+        variant="outline"
+        onClick={handleClick}
+        disabled={running}
+        aria-label="Magic"
+        {...tip.bind}
+      >
+        {running ? (
+          <Loader className="h-4 w-4 animate-spin" />
+        ) : (
+          <Wand2 className="h-4 w-4" />
+        )}
+      </Button>
+      <AnchorTooltip
+        text={running ? "Магия…" : "Magic"}
+        open={tip.open}
+        virtualRef={tip.virtualRef}
+      />
+    </>
   )
 }

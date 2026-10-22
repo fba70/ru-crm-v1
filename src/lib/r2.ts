@@ -84,3 +84,41 @@ export async function getMarkdownFromR2(key: string): Promise<string> {
   // handles both Node Readable and web ReadableStream variants.
   return await res.Body.transformToString("utf-8")
 }
+
+// Binary objects (user avatars). The bucket is private, so these are served
+// back through an authenticated app route rather than by public URL.
+export async function putBinaryToR2(
+  key: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<{ key: string; sizeBytes: number }> {
+  if (!bucketName) throw new Error("R2_BUCKET_NAME is not configured")
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      Body: bytes,
+      ContentType: contentType,
+    }),
+  )
+  return { key, sizeBytes: bytes.byteLength }
+}
+
+export async function getBinaryFromR2(
+  key: string,
+): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  if (!bucketName) throw new Error("R2_BUCKET_NAME is not configured")
+  try {
+    const res = await getClient().send(
+      new GetObjectCommand({ Bucket: bucketName, Key: key }),
+    )
+    if (!res.Body) return null
+    return {
+      bytes: await res.Body.transformToByteArray(),
+      contentType: res.ContentType ?? "application/octet-stream",
+    }
+  } catch (e) {
+    if ((e as { name?: string }).name === "NoSuchKey") return null
+    throw e
+  }
+}

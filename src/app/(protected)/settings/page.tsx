@@ -10,6 +10,7 @@ import { TableAdminSources } from "@/components/tables/table-admin-sources"
 import { TableAdminTemplates } from "@/components/tables/table-admin-templates"
 import { AdminTeardown } from "@/components/blocks/admin-teardown"
 import { PageLoader } from "@/components/blocks/page-loader"
+import { PageHeaderActions } from "@/components/blocks/page-header-actions"
 
 export default function SettingsPage() {
   const { data: session, isPending } = authClient.useSession()
@@ -34,7 +35,10 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 pb-10 min-h-screen">
-      <h1 className="text-xl font-medium">Настройки системы</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-xl font-medium">Настройки системы</h1>
+        <PageHeaderActions />
+      </div>
 
       <div className="w-full">
         <Tabs defaultValue="users" className="w-full">
