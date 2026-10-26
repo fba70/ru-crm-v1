@@ -5,6 +5,7 @@ import {
   card,
   cardClient,
   cardContact,
+  client,
   contact,
   deal,
   order,
@@ -12,12 +13,23 @@ import {
   task,
 } from "@/db/schema"
 import { and, eq, inArray, isNotNull, max, sql } from "drizzle-orm"
+import {
+  domainMatches,
+  extractEmailDomain,
+  extractWebsiteDomain,
+  isFreemailDomain,
+} from "@/lib/email-domain"
 
 // «Последняя активность» по компании — замена прокси `client.updatedAt` /
 // `deal.updatedAt` в бейджах «N дн без активности/контакта» (звонок 26.10:
 // по компании сегодня было письмо, а сделка показывала «69 дней»).
 //
 // Сигналы (берётся самый свежий):
+//   • письма и сообщения в источниках, где компания среди участников
+//     (from / to / cc / participants): email совпал с её контактом ИЛИ
+//     домен (не freemail) совпал с доменом её сайта / email. Не зависит от
+//     карточек — карточку из письма могли не сгенерировать вовсе (звонок
+//     26.10: письмо от maslov.agency пришло сегодня, а у сделки «69 дней»);
 //   • входящие коммуникации — карточки, привязанные к компании напрямую
 //     (card_client) или через её контакт (card_contact → contact.client_id);
 //     дата = время самого сообщения (source_item.source_created_at), а не
@@ -120,6 +132,7 @@ export async function loadClientLastActivity(
   for (const rows of [direct, viaContact, tasks, deals, orders, contacts]) {
     for (const r of rows) bump(r.clientId, r.at)
   }
+  await bumpFromSourceParticipants(organizationId, ids, bump)
   return out
 }
 
@@ -164,4 +177,77 @@ export async function loadDealLastActivity(
     out.set(d.id, latest)
   }
   return out
+}
+
+// Последняя дата сообщения по каждому email-участнику исходников орги →
+// компания по email контакта или по домену. Один GROUP BY по орге (не по
+// клиенту): jsonb-массивы from/to/cc/participants разворачиваются в SQL,
+// сопоставление с компаниями — в JS (доменов немного, правил матчинга
+// больше, чем удобно писать в SQL).
+async function bumpFromSourceParticipants(
+  organizationId: string,
+  clientIds: string[],
+  bump: (clientId: string | null, at: Date | string | null) => void,
+) {
+  const [clientRows, contactRows] = await Promise.all([
+    db
+      .select({ id: client.id, webUrl: client.webUrl, email: client.email })
+      .from(client)
+      .where(
+        and(eq(client.organizationId, organizationId), inArray(client.id, clientIds)),
+      ),
+    db
+      .select({ clientId: contact.clientId, email: contact.email })
+      .from(contact)
+      .where(
+        and(
+          eq(contact.organizationId, organizationId),
+          inArray(contact.clientId, clientIds),
+          isNotNull(contact.email),
+        ),
+      ),
+  ])
+
+  const clientByEmail = new Map<string, string>()
+  for (const c of contactRows) {
+    if (c.email && c.clientId) clientByEmail.set(c.email.trim().toLowerCase(), c.clientId)
+  }
+  const domains: { clientId: string; domain: string }[] = []
+  for (const c of clientRows) {
+    for (const d of [
+      c.webUrl ? extractWebsiteDomain(c.webUrl) : "",
+      c.email ? extractEmailDomain(c.email) : "",
+    ]) {
+      if (d && !isFreemailDomain(d)) domains.push({ clientId: c.id, domain: d })
+    }
+  }
+  if (clientByEmail.size === 0 && domains.length === 0) return
+
+  const arr = (key: string) =>
+    sql.raw(
+      `CASE WHEN jsonb_typeof(si.metadata_json->'${key}') = 'array' THEN si.metadata_json->'${key}' ELSE '[]'::jsonb END`,
+    )
+  const rows = await db.execute<{ email: string | null; at: string | null }>(sql`
+    SELECT lower(trim(p->>'email')) AS email, max(si.source_created_at) AS at
+    FROM source_item si,
+      jsonb_array_elements(${arr("from")} || ${arr("to")} || ${arr("cc")} || ${arr("participants")}) AS p
+    WHERE si.organization_id = ${organizationId}
+      AND si.source_created_at IS NOT NULL
+      AND p->>'email' IS NOT NULL
+    GROUP BY 1
+  `)
+
+  for (const r of rows.rows) {
+    if (!r.email || !r.at) continue
+    const byContact = clientByEmail.get(r.email)
+    if (byContact) {
+      bump(byContact, r.at)
+      continue
+    }
+    const domain = extractEmailDomain(r.email)
+    if (!domain || isFreemailDomain(domain)) continue
+    for (const d of domains) {
+      if (domainMatches(domain, d.domain)) bump(d.clientId, r.at)
+    }
+  }
 }

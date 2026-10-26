@@ -407,7 +407,9 @@ export function DealDetailDrawer({
   return (
     <Sheet open={open} onOpenChange={handleSheetOpenChange}>
       <SheetContent
-        className="w-full sm:max-w-xl flex flex-col gap-0 p-0"
+        // max-w-2xl (672px), не xl (576px): пять табов («Общая информация»
+        // … «Происхождение») в 576px не влезали — последний обрезался.
+        className="w-full sm:max-w-2xl flex flex-col gap-0 p-0"
         // Иначе Radix при открытии автофокусит первое поле формы — им
         // оказывается название (первый инпут в дровере), и оно подсвечивается
         // рамкой фокуса сразу при открытии, что выглядит как случайный клик.

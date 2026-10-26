@@ -847,6 +847,19 @@ export function DealsBoard({
                   <Button
                     size="icon-sm"
                     variant="outline"
+                    aria-label="Настройки стадий"
+                    onClick={() => setStageSettingsOpen(true)}
+                  >
+                    <SlidersVertical className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Настройки стадий</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="outline"
                     aria-label={
                       allCollapsed
                         ? "Развернуть все колонки"
@@ -866,19 +879,6 @@ export function DealsBoard({
                     ? "Развернуть все колонки"
                     : "Свернуть все колонки"}
                 </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon-sm"
-                    variant="outline"
-                    aria-label="Настройки стадий"
-                    onClick={() => setStageSettingsOpen(true)}
-                  >
-                    <SlidersVertical className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Настройки стадий</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <DealStageSettingsDialog

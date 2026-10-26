@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { AnchorTooltip, useAnchorTooltip } from "@/components/blocks/anchor-tooltip"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -327,6 +328,8 @@ export function DashboardCard({
     })
   }
 
+  const titleTip = useAnchorTooltip()
+
   const analysis = card.message?.analysis ?? ""
   const recommendation = card.message?.recommendation ?? ""
 
@@ -393,7 +396,10 @@ export function DashboardCard({
         resolved && "bg-muted hover:bg-muted dark:bg-background dark:hover:bg-background",
       )}
     >
-      <CardHeader className="pb-1.5 space-y-2">
+      {/* grid-cols-1 (= minmax(0,1fr)): CardHeader — grid, и без этого
+          колонка растягивалась по содержимому — длинное название компании
+          не транкейтилось, а уезжало за край карточки вместе с датой. */}
+      <CardHeader className="pb-1.5 space-y-2 grid-cols-1">
         <div className="flex items-start justify-between gap-2">
           {/* Компания — главное в карточке (звонок 26.10: «имя компании, по
               которой сделка, важнее»), поэтому она и есть заголовок, а
@@ -401,9 +407,22 @@ export function DashboardCard({
               (resolveCardCompanies в src/server/cards.ts); не нашлась —
               заголовком остаётся категория, ФИО вместо компании не ставим. */}
           <div className="min-w-0 flex-1">
-            <CardTitle className="text-base truncate">
+            <CardTitle
+              className="text-base truncate"
+              // Полное название по ховеру — только если оно правда обрезано.
+              onMouseEnter={(e) => {
+                const el = e.currentTarget
+                if (el.scrollWidth > el.clientWidth) titleTip.bind.onMouseEnter(e)
+              }}
+              onMouseLeave={titleTip.bind.onMouseLeave}
+            >
               {card.company?.name ?? CATEGORY_LABEL[card.category]}
             </CardTitle>
+            <AnchorTooltip
+              text={card.company?.name ?? CATEGORY_LABEL[card.category]}
+              open={titleTip.open}
+              virtualRef={titleTip.virtualRef}
+            />
             {card.company && (
               <div className="mt-0.5 truncate text-sm text-muted-foreground">
                 {CATEGORY_LABEL[card.category]}
