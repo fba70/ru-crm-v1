@@ -416,15 +416,24 @@ export function ClientDetailDrawer({
             пишет через PUT /api/clients. Карандаш с карточки списка убран —
             клик по карточке и открывает этот же дровер.
             Дровер делится на фиксированную шапку (название + кнопки —
-            поиск в интернете, системный крестик закрытия) и единую
-            скроллящуюся область (все остальные поля формы + вкладки ниже) —
-            один общий скролл вместо отдельного на каждой вкладке. */}
+            поиск в интернете, системный крестик закрытия — и строка табов)
+            и единую скроллящуюся область с содержимым активного таба. */}
         <Form {...editForm}>
           <form
             onSubmit={editForm.handleSubmit((data) => onSave(data))}
             className="flex flex-1 min-h-0 flex-col"
           >
-            <div className="p-4 pb-3 border-b shrink-0">
+            {/* Табы — прямо под названием, в фиксированной шапке (звонок
+                26.10: на маленьком экране задачи и контакты уезжали ниже
+                первого экрана под длинной «колбасой» полей). Поля компании
+                теперь сами — первый таб «Общая информация». key — чтобы при
+                открытии другой компании снова начинать с первого таба. */}
+            <Tabs
+              key={client.id}
+              defaultValue="info"
+              className="flex flex-1 min-h-0 flex-col gap-0"
+            >
+            <div className="px-4 pt-4 border-b shrink-0">
               <SheetTitle className="sr-only">{client.name}</SheetTitle>
               <div className="flex items-start gap-2 pr-10">
                 <FollowCursorTooltip
@@ -471,10 +480,37 @@ export function ClientDetailDrawer({
                   }
                 />
               </div>
+              <TabsList
+                variant="line"
+                className="mt-1 w-full justify-start gap-4"
+              >
+                <TabsTrigger value="info" className="flex-none">
+                  Общая информация
+                </TabsTrigger>
+                <TabsTrigger value="tasks" className="flex-none">
+                  Задачи
+                  {tasks.length > 0 && (
+                    <span className="ml-1.5 text-xs text-muted-foreground">
+                      {tasks.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="contacts" className="flex-none">
+                  Контакты
+                  {client.contacts.length > 0 && (
+                    <span className="ml-1.5 text-xs text-muted-foreground">
+                      {client.contacts.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="content" className="flex-none">
+                  Материалы
+                </TabsTrigger>
+              </TabsList>
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-            <div className="space-y-3 pt-3">
+            <TabsContent value="info" className="space-y-3 pt-3">
               {client.userName && (
                 <div className="text-sm text-muted-foreground">
                   Создал: {client.userName}
@@ -793,33 +829,7 @@ export function ClientDetailDrawer({
                   Сохранить
                 </Button>
               </div>
-            </div>
-
-          <Tabs defaultValue="tasks" className="mt-1">
-            <TabsList
-              variant="line"
-              className="mt-3 w-full justify-between border-b"
-            >
-              <TabsTrigger value="tasks" className="flex-none">
-                Задачи
-                {tasks.length > 0 && (
-                  <span className="ml-1.5 text-xs text-muted-foreground">
-                    {tasks.length}
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="contacts" className="flex-none">
-                Контакты
-                {client.contacts.length > 0 && (
-                  <span className="ml-1.5 text-xs text-muted-foreground">
-                    {client.contacts.length}
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="content" className="flex-none">
-                Материалы компании
-              </TabsTrigger>
-            </TabsList>
+            </TabsContent>
 
             <TabsContent value="tasks" className="py-4 space-y-2 text-sm">
               <TaskEditDialog
@@ -970,8 +980,8 @@ export function ClientDetailDrawer({
             <TabsContent value="content" className="py-4 text-sm">
               <ClientContentTable clientId={client.id} sources={sources} />
             </TabsContent>
-          </Tabs>
             </div>
+            </Tabs>
           </form>
         </Form>
       </SheetContent>

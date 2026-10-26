@@ -16,10 +16,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { dealStageLabel } from "@/lib/deal-funnel"
 import {
-  STAGE_COLOR,
-  STAGE_DEFAULT,
+  stageColorClass,
   aggregateByCurrency,
   aggregateByCurrencyCompact,
   dealAmount,
@@ -71,7 +69,8 @@ export function Column({
     id: `col:${stage.id}`,
     data: { type: "column" as const, stageId: stage.id },
   })
-  const colorClass = STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
+  const colorClass = stageColorClass(stage)
+  const pre = stage.isPrePipeline
 
   return (
     // Резиновая ширина: колонки делят ряд поровну — доска заполняет страницу
@@ -89,10 +88,12 @@ export function Column({
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex items-baseline gap-2 text-sm font-medium">
-              <span className="truncate">{dealStageLabel(stage.name)}</span>
-              <span className="text-xs opacity-70 shrink-0">
-                {Math.round(stage.closureProbability * 100)}%
-              </span>
+              <span className="truncate">{stage.label}</span>
+              {!pre && (
+                <span className="text-xs opacity-70 shrink-0">
+                  {Math.round(stage.closureProbability * 100)}%
+                </span>
+              )}
             </div>
             {/* Суммы сокращены (к/м, UX №1), точные значения — в тултипе.
                 Две строки (не одна truncate) — иначе на узких колонках
@@ -116,6 +117,9 @@ export function Column({
                       })),
                     )}
                   </div>
+                  {pre ? (
+                    <div className="truncate opacity-80">до воронки · вне прогноза</div>
+                  ) : (
                   <div className="truncate">
                     взвеш.{" "}
                     {aggregateByCurrencyCompact(
@@ -125,6 +129,7 @@ export function Column({
                       })),
                     )}
                   </div>
+                  )}
                 </div>
               </TooltipTrigger>
               <TooltipContent className="space-y-0.5">
@@ -140,6 +145,12 @@ export function Column({
                     })),
                   )}
                 </div>
+                {pre ? (
+                  <div className="max-w-56">
+                    Контакты до запроса: знакомства и отношения без активной
+                    возможности. Не стадия сделки и не входит в прогноз.
+                  </div>
+                ) : (
                 <div>
                   Взвешенно:{" "}
                   {aggregateByCurrency(
@@ -149,6 +160,7 @@ export function Column({
                     })),
                   )}
                 </div>
+                )}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -190,7 +202,7 @@ export function Column({
                   size="icon"
                   className="h-6 w-6"
                   onClick={onCollapse}
-                  aria-label={`Свернуть «${dealStageLabel(stage.name)}»`}
+                  aria-label={`Свернуть «${stage.label}»`}
                 >
                   <PanelLeftClose className="h-3.5 w-3.5" />
                 </Button>

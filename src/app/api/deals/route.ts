@@ -12,6 +12,8 @@ import {
   getDeal,
   listDealActivity,
   listRejectedDealOrigins,
+  getFunnelStageSettings,
+  saveFunnelStageSettings,
 } from "@/server/deals"
 import { dealStatus, type DealStatus } from "@/db/schema"
 
@@ -22,6 +24,7 @@ export {
   type DealFunnelStageOption,
   type DealContactSummary,
   type DealActivityRow,
+  type FunnelStageSetting,
 } from "@/server/deals"
 
 function errorResponse(error: unknown) {
@@ -46,6 +49,10 @@ export async function GET(request: NextRequest) {
       const clientId = url.searchParams.get("clientId")
       const options = await listDealContactOptions(clientId)
       return NextResponse.json({ options })
+    }
+    if (url.searchParams.get("stageSettings") === "1") {
+      const stages = await getFunnelStageSettings()
+      return NextResponse.json({ stages })
     }
     if (url.searchParams.get("funnelStages") === "1") {
       const stages = await listDealFunnelStages()
@@ -121,6 +128,23 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
+    // «Настройки стадий»: { stageSettings: [{ id, displayName, isHidden }] }.
+    if (Array.isArray(body?.stageSettings)) {
+      const entries = (body.stageSettings as unknown[]).flatMap((e) => {
+        const r = e as { id?: unknown; displayName?: unknown; isHidden?: unknown }
+        if (typeof r?.id !== "string") return []
+        return [
+          {
+            id: r.id,
+            displayName:
+              typeof r.displayName === "string" ? r.displayName : null,
+            isHidden: r.isHidden === true,
+          },
+        ]
+      })
+      await saveFunnelStageSettings(entries)
+      return NextResponse.json({ success: true })
+    }
     const {
       id,
       statusOnly,

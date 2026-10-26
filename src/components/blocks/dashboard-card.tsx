@@ -395,9 +395,21 @@ export function DashboardCard({
     >
       <CardHeader className="pb-1.5 space-y-2">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base min-w-0 flex-1 truncate">
-            {CATEGORY_LABEL[card.category]}
-          </CardTitle>
+          {/* Компания — главное в карточке (звонок 26.10: «имя компании, по
+              которой сделка, важнее»), поэтому она и есть заголовок, а
+              категория — подзаголовок. Компанию резолвит сервер
+              (resolveCardCompanies в src/server/cards.ts); не нашлась —
+              заголовком остаётся категория, ФИО вместо компании не ставим. */}
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-base truncate">
+              {card.company?.name ?? CATEGORY_LABEL[card.category]}
+            </CardTitle>
+            {card.company && (
+              <div className="mt-0.5 truncate text-sm text-muted-foreground">
+                {CATEGORY_LABEL[card.category]}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex flex-wrap gap-1.5 min-w-0">

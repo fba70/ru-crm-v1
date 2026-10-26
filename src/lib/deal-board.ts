@@ -35,6 +35,13 @@ export const STAGE_COLOR: Record<string, string> = {
   Pilot: "bg-[#2F6BBF] text-white",
   Proposal: "bg-[#6D49B8] text-white",
   Negotiations: "bg-[#C2410C] text-white",
+  // Воронка агентства (Масловы, «Структура воронки агентства») — те же тона
+  // по порядку стадий 1–5, чтобы прогрессия читалась так же.
+  "Новая возможность": "bg-[#5D7183] text-white",
+  "Запрошены материалы или решение": "bg-[#0E7490] text-white",
+  "Финальный выбор": "bg-[#2F6BBF] text-white",
+  "Выбраны": "bg-[#6D49B8] text-white",
+  "Заказ подтверждён": "bg-[#C2410C] text-white",
   Closed: "bg-[#1F7A4D] text-white",
   // Графит вместо красного: «проиграна» — нейтральный факт, а не тревога;
   // красный семейства primary тут только спорил бы за внимание. В тёмной
@@ -42,6 +49,20 @@ export const STAGE_COLOR: Record<string, string> = {
   Rejected: "bg-[#242424] text-[#E7E5E4] dark:bg-[#3B3B40] dark:text-[#D6D6DA]",
 }
 export const STAGE_DEFAULT = "bg-[#5D7183] text-white"
+
+// «Область 0» до воронки (isPrePipeline) — намеренно бледная, с пунктиром:
+// это преддверие воронки, а не её стадия (звонок 26.10: «эти все яркие, а
+// там совершенно не ярко-бледный»).
+export const PRE_PIPELINE_STAGE_COLOR =
+  "border-dashed border-[#5D7183]/45 bg-[#5D7183]/8 text-foreground dark:bg-[#5D7183]/15"
+
+export function stageColorClass(stage: {
+  name: string
+  isPrePipeline?: boolean
+}): string {
+  if (stage.isPrePipeline) return PRE_PIPELINE_STAGE_COLOR
+  return STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
+}
 
 export function formatAmount(
   value: string | null,

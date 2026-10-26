@@ -336,8 +336,9 @@ export async function generateDeals(
         // Only active deals are match targets — cancelled / deleted are
         // soft-deleted and out of the identify/match/move logic entirely.
         eq(deal.status, "active"),
-        sql`${dealFunnelStage.closureProbability} > 0`,
-        sql`${dealFunnelStage.closureProbability} < 1`,
+        // «Область 0» (isPrePipeline) — вероятность 0, но НЕ терминал:
+        // холодный контакт должен уметь перейти в «Новую возможность».
+        sql`((${dealFunnelStage.closureProbability} > 0 AND ${dealFunnelStage.closureProbability} < 1) OR ${dealFunnelStage.isPrePipeline})`,
       ),
     )
 
@@ -372,6 +373,7 @@ export async function generateDeals(
       name: dealFunnelStage.name,
       probability: dealFunnelStage.closureProbability,
       sortOrder: dealFunnelStage.sortOrder,
+      isPrePipeline: dealFunnelStage.isPrePipeline,
     })
     .from(dealFunnelStage)
     .where(
@@ -388,6 +390,7 @@ export async function generateDeals(
       name: dealFunnelStage.name,
       probability: dealFunnelStage.closureProbability,
       sortOrder: dealFunnelStage.sortOrder,
+      isPrePipeline: dealFunnelStage.isPrePipeline,
     })
     .from(dealFunnelStage)
     .where(
@@ -448,7 +451,13 @@ export async function generateDeals(
   const stageList = stages
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map(
-      (s) => `${s.name} (closure probability: ${Number(s.probability)})`,
+      (s) =>
+        s.isPrePipeline
+          ? `${s.name} (PRE-PIPELINE relationship area, not an active deal stage: ` +
+            `a known company/person with no concrete request yet — e.g. met at an event, ` +
+            `general interest. Move a deal OUT of it only on a concrete client request, ` +
+            `invitation or relevant tender)`
+          : `${s.name} (closure probability: ${Number(s.probability)})`,
     )
     .join("\n- ")
 

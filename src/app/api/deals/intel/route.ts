@@ -6,6 +6,7 @@ import {
   buildIntel,
 } from "@/server/deals-mock"
 import { listDealFunnelStages } from "@/server/deals"
+import { loadDealLastActivity } from "@/server/client-activity"
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Unknown error"
@@ -20,12 +21,13 @@ function errorResponse(error: unknown) {
 
 export async function GET() {
   try {
-    await requireMockOrg()
+    const { orgId } = await requireMockOrg()
     const [deals, stages] = await Promise.all([
       loadBoardDeals(),
       listDealFunnelStages(),
     ])
-    const data = buildIntel(deals, stages)
+    const lastActivity = await loadDealLastActivity(orgId, deals)
+    const data = buildIntel(deals, stages, lastActivity)
     return NextResponse.json(data)
   } catch (error) {
     return errorResponse(error)

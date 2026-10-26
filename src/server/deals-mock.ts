@@ -26,7 +26,6 @@
 
 import { getServerSession } from "@/lib/get-session"
 import { listDeals, type DealRow, type DealFunnelStageOption } from "@/server/deals"
-import { dealStageLabel } from "@/lib/deal-funnel"
 
 // ---------------------------------------------------------------------------
 // Типы-контракты
@@ -155,8 +154,9 @@ function pick<T>(arr: readonly T[], seed: number): T {
 const CONFIDENCES: Confidence[] = ["low", "medium", "high"]
 
 // ---------------------------------------------------------------------------
-// Остывание: дни без активности из updatedAt (прокси).
-// TODO(backend): считать по реальной последней активности (задачи/письма/звонки).
+// Остывание: дни без активности. Источник даты — loadDealLastActivity
+// (src/server/client-activity.ts: письма/карточки, задачи, заказы, контакты
+// компании); deal.updatedAt — только запасной вариант, если карту не передали.
 // ---------------------------------------------------------------------------
 
 function staleDaysFrom(updatedAtIso: string): number {
@@ -182,10 +182,12 @@ const SOURCE_LABELS = [
   "Ручной ввод · 05.06",
 ]
 
-function dealIntel(deal: DealRow): DealIntel {
+function dealIntel(deal: DealRow, lastActivityAt?: Date): DealIntel {
   const seed = hash(deal.id)
   const norm = STAGE_NORM_BY_NAME[deal.funnelStageName] ?? DEFAULT_NORM
-  const staleDays = staleDaysFrom(deal.updatedAt)
+  const staleDays = staleDaysFrom(
+    lastActivityAt ? lastActivityAt.toISOString() : deal.updatedAt,
+  )
 
   const badges: IntelBadge[] = []
   const locks: DealIntel["locks"] = []
@@ -235,9 +237,10 @@ function dealIntel(deal: DealRow): DealIntel {
 export function buildIntel(
   deals: DealRow[],
   stages: DealFunnelStageOption[],
+  lastActivity?: Map<string, Date>,
 ): BoardIntelResponse {
   const intel: Record<string, DealIntel> = {}
-  for (const d of deals) intel[d.id] = dealIntel(d)
+  for (const d of deals) intel[d.id] = dealIntel(d, lastActivity?.get(d.id))
   return { intel, commitments: commitmentsForStages(stages) }
 }
 
@@ -295,8 +298,8 @@ export function generateProposals(
       dealName: d.clientName ? `${d.clientName} — ${d.name}` : d.name,
       fromStageId: cur.id,
       toStageId: target.id,
-      fromLabel: dealStageLabel(cur.name),
-      toLabel: dealStageLabel(target.name),
+      fromLabel: cur.label,
+      toLabel: target.label,
       direction: back ? "back" : "fwd",
       why: back
         ? pick(PROPOSAL_WHY_BACK, seed)

@@ -35,7 +35,6 @@ import type {
   DealClientOption,
   DealFunnelStageOption,
 } from "@/app/api/deals/route"
-import { dealStageLabel } from "@/lib/deal-funnel"
 import { CURRENCY_SYMBOL } from "@/lib/deal-board"
 import TaskEditDialog from "@/components/forms/form-task-edit"
 
@@ -101,16 +100,20 @@ export default function DealEditDialog({ trigger, onSuccess }: Props) {
           fetch("/api/deals?funnelStages=1").then((r) => r.json()),
         ])
         if (cancelled) return
-        const stages: DealFunnelStageOption[] = sRes.stages ?? []
+        // Скрытые в «Настройках стадий» колонки в выборе не предлагаем.
+        const stages: DealFunnelStageOption[] = (
+          (sRes.stages ?? []) as DealFunnelStageOption[]
+        ).filter((s) => !s.isHidden)
         setClientOptions(cRes.options ?? [])
         setStageOptions(stages)
 
-        // Default: lowest sortOrder stage (Qualification in the seeded
-        // funnel).
+        // Default: первая стадия САМОЙ воронки (lowest sortOrder, Qualification
+        // в системной) — 0-я «до воронки» не дефолт для новой сделки.
+        const defaultStage = stages.find((s) => !s.isPrePipeline) ?? stages[0]
         form.reset({
           name: "",
           description: "",
-          funnelStageId: stages[0]?.id ?? "",
+          funnelStageId: defaultStage?.id ?? "",
           clientId: "",
           value: "",
         })
@@ -267,9 +270,11 @@ export default function DealEditDialog({ trigger, onSuccess }: Props) {
                       <SelectContent>
                         {stageOptions.map((s) => (
                           <SelectItem key={s.id} value={s.id}>
-                            {dealStageLabel(s.name)}{" "}
+                            {s.label}{" "}
                             <span className="text-muted-foreground">
-                              ({Math.round(s.closureProbability * 100)}%)
+                              {s.isPrePipeline
+                                ? "(до воронки)"
+                                : `(${Math.round(s.closureProbability * 100)}%)`}
                             </span>
                           </SelectItem>
                         ))}

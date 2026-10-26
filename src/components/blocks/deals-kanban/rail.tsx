@@ -3,8 +3,7 @@
 import { useDroppable } from "@dnd-kit/core"
 import { ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { dealStageLabel } from "@/lib/deal-funnel"
-import { STAGE_COLOR, STAGE_DEFAULT } from "@/lib/deal-board"
+import { stageColorClass } from "@/lib/deal-board"
 import type { DealFunnelStageOption } from "@/app/api/deals/route"
 
 // Collapsed column: a narrow vertical rail. Still a valid drop target — a card
@@ -27,7 +26,7 @@ export function Rail({
     id: `col:${stage.id}`,
     data: { type: "column" as const, stageId: stage.id },
   })
-  const colorClass = STAGE_COLOR[stage.name] ?? STAGE_DEFAULT
+  const colorClass = stageColorClass(stage)
 
   return (
     <div
@@ -41,7 +40,7 @@ export function Rail({
         variant="ghost"
         size="icon"
         onClick={onExpand}
-        aria-label={`Развернуть «${dealStageLabel(stage.name)}»`}
+        aria-label={`Развернуть «${stage.label}»`}
         className="h-6 w-6 shrink-0 cursor-pointer hover:bg-black/10 dark:hover:bg-white/15"
       >
         <ChevronRight className="h-4 w-4" />
@@ -68,7 +67,7 @@ export function Rail({
         className="text-sm font-medium"
         style={{ writingMode: "sideways-lr" }}
       >
-        {dealStageLabel(stage.name)}
+        {stage.label}
       </span>
     </div>
   )

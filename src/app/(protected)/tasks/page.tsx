@@ -252,6 +252,17 @@ function TaskTable({
   )
 }
 
+// Значение свёрнутого фильтра. «Все статусы»/«Все исполнители» в узкой
+// ячейке сетки обрезались до «Все …» (звонок 26.10) — когда фильтр не задан,
+// показываем приглушённое название поля; пункт «Все …» в выпадашке остаётся.
+function FilterValue({ label, isAll }: { label: string; isAll: boolean }) {
+  return (
+    <SelectValue placeholder={label}>
+      {isAll ? <span className="text-muted-foreground">{label}</span> : undefined}
+    </SelectValue>
+  )
+}
+
 export default function TasksPage() {
   return (
     <Suspense fallback={null}>
@@ -435,7 +446,7 @@ function TasksPageContent() {
             <div className="grid flex-1 min-w-0 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger size="sm" className="w-full">
-                <SelectValue placeholder="Статус" />
+                <FilterValue label="Статус" isAll={statusFilter === ALL} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Все статусы</SelectItem>
@@ -448,7 +459,7 @@ function TasksPageContent() {
             </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
               <SelectTrigger size="sm" className="w-full">
-                <SelectValue placeholder="Тип" />
+                <FilterValue label="Тип" isAll={typeFilter === ALL} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Все типы</SelectItem>
@@ -461,7 +472,7 @@ function TasksPageContent() {
             </Select>
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger size="sm" className="w-full">
-                <SelectValue placeholder="Приоритет" />
+                <FilterValue label="Приоритет" isAll={priorityFilter === ALL} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Все приоритеты</SelectItem>
@@ -474,7 +485,7 @@ function TasksPageContent() {
             </Select>
             <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
               <SelectTrigger size="sm" className="w-full">
-                <SelectValue placeholder="Исполнитель" />
+                <FilterValue label="Исполнитель" isAll={assigneeFilter === ALL} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Все исполнители</SelectItem>
@@ -487,7 +498,7 @@ function TasksPageContent() {
             </Select>
             <Select value={clientFilter} onValueChange={setClientFilter}>
               <SelectTrigger size="sm" className="w-full">
-                <SelectValue placeholder="Клиент" />
+                <FilterValue label="Клиент" isAll={clientFilter === ALL} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Все клиенты</SelectItem>
@@ -500,7 +511,7 @@ function TasksPageContent() {
             </Select>
             <Select value={contactFilter} onValueChange={setContactFilter}>
               <SelectTrigger size="sm" className="w-full">
-                <SelectValue placeholder="Контакт" />
+                <FilterValue label="Контакт" isAll={contactFilter === ALL} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Все контакты</SelectItem>
@@ -515,7 +526,7 @@ function TasksPageContent() {
                 конкретная сделка (task.dealId). */}
             <Select value={dealFilter} onValueChange={setDealFilter}>
               <SelectTrigger size="sm" className="w-full">
-                <SelectValue placeholder="Сделка" />
+                <FilterValue label="Сделка" isAll={dealFilter === ALL} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Все сделки</SelectItem>

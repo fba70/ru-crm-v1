@@ -14,10 +14,14 @@ import {
   type DealStatus,
   type DealContactRole,
 } from "@/db/schema"
-import { aliasedTable, and, asc, desc, eq, inArray, ne } from "drizzle-orm"
+import { aliasedTable, and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm"
 import { getServerSession } from "@/lib/get-session"
 import { randomUUID } from "crypto"
-import { dealStageLabel } from "@/lib/deal-funnel"
+import {
+  dealStageLabel,
+  PRE_PIPELINE_VIRTUAL_ID,
+  stageDisplayLabel,
+} from "@/lib/deal-funnel"
 
 export type DealContactSummary = { id: string; name: string }
 
@@ -32,6 +36,10 @@ export type DealRow = {
   lastMovedBy: string | null
   funnelStageId: string
   funnelStageName: string
+  // Что показывать пользователю (displayName из настроек или русская
+  // подпись). funnelStageName остаётся внутренним именем — по нему
+  // определяются терминальные Closed/Rejected.
+  funnelStageLabel: string
   funnelStageProbability: number
   clientId: string
   clientName: string | null
@@ -61,6 +69,12 @@ export type DealFunnelStageOption = {
   closureProbability: number
   sortOrder: number
   isSystem: boolean
+  // См. dealFunnelStage.isPrePipeline (src/db/schema.ts).
+  isPrePipeline: boolean
+  // Подпись для UI (displayName ?? русская подпись по name) + сырые настройки.
+  label: string
+  displayName: string | null
+  isHidden: boolean
 }
 
 async function requireOrgContext() {
@@ -168,6 +182,9 @@ export async function listDealFunnelStages(): Promise<DealFunnelStageOption[]> {
       closureProbability: dealFunnelStage.closureProbability,
       sortOrder: dealFunnelStage.sortOrder,
       isSystem: dealFunnelStage.isSystem,
+      isPrePipeline: dealFunnelStage.isPrePipeline,
+      displayName: dealFunnelStage.displayName,
+      isHidden: dealFunnelStage.isHidden,
     })
     .from(dealFunnelStage)
     .where(
@@ -186,6 +203,10 @@ export async function listDealFunnelStages(): Promise<DealFunnelStageOption[]> {
       closureProbability: Number(r.closureProbability),
       sortOrder: r.sortOrder,
       isSystem: r.isSystem,
+      isPrePipeline: r.isPrePipeline,
+      label: stageDisplayLabel(r.name, r.displayName),
+      displayName: r.displayName,
+      isHidden: r.isHidden,
     }))
   }
 
@@ -196,6 +217,9 @@ export async function listDealFunnelStages(): Promise<DealFunnelStageOption[]> {
       closureProbability: dealFunnelStage.closureProbability,
       sortOrder: dealFunnelStage.sortOrder,
       isSystem: dealFunnelStage.isSystem,
+      isPrePipeline: dealFunnelStage.isPrePipeline,
+      displayName: dealFunnelStage.displayName,
+      isHidden: dealFunnelStage.isHidden,
     })
     .from(dealFunnelStage)
     .where(
@@ -212,6 +236,10 @@ export async function listDealFunnelStages(): Promise<DealFunnelStageOption[]> {
     closureProbability: Number(r.closureProbability),
     sortOrder: r.sortOrder,
     isSystem: r.isSystem,
+    isPrePipeline: r.isPrePipeline,
+    label: stageDisplayLabel(r.name, r.displayName),
+    displayName: r.displayName,
+    isHidden: r.isHidden,
   }))
 }
 
@@ -285,6 +313,7 @@ export async function listDeals(
       deal,
       funnelStageName: dealFunnelStage.name,
       funnelStageProbability: dealFunnelStage.closureProbability,
+      funnelStageDisplayName: dealFunnelStage.displayName,
       clientName: client.name,
       userName: user.name,
     })
@@ -325,6 +354,10 @@ export async function listDeals(
     lastMovedBy: r.deal.lastMovedBy,
     funnelStageId: r.deal.funnelStageId,
     funnelStageName: r.funnelStageName,
+    funnelStageLabel: stageDisplayLabel(
+      r.funnelStageName,
+      r.funnelStageDisplayName,
+    ),
     funnelStageProbability: Number(r.funnelStageProbability),
     clientId: r.deal.clientId,
     clientName: r.clientName,
@@ -348,6 +381,7 @@ export async function getDeal(dealId: string): Promise<DealRow | null> {
       deal,
       funnelStageName: dealFunnelStage.name,
       funnelStageProbability: dealFunnelStage.closureProbability,
+      funnelStageDisplayName: dealFunnelStage.displayName,
       clientName: client.name,
       userName: user.name,
     })
@@ -378,6 +412,10 @@ export async function getDeal(dealId: string): Promise<DealRow | null> {
     lastMovedBy: r.deal.lastMovedBy,
     funnelStageId: r.deal.funnelStageId,
     funnelStageName: r.funnelStageName,
+    funnelStageLabel: stageDisplayLabel(
+      r.funnelStageName,
+      r.funnelStageDisplayName,
+    ),
     funnelStageProbability: Number(r.funnelStageProbability),
     clientId: r.deal.clientId,
     clientName: r.clientName,
@@ -722,8 +760,8 @@ export async function listDealActivity(
       id: dealActivity.id,
       actor: dealActivity.actor,
       actorUserName: user.name,
-      fromStageName: fromStage.name,
-      toStageName: toStage.name,
+      fromStageName: sql<string | null>`coalesce(${fromStage.displayName}, ${fromStage.name})`,
+      toStageName: sql<string | null>`coalesce(${toStage.displayName}, ${toStage.name})`,
       note: dealActivity.note,
       reasoning: dealActivity.reasoning,
       createdAt: dealActivity.createdAt,
@@ -772,8 +810,8 @@ export async function listRecentDealActivity(
       actorUserName: user.name,
       dealName: deal.name,
       clientName: client.name,
-      fromStageName: fromStage.name,
-      toStageName: toStage.name,
+      fromStageName: sql<string | null>`coalesce(${fromStage.displayName}, ${fromStage.name})`,
+      toStageName: sql<string | null>`coalesce(${toStage.displayName}, ${toStage.name})`,
       note: dealActivity.note,
       reasoning: dealActivity.reasoning,
       createdAt: dealActivity.createdAt,
@@ -876,4 +914,153 @@ export async function moveDeal(
       lastMovedBy: "user",
     })
     .where(eq(deal.id, dealId))
+}
+
+// ---------------------------------------------------------------------------
+// «Настройки стадий» (/deals → кнопка со слайдерами): название + видимость
+// колонок. Терминальные Closed/Rejected сюда не входят — на доске это одна
+// колонка «Закрытие» со своей подписью.
+// ---------------------------------------------------------------------------
+
+const PRE_PIPELINE_DEFAULT_NAME = "Контакт до запроса"
+
+export type FunnelStageSetting = {
+  id: string
+  name: string
+  // Подпись по умолчанию (без пользовательского названия) — плейсхолдер.
+  defaultLabel: string
+  displayName: string | null
+  isHidden: boolean
+  isPrePipeline: boolean
+}
+
+const TERMINAL_NAMES = new Set(["Closed", "Rejected"])
+
+export async function getFunnelStageSettings(): Promise<FunnelStageSetting[]> {
+  const stages = await listDealFunnelStages()
+  const flow = stages.filter((s) => !TERMINAL_NAMES.has(s.name))
+  const rows: FunnelStageSetting[] = flow.map((s) => ({
+    id: s.id,
+    name: s.name,
+    defaultLabel: dealStageLabel(s.name),
+    displayName: s.displayName,
+    isHidden: s.isHidden,
+    isPrePipeline: s.isPrePipeline,
+  }))
+  if (!flow.some((s) => s.isPrePipeline)) {
+    rows.unshift({
+      id: PRE_PIPELINE_VIRTUAL_ID,
+      name: PRE_PIPELINE_DEFAULT_NAME,
+      defaultLabel: PRE_PIPELINE_DEFAULT_NAME,
+      displayName: null,
+      isHidden: false,
+      isPrePipeline: true,
+    })
+  }
+  return rows
+}
+
+// Орга на системной воронке → своя копия: системные стадии клонируются в
+// оргу с теми же именами/вероятностями (+ 0-я стадия «до воронки»), её
+// сделки и журнал deal_activity переводятся на клоны. Возвращает карту
+// старый id → новый. deal.updatedAt НЕ трогаем (иначе «дни без активности»
+// у всех сделок обнулились бы от технической операции).
+async function materializeOrgFunnel(
+  organizationId: string,
+  systemStages: DealFunnelStageOption[],
+): Promise<Map<string, string>> {
+  const idMap = new Map<string, string>()
+  const minSort = Math.min(...systemStages.map((s) => s.sortOrder), 10)
+  const preId = randomUUID()
+  idMap.set(PRE_PIPELINE_VIRTUAL_ID, preId)
+  const values = [
+    {
+      id: preId,
+      name: PRE_PIPELINE_DEFAULT_NAME,
+      closureProbability: "0",
+      sortOrder: minSort - 10,
+      isSystem: false,
+      ownerOrganizationId: organizationId,
+      isActive: true,
+      isPrePipeline: true,
+    },
+    ...systemStages.map((s) => {
+      const id = randomUUID()
+      idMap.set(s.id, id)
+      return {
+        id,
+        name: s.name,
+        closureProbability: String(s.closureProbability),
+        sortOrder: s.sortOrder,
+        isSystem: false,
+        ownerOrganizationId: organizationId,
+        isActive: true,
+        isPrePipeline: false,
+      }
+    }),
+  ]
+  await db.insert(dealFunnelStage).values(values)
+
+  const orgDealIds = db
+    .select({ id: deal.id })
+    .from(deal)
+    .where(eq(deal.organizationId, organizationId))
+  for (const s of systemStages) {
+    const to = idMap.get(s.id)!
+    await db
+      .update(deal)
+      .set({ funnelStageId: to, updatedAt: sql`${deal.updatedAt}` })
+      .where(
+        and(
+          eq(deal.organizationId, organizationId),
+          eq(deal.funnelStageId, s.id),
+        ),
+      )
+    await db
+      .update(dealActivity)
+      .set({ fromStageId: to })
+      .where(
+        and(
+          eq(dealActivity.fromStageId, s.id),
+          inArray(dealActivity.dealId, orgDealIds),
+        ),
+      )
+    await db
+      .update(dealActivity)
+      .set({ toStageId: to })
+      .where(
+        and(
+          eq(dealActivity.toStageId, s.id),
+          inArray(dealActivity.dealId, orgDealIds),
+        ),
+      )
+  }
+  return idMap
+}
+
+export async function saveFunnelStageSettings(
+  input: { id: string; displayName: string | null; isHidden: boolean }[],
+): Promise<void> {
+  const { activeOrgId } = await requireOrgContext()
+  const current = await listDealFunnelStages()
+  const idMap =
+    current.length > 0 && current[0].isSystem
+      ? await materializeOrgFunnel(activeOrgId, current)
+      : new Map<string, string>()
+
+  for (const entry of input) {
+    const id = idMap.get(entry.id) ?? entry.id
+    if (id === PRE_PIPELINE_VIRTUAL_ID) continue
+    const custom = entry.displayName?.trim() || null
+    await db
+      .update(dealFunnelStage)
+      .set({ displayName: custom, isHidden: !!entry.isHidden })
+      .where(
+        and(
+          eq(dealFunnelStage.id, id),
+          eq(dealFunnelStage.isSystem, false),
+          eq(dealFunnelStage.ownerOrganizationId, activeOrgId),
+        ),
+      )
+  }
 }

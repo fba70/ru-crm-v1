@@ -418,20 +418,29 @@ export function DealDetailDrawer({
             Отдельной модалки-редактора для СУЩЕСТВУЮЩИХ сделок больше нет
             (карандаш на карточке и клик по карточке одинаково открывают этот
             дровер). funnelStageId сюда не входит — см. Select ниже.
-            Дровер делится на фиксированную шапку (только название + системный
-            крестик закрытия) и единую скроллящуюся область (всё
-            остальное — поля формы, Состояние сделки, Этап, вкладки) — один
-            общий скролл вместо отдельного на каждой вкладке. */}
+            Дровер делится на фиксированную шапку (название + системный
+            крестик закрытия + строка табов) и единую скроллящуюся область
+            с содержимым активного таба. */}
         <Form {...editForm}>
           <form
             onSubmit={editForm.handleSubmit((data) => onSaveDeal(data))}
             className="flex flex-1 min-h-0 flex-col"
           >
+            {/* Табы — сразу под названием, в фиксированной шапке (звонок
+                26.10, как и в дровере компании): поля сделки, состояние,
+                этап и риски — первый таб «Общая информация», задачи и
+                остальное — соседние табы, без длинной прокрутки вниз. key —
+                при открытии другой сделки снова начинаем с первого таба. */}
+            <Tabs
+              key={deal.id}
+              defaultValue="info"
+              className="flex flex-1 min-h-0 flex-col gap-0"
+            >
             {/* Визуальный заголовок — само поле «Название», редактируемое.
                 sr-only SheetTitle остаётся для доступности (Radix Dialog
                 требует заголовок). pr-8, чтобы не залезать под крестик
                 закрытия. */}
-            <div className="p-4 pb-3 border-b shrink-0">
+            <div className="px-4 pt-4 border-b shrink-0">
               <SheetTitle className="sr-only">{deal.name}</SheetTitle>
               <FollowCursorTooltip
                 text="Клик для редактирования"
@@ -461,6 +470,31 @@ export function DealDetailDrawer({
                   )}
                 />
               </FollowCursorTooltip>
+              <TabsList
+                variant="line"
+                className="mt-1 w-full justify-start gap-3 overflow-x-auto scrollbar-none"
+              >
+                <TabsTrigger value="info" className="flex-none">
+                  Общая информация
+                </TabsTrigger>
+                <TabsTrigger value="tasks" className="flex-none">
+                  Задачи
+                  {tasks.length > 0 && (
+                    <span className="ml-1.5 text-xs text-muted-foreground">
+                      {tasks.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="chronology" className="flex-none">
+                  Хронология
+                </TabsTrigger>
+                <TabsTrigger value="contacts" className="flex-none">
+                  Контакты
+                </TabsTrigger>
+                <TabsTrigger value="origin" className="flex-none">
+                  Происхождение
+                </TabsTrigger>
+              </TabsList>
             </div>
 
             {/* Единый горизонтальный отступ (px-4) для всего тела дровера —
@@ -468,7 +502,8 @@ export function DealDetailDrawer({
                 ширина строки табов считалась от одного источника и не могла
                 разъехаться с остальным контентом. */}
             <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-            <div className="space-y-3 pt-3">
+            <TabsContent value="info" className="pt-3">
+            <div className="space-y-3">
               {(deal.userName || !!deal.contacts?.length) && (
                 <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
                   {deal.userName ? <span>Автор: {deal.userName}</span> : <span />}
@@ -660,12 +695,16 @@ export function DealDetailDrawer({
               <SelectValue placeholder="Перевести по воронке" />
             </SelectTrigger>
             <SelectContent>
-              {stages.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {dealStageLabel(s.name)} (
-                  {Math.round(s.closureProbability * 100)}%)
-                </SelectItem>
-              ))}
+              {stages
+                .filter((s) => !s.isHidden || s.id === deal.funnelStageId)
+                .map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.label}{" "}
+                    {s.isPrePipeline
+                      ? "(до воронки)"
+                      : `(${Math.round(s.closureProbability * 100)}%)`}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>
@@ -682,29 +721,8 @@ export function DealDetailDrawer({
           </div>
         )}
 
-        <Tabs defaultValue="tasks">
-          <TabsList
-            variant="line"
-            className="mt-3 w-full justify-between border-b"
-          >
-            <TabsTrigger value="tasks" className="flex-none">
-              Задачи
-              {tasks.length > 0 && (
-                <span className="ml-1.5 text-xs text-muted-foreground">
-                  {tasks.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="chronology" className="flex-none">
-              Хронология
-            </TabsTrigger>
-            <TabsTrigger value="contacts" className="flex-none">
-              Контакты
-            </TabsTrigger>
-            <TabsTrigger value="origin" className="flex-none">
-              Происхождение
-            </TabsTrigger>
-          </TabsList>
+
+        </TabsContent>
 
           <TabsContent value="chronology" className="py-4 space-y-2 text-sm">
             {(() => {
@@ -901,8 +919,8 @@ export function DealDetailDrawer({
               )
             })()}
           </TabsContent>
-        </Tabs>
             </div>
+            </Tabs>
           </form>
         </Form>
       </SheetContent>

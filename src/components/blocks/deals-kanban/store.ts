@@ -166,6 +166,9 @@ export function sortTerminalCards(
 
 const collapseStorageKey = (boardId: string) =>
   `deals-kanban:collapsed:${boardId}`
+const sortStorageKey = (boardId: string) => `deals-kanban:sort:${boardId}`
+export const terminalSortStorageKey = (boardId: string) =>
+  `deals-kanban:terminal-sort:${boardId}`
 
 export function useBoardStore({
   deals,
@@ -184,10 +187,40 @@ export function useBoardStore({
   const [localDeals, setLocalDeals] = useState<DealRow[]>(deals)
   useEffect(() => setLocalDeals(deals), [deals])
 
+  // Сортировка колонок — per-user UI state в localStorage (как и свёрнутость),
+  // иначе уход со страницы сбрасывал «Сначала новые» обратно в «Вручную»
+  // (звонок 26.10: новая сделка терялась внизу колонки после возврата).
   const [sortByStage, setSortByStage] = useState<Record<string, SortMode>>({})
-  const setSort = useCallback((stageId: string, mode: SortMode) => {
-    setSortByStage((prev) => ({ ...prev, [stageId]: mode }))
-  }, [])
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(sortStorageKey(boardId))
+      if (!raw) return
+      const stored = JSON.parse(raw) as Record<string, string>
+      const valid: Record<string, SortMode> = {}
+      for (const [stageId, mode] of Object.entries(stored)) {
+        if ((SORT_MODES as string[]).includes(mode)) {
+          valid[stageId] = mode as SortMode
+        }
+      }
+      setSortByStage(valid)
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, [boardId])
+  const setSort = useCallback(
+    (stageId: string, mode: SortMode) => {
+      setSortByStage((prev) => {
+        const next = { ...prev, [stageId]: mode }
+        try {
+          localStorage.setItem(sortStorageKey(boardId), JSON.stringify(next))
+        } catch {
+          /* ignore quota / disabled storage */
+        }
+        return next
+      })
+    },
+    [boardId],
+  )
 
   // Collapsed state is per-user UI state (localStorage, keyed by board). Empty
   // columns default collapsed — but only at first paint, so dragging the last
@@ -368,6 +401,7 @@ export function useBoardStore({
                 ...d,
                 funnelStageId: toStageId,
                 funnelStageName: targetStage.name,
+                funnelStageLabel: targetStage.label,
                 funnelStageProbability: targetStage.closureProbability,
                 position: newPos,
               }

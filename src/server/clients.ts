@@ -23,6 +23,7 @@ import {
   gte,
 } from "drizzle-orm"
 import { computeOrderDiscount } from "@/lib/orders-format"
+import { loadClientLastActivity } from "@/server/client-activity"
 import { listDealFunnelStages } from "@/server/deals"
 import {
   listTaskSummaryByClient,
@@ -73,7 +74,15 @@ export type ClientRow = {
   organizationId: string
   createdAt: string
   updatedAt: string
+  // Реальная последняя активность (письма/карточки, задачи, сделки, заказы,
+  // контакты — см. loadClientLastActivity). Заполняется лентой /clients;
+  // где её нет, бейдж «N дн без контакта» откатывается на updatedAt.
+  lastActivityAt?: string
   contacts: ClientContactPreview[]
+}
+
+function maxIso(a: Date, b: Date | undefined): string {
+  return (b && b > a ? b : a).toISOString()
 }
 
 async function requireOrgContext() {
@@ -256,7 +265,13 @@ export async function listClientsFeed(params: {
   )
   const openStageIds = new Set(
     stages
-      .filter((s) => s.closureProbability > 0 && s.closureProbability < 1)
+      // «Область 0» (isPrePipeline) — тоже «потенциальный»: целевая компания,
+      // с которой уже ведём отношения, хоть активной возможности ещё нет.
+      .filter(
+        (s) =>
+          s.isPrePipeline ||
+          (s.closureProbability > 0 && s.closureProbability < 1),
+      )
       .map((s) => s.id),
   )
 
@@ -344,6 +359,8 @@ export async function listClientsFeed(params: {
     contactsByClient.set(c.clientId, list)
   }
 
+  const lastActivity = await loadClientLastActivity(activeOrgId, clientIds)
+
   const pageTaskSummary: Record<string, ClientTaskSummary> = {}
   for (const id of clientIds) {
     if (taskSummary[id]) pageTaskSummary[id] = taskSummary[id]
@@ -371,6 +388,10 @@ export async function listClientsFeed(params: {
       organizationId: r.client.organizationId,
       createdAt: r.client.createdAt.toISOString(),
       updatedAt: r.client.updatedAt.toISOString(),
+      lastActivityAt: maxIso(
+        r.client.updatedAt,
+        lastActivity.get(r.client.id),
+      ),
       contacts: contactsByClient.get(r.client.id) ?? [],
     })),
   }

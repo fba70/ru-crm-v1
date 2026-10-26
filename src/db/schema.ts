@@ -687,6 +687,20 @@ export const dealFunnelStage = pgTable(
       { onDelete: "cascade" },
     ),
     isActive: boolean("is_active").notNull().default(true),
+    // «Область 0» перед воронкой (контакт до запроса — холодные знакомства,
+    // которые ведёт маркетинг): колонка на доске есть, но это ещё не стадия
+    // сделки — бледная, вне прогноза (closureProbability = 0), и при этом
+    // НЕ терминальная (вероятность 0 у обычной стадии значит «Rejected»).
+    // Миграция: scripts/add-funnel-stage-pre-pipeline.ts.
+    isPrePipeline: boolean("is_pre_pipeline").notNull().default(false),
+    // Настройки стадии из диалога «Настройки стадий» на /deals. displayName —
+    // то, что видит пользователь (null → русская подпись по `name`, см.
+    // dealStageLabel); `name` НЕ переименовывается: по нему определяются
+    // цвета колонок и терминальные Closed/Rejected. isHidden — колонка
+    // скрыта с доски (сделки в ней тоже не показываются).
+    // Миграция: scripts/add-funnel-stage-settings.ts.
+    displayName: text("display_name"),
+    isHidden: boolean("is_hidden").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

@@ -23,7 +23,6 @@ import type { DealRow } from "@/app/api/deals/route"
 import type { TaskRow } from "@/app/api/tasks/route"
 import { ClientLookupDialog } from "@/components/blocks/client-lookup-dialog"
 import { formatAmount, formatCompactNumber, CURRENCY_SYMBOL } from "@/lib/deal-board"
-import { dealStageLabel } from "@/lib/deal-funnel"
 import {
   clientAtRisk,
   clientStaleDays,
@@ -79,8 +78,9 @@ export function AccountSummary({
   revenue?: ClientRevenueSummary
   activeDeal?: DealRow
 }) {
-  const days = clientStaleDays(client.updatedAt)
-  const stale = clientAtRisk(client.updatedAt)
+  const activityAt = client.lastActivityAt ?? client.updatedAt
+  const days = clientStaleDays(activityAt)
+  const stale = clientAtRisk(activityAt)
   const symbol = (
     CURRENCY_SYMBOL[client.currency.toUpperCase()] ?? client.currency
   ).trim()
@@ -107,7 +107,7 @@ export function AccountSummary({
         </span>
         {activeDeal && (
           <span className="text-xs shrink-0 text-right">
-            {dealStageLabel(activeDeal.funnelStageName)}
+            {activeDeal.funnelStageLabel}
             {dealAmount ? ` · ${dealAmount}` : ""}
           </span>
         )}
@@ -132,8 +132,8 @@ export function AccountSummary({
             </span>
           </TooltipTrigger>
           <TooltipContent align="start" className="max-w-xs text-xs">
-            Компания давно не касалась ни одной записи в системе — возможно,
-            стоит связаться.
+            По компании давно не было активности — ни писем и сообщений, ни
+            задач, сделок или заказов. Возможно, стоит связаться.
           </TooltipContent>
         </Tooltip>
       )}
@@ -234,7 +234,12 @@ export function ClientCard({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        {/* stop на обёртке, а не только на триггере: модалка рендерится
+            порталом, но синтетические события React всплывают по дереву
+            КОМПОНЕНТОВ — клики внутри неё («Искать», «Сохранить», клик по
+            оверлею для закрытия) иначе доходили до onClick карточки и
+            открывали правый дровер поверх/после модалки (звонок 26.10). */}
+        <div className="flex items-center gap-1" onClick={stop}>
           <ClientLookupDialog
             client={client}
             onSaved={onChanged}

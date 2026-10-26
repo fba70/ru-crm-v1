@@ -111,6 +111,7 @@ export function ClientDetailShell({
       organizationId: detail.organizationId,
       createdAt: detail.createdAt,
       updatedAt: detail.updatedAt,
+      lastActivityAt: detail.lastActivityAt,
       contacts: detail.contacts.map((c) => ({
         id: c.id,
         name: c.name,
